@@ -322,6 +322,8 @@ void do_run(combat_unit*a,a_vector<unit*>&enemies) {
 	double start_d = get_best_score_value(enemies, [&](unit*e) {
 		return diag_distance(e->pos - u->pos);
 	});
+
+	start_d *= 0.5;
 	
 	auto path = square_pathing::find_square_path(square_pathing::get_pathing_map(u->type), u->pos, [&](xy pos, xy npos) {
 		double nd = get_best_score_value(enemies, [&](unit*e) {
@@ -384,7 +386,7 @@ void fight() {
 			a_unordered_set<unit*> enemies;
 			auto in_range = [&](unit*u, unit*e) {
 				double d = units_distance(u, e);
-				if (d <= u->stats->sight_range) return true;
+				if (d <= u->stats->sight_range*1.5) return true;
 				weapon_stats*w = e->type->is_flyer ? u->stats->air_weapon : u->stats->ground_weapon;
 				if (!w) return false;
 				return d <= w->max_range*1.5;

@@ -101,9 +101,9 @@ struct xcept_t {
 			auto&str = ++n%2 ? str1 : str2;
 			tsc::strf::format(str,fmt,std::forward<T>(args)...);
 			log("about to throw exception %s\n",str);
-#ifdef _DEBUG
+//#ifdef _DEBUG
 			DebugBreak();
-#endif
+//#endif
 			throw (const char*)str.c_str();
 		} catch (const std::bad_alloc&) {
 			throw (const char*)fmt;

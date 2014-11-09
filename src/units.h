@@ -159,6 +159,7 @@ namespace unit_types {
 		units::get_unit_type(rv,game_unit_type);
 	}
 	typedef unit_type*unit_type_pointer;
+	unit_type_pointer unknown;
 	unit_type_pointer cc, supply_depot, barracks, factory, science_facility, nuclear_silo, bunker, refinery, machine_shop;
 	unit_type_pointer missile_turret;
 	unit_type_pointer scv, marine, vulture, siege_tank_tank_mode, siege_tank_siege_mode;
@@ -174,19 +175,21 @@ namespace unit_types {
 		hatchery, lair, hive
 	};
 	void init() {
-		get(cc,BWAPI::UnitTypes::Terran_Command_Center);
-		get(supply_depot,BWAPI::UnitTypes::Terran_Supply_Depot);
-		get(barracks,BWAPI::UnitTypes::Terran_Barracks);
-		get(factory,BWAPI::UnitTypes::Terran_Factory);
-		get(science_facility,BWAPI::UnitTypes::Terran_Science_Facility);
-		get(nuclear_silo,BWAPI::UnitTypes::Terran_Nuclear_Silo);
-		get(bunker,BWAPI::UnitTypes::Terran_Bunker);
-		get(refinery,BWAPI::UnitTypes::Terran_Refinery);
+		get(unknown, BWAPI::UnitTypes::Unknown);
+
+		get(cc, BWAPI::UnitTypes::Terran_Command_Center);
+		get(supply_depot, BWAPI::UnitTypes::Terran_Supply_Depot);
+		get(barracks, BWAPI::UnitTypes::Terran_Barracks);
+		get(factory, BWAPI::UnitTypes::Terran_Factory);
+		get(science_facility, BWAPI::UnitTypes::Terran_Science_Facility);
+		get(nuclear_silo, BWAPI::UnitTypes::Terran_Nuclear_Silo);
+		get(bunker, BWAPI::UnitTypes::Terran_Bunker);
+		get(refinery, BWAPI::UnitTypes::Terran_Refinery);
 		get(machine_shop, BWAPI::UnitTypes::Terran_Machine_Shop);
 		get(missile_turret, BWAPI::UnitTypes::Terran_Missile_Turret);
-		
-		get(scv,BWAPI::UnitTypes::Terran_SCV);
-		get(marine,BWAPI::UnitTypes::Terran_Marine);
+
+		get(scv, BWAPI::UnitTypes::Terran_SCV);
+		get(marine, BWAPI::UnitTypes::Terran_Marine);
 		get(medic, BWAPI::UnitTypes::Terran_Medic);
 		get(ghost, BWAPI::UnitTypes::Terran_Ghost);
 		get(vulture, BWAPI::UnitTypes::Terran_Vulture);
@@ -194,29 +197,29 @@ namespace unit_types {
 		get(siege_tank_siege_mode, BWAPI::UnitTypes::Terran_Siege_Tank_Siege_Mode);
 		get(battlecruiser, BWAPI::UnitTypes::Terran_Battlecruiser);
 
-		get(nexus,BWAPI::UnitTypes::Protoss_Nexus);
-		get(pylon,BWAPI::UnitTypes::Protoss_Pylon);
-		get(gateway,BWAPI::UnitTypes::Protoss_Gateway);
-		get(photon_cannon,BWAPI::UnitTypes::Protoss_Photon_Cannon);
-		get(robotics_facility,BWAPI::UnitTypes::Protoss_Robotics_Facility);
-		
-		get(probe,BWAPI::UnitTypes::Protoss_Probe);
+		get(nexus, BWAPI::UnitTypes::Protoss_Nexus);
+		get(pylon, BWAPI::UnitTypes::Protoss_Pylon);
+		get(gateway, BWAPI::UnitTypes::Protoss_Gateway);
+		get(photon_cannon, BWAPI::UnitTypes::Protoss_Photon_Cannon);
+		get(robotics_facility, BWAPI::UnitTypes::Protoss_Robotics_Facility);
 
-		get(hatchery,BWAPI::UnitTypes::Zerg_Hatchery);
-		get(lair,BWAPI::UnitTypes::Zerg_Lair);
-		get(hive,BWAPI::UnitTypes::Zerg_Hive);
-		get(creep_colony,BWAPI::UnitTypes::Zerg_Creep_Colony);
-		get(sunken_colony,BWAPI::UnitTypes::Zerg_Sunken_Colony);
-		get(spore_colony,BWAPI::UnitTypes::Zerg_Spore_Colony);
-		get(nydus_canal,BWAPI::UnitTypes::Zerg_Nydus_Canal);
-		get(spawning_pool,BWAPI::UnitTypes::Zerg_Spawning_Pool);
-		get(evolution_chamber,BWAPI::UnitTypes::Zerg_Evolution_Chamber);
-		
-		get(drone,BWAPI::UnitTypes::Zerg_Drone);
-		get(overlord,BWAPI::UnitTypes::Zerg_Overlord);
+		get(probe, BWAPI::UnitTypes::Protoss_Probe);
+
+		get(hatchery, BWAPI::UnitTypes::Zerg_Hatchery);
+		get(lair, BWAPI::UnitTypes::Zerg_Lair);
+		get(hive, BWAPI::UnitTypes::Zerg_Hive);
+		get(creep_colony, BWAPI::UnitTypes::Zerg_Creep_Colony);
+		get(sunken_colony, BWAPI::UnitTypes::Zerg_Sunken_Colony);
+		get(spore_colony, BWAPI::UnitTypes::Zerg_Spore_Colony);
+		get(nydus_canal, BWAPI::UnitTypes::Zerg_Nydus_Canal);
+		get(spawning_pool, BWAPI::UnitTypes::Zerg_Spawning_Pool);
+		get(evolution_chamber, BWAPI::UnitTypes::Zerg_Evolution_Chamber);
+
+		get(drone, BWAPI::UnitTypes::Zerg_Drone);
+		get(overlord, BWAPI::UnitTypes::Zerg_Overlord);
 		get(zergling, BWAPI::UnitTypes::Zerg_Zergling);
 
-		get(vespene_geyser,BWAPI::UnitTypes::Resource_Vespene_Geyser);
+		get(vespene_geyser, BWAPI::UnitTypes::Resource_Vespene_Geyser);
 	}
 }
 
@@ -321,6 +324,7 @@ unit_type*new_unit_type(BWAPI::UnitType game_unit_type,unit_type*ut) {
 	switch (game_unit_type.size().getID()) {
 	case BWAPI::UnitSizeTypes::Enum::Independent:
 	case BWAPI::UnitSizeTypes::Enum::None:
+	case BWAPI::UnitSizeTypes::Enum::Unknown:
 		ut->size = unit_type::size_none;
 		break;
 	case BWAPI::UnitSizeTypes::Enum::Small:
@@ -373,6 +377,9 @@ void update_weapon_stats(weapon_stats*st) {
 	st->targets_air = gw.targetsAir();
 	st->targets_ground = gw.targetsGround();
 	switch (gw.damageType().getID()) {
+	case BWAPI::DamageTypes::Enum::Unknown:
+		st->damage_type = weapon_stats::damage_type_none;
+		break;
 	case BWAPI::DamageTypes::Enum::Concussive:
 		st->damage_type = weapon_stats::damage_type_concussive;
 		break;
