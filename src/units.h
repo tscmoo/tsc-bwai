@@ -148,6 +148,10 @@ struct unit {
 	unit*target;
 	unit*order_target;
 
+	double minerals_value;
+	double gas_value;
+	player_t*last_type_change_owner;
+
 	std::array<size_t,std::extent<decltype(units::unit_containers)>::value> container_indexes;
 };
 
@@ -167,7 +171,7 @@ namespace unit_types {
 	unit_type_pointer nexus, pylon, gateway, photon_cannon, robotics_facility;
 	unit_type_pointer probe;
 	unit_type_pointer hatchery, lair, hive, creep_colony, sunken_colony, spore_colony, nydus_canal, spawning_pool, evolution_chamber;
-	unit_type_pointer drone, overlord, zergling;
+	unit_type_pointer drone, overlord, zergling, larva;
 	unit_type_pointer vespene_geyser;
 	std::reference_wrapper<unit_type_pointer> units_that_produce_land_units[] = {
 		cc, barracks, factory,
@@ -218,6 +222,7 @@ namespace unit_types {
 		get(drone, BWAPI::UnitTypes::Zerg_Drone);
 		get(overlord, BWAPI::UnitTypes::Zerg_Overlord);
 		get(zergling, BWAPI::UnitTypes::Zerg_Zergling);
+		get(larva, BWAPI::UnitTypes::Zerg_Larva);
 
 		get(vespene_geyser, BWAPI::UnitTypes::Resource_Vespene_Geyser);
 	}
@@ -232,6 +237,7 @@ static const size_t npos = ~(size_t)0;
 
 player_t*my_player;
 player_t*opponent_player;
+player_t*neutral_player;
 
 a_vector<unit*> new_units_queue;
 a_vector<std::tuple<unit*, unit_type*>> unit_type_changes_queue;
@@ -352,9 +358,56 @@ unit_type*get_unit_type(unit_type*&rv,BWAPI::UnitType game_unit_type) {
 	return new_unit_type(game_unit_type,ut);
 }
 
+void update_unit_value(unit*u, unit_type*from, unit_type*to) {
+	if (from == to) return;
+	double minerals = 0.0;
+	double gas = 0.0;
+	log("update unit value for %s -> %s\n", from ? from->name : "null", to->name);
+	if (to->race == race_zerg) {
+		if (from == unit_types::larva) from = nullptr;
+		auto trace_back = [&]() {
+			for (unit_type*t = to; t->builder_type; t = t->builder_type) {
+				if (t == from) {
+					from = nullptr;
+					break;
+				}
+				if (t == unit_types::larva) break;
+				log(" +> %s - %g %g\n", t->name, t->minerals_cost, t->gas_cost);
+				minerals += t->minerals_cost;
+				gas += t->gas_cost;
+			}
+		};
+		trace_back();
+		if (from) {
+			log("maybe canceled?\n");
+			unit_type*prev_from = from;
+			double mult = from->is_building ? 0.75 : 1.0;
+			minerals = -from->minerals_cost*mult;
+			gas = -from->gas_cost*mult;
+			from = from->builder_type;
+			trace_back();
+			if (from) from = prev_from;
+		}
+	} else {
+		minerals = to->minerals_cost;
+		gas = to->gas_cost;
+	}
+	if (from == nullptr) {
+		log("final cost: %g %g\n", minerals, gas);
+		u->minerals_value += minerals;
+		u->gas_value += gas;
+		return;
+	}
+	xcept("unable to trace how %s changed into %s\n", from->name, to->name);
+}
+
 void update_unit_type(unit*u) {
 	unit_type*ut = get_unit_type(u->game_unit->getType());
 	if (ut==u->type) return;
+	if (u->last_type_change_owner && u->owner != u->last_type_change_owner && u->type!=unit_types::vespene_geyser) {
+		u->minerals_value = 0;
+		u->gas_value = 0;
+	} else update_unit_value(u, u->type == unit_types::vespene_geyser ? nullptr : u->type, ut);
 	if (u->type) unit_type_changes_queue.emplace_back(u, u->type);
 	u->type = ut;
 	if (ut->is_building) {
@@ -532,11 +585,12 @@ unit*new_unit(BWAPI::Unit game_unit) {
 	new_units_queue.push_back(u);
 
 	u->game_unit = game_unit;
-	u->owner = 0;
-	u->type = 0;
-	u->stats = 0;
-	u->building = 0;
-	u->controller = 0;
+	u->owner = nullptr;
+	u->type = nullptr;
+	u->stats = nullptr;
+	u->building = nullptr;
+	u->controller = nullptr;
+	u->last_type_change_owner = nullptr;
 
 	u->visible = false;
 	u->dead = false;
@@ -544,9 +598,10 @@ unit*new_unit(BWAPI::Unit game_unit) {
 	u->last_seen = current_frame;
 	u->gone = false;
 
-	//update_unit_stuff(u);
-
 	u->container_indexes.fill(npos);
+
+	u->minerals_value = 0;
+	u->gas_value = 0;
 
 	update_unit_owner(u);
 	update_unit_type(u);
@@ -704,7 +759,8 @@ void update_units_task() {
 
 	while (true) {
 		my_player = get_player(game->self());
-		opponent_player = get_player(game->neutral());
+		neutral_player = get_player(game->neutral());
+		opponent_player = neutral_player;
 		for (auto&v : game->getPlayers()) {
 			auto*p = get_player(v);
 			if (p->is_enemy) opponent_player = p;
@@ -740,11 +796,13 @@ void update_units_task() {
 				created_units.push_back(u);
 				break;
 			case event_t::t_morph:
+				log("morph %s -> %s\n", u->type->name, u->game_unit->getType().getName());
 				if (u->visible) update_unit_type(u);
 				morphed_units.push_back(u);
 				break;
 			case event_t::t_destroy:
 				log("destroy %s\n", u->type->name);
+				if (u->visible) update_unit_stuff(u);
 				u->visible = false;
 				u->dead = true;
 				destroyed_units.push_back(u);
