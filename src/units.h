@@ -233,6 +233,9 @@ static const size_t npos = ~(size_t)0;
 player_t*my_player;
 player_t*opponent_player;
 
+a_vector<unit*> new_units_queue;
+a_vector<std::tuple<unit*, unit_type*>> unit_type_changes_queue;
+
 void update_unit_container(unit*u,a_vector<unit*>&cont,bool contain) {
 	size_t idx = &cont - &units::unit_containers[0];
 	size_t&u_idx = u->container_indexes[idx];
@@ -352,6 +355,7 @@ unit_type*get_unit_type(unit_type*&rv,BWAPI::UnitType game_unit_type) {
 void update_unit_type(unit*u) {
 	unit_type*ut = get_unit_type(u->game_unit->getType());
 	if (ut==u->type) return;
+	if (u->type) unit_type_changes_queue.emplace_back(u, u->type);
 	u->type = ut;
 	if (ut->is_building) {
 		if (!u->building) {
@@ -525,6 +529,8 @@ unit*new_unit(BWAPI::Unit game_unit) {
 	unit_container.emplace_back();
 	unit*u = &unit_container.back();
 
+	new_units_queue.push_back(u);
+
 	u->game_unit = game_unit;
 	u->owner = 0;
 	u->type = 0;
@@ -555,7 +561,7 @@ unit*new_unit(BWAPI::Unit game_unit) {
 unit*get_unit(BWAPI::Unit game_unit) {
 	unit*u = (unit*)game_unit->getClientInfo();
 	if (!u) {
-		if (!game_unit->isVisible() || !game_unit->exists()) return nullptr;
+		if ((!game_unit->isVisible() || !game_unit->exists()) && current_frame > 0) return nullptr;
 		u = new_unit(game_unit);
 		game_unit->setClientInfo(u);
 	}
@@ -684,14 +690,17 @@ void update_buildings_walk_squares_task() {
 
 }
 
-a_vector<std::function<void(unit*)>> on_create_callbacks, on_morph_callbacks;
+a_vector<std::function<void(unit*)>> on_create_callbacks, on_morph_callbacks, on_destroy_callbacks;
+
+a_vector<std::function<void(unit*)>> on_new_unit_callbacks;
+a_vector<std::function<void(unit*,unit_type*)>> on_type_change_callbacks;
 
 void update_units_task() {
 
 	int last_update_stats = 0;
 	int last_refresh = 0;
 
-	a_vector<unit*> created_units, morphed_units;
+	a_vector<unit*> created_units, morphed_units, destroyed_units;
 
 	while (true) {
 		my_player = get_player(game->self());
@@ -703,12 +712,14 @@ void update_units_task() {
 
 		grid::update_build_grid();
 
-		created_units.clear();
-		morphed_units.clear();
 		while (!events.empty()) {
 			auto e = events.front();
 			events.pop_front();
 			unit*u = get_unit(e.game_unit);
+			if (!u) {
+				log("missed new unit %s\n", e.game_unit->getType().getName());
+				continue;
+			}
 			// These events are delayed, so e.g. a unit is not necessarily visible even though we are processing a show event.
 			u->visible = u->game_unit->isVisible();
 			u->visible &= u->game_unit->exists(); // BWAPI bug: destroyed units are visible
@@ -736,6 +747,7 @@ void update_units_task() {
 				log("destroy %s\n", u->type->name);
 				u->visible = false;
 				u->dead = true;
+				destroyed_units.push_back(u);
 				break;
 			case event_t::t_renegade:
 				if (u->visible) update_unit_owner(u);
@@ -798,7 +810,15 @@ void update_units_task() {
 
 		for (unit*u : invisible_units) {
 			if (!u->gone) {
-				if (grid::is_visible(u->pos)) {
+				auto is_visible_around = [&](xy pos) {
+					if (!grid::is_visible(pos)) return false;
+					if (!grid::is_visible(pos + xy(32,0))) return false;
+					if (!grid::is_visible(pos + xy(0, 32))) return false;
+					if (!grid::is_visible(pos + xy(-32, 0))) return false;
+					if (!grid::is_visible(pos + xy(0, -32))) return false;
+					return true;
+				};
+				if (is_visible_around(u->pos)) {
 					log("%s is gone\n",u->type->name);
 					u->gone = true;
 				}
@@ -812,9 +832,23 @@ void update_units_task() {
 		for (unit*u : created_units) {
 			for (auto&f : on_create_callbacks) f(u);
 		}
+		created_units.clear();
+		for (unit*u : new_units_queue) {
+			for (auto&f : on_new_unit_callbacks) f(u);
+		}
+		new_units_queue.clear();
 		for (unit*u : morphed_units) {
 			for (auto&f : on_morph_callbacks) f(u);
 		}
+		morphed_units.clear();
+		for (auto&v : unit_type_changes_queue) {
+			for (auto&f : on_type_change_callbacks) f(std::get<0>(v), std::get<1>(v));
+		}
+		unit_type_changes_queue.clear();
+		for (unit*u : destroyed_units) {
+			for (auto&f : on_destroy_callbacks) f(u);
+		}
+		destroyed_units.clear();
 
 		multitasking::sleep(1);
 	}
