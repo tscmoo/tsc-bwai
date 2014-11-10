@@ -10,27 +10,26 @@ double minerals_to_gas_weight = 1.0;
 struct gatherer_t;
 struct resource_t {
 	std::pair<resource_t*,resource_t*> link;
-	int live_frame;
-	unit*u;
-	int begin_gather_frame;
-	gatherer_t*gatherer;
+	int live_frame = 0;
+	unit*u = nullptr;
+	int begin_gather_frame = 0;
+	gatherer_t*gatherer = nullptr;
 	a_vector<gatherer_t*> gatherers;
-	unit*depot;
-	bool dead;
-	int round_trip_time;
-	int calculated_round_trip_time;
-	int last_round_trip_time_calc;
+	unit*depot = nullptr;
+	bool dead = false;
+	int round_trip_time = 10;
+	int calculated_round_trip_time = 0;
+	int last_round_trip_time_calc = 0;
 	a_deque<std::tuple<int,int>> actual_round_trip_times;
-	int gather_time;
+	int gather_time = 10;
 	a_deque<std::tuple<int,int>> actual_gather_times;
-	int busy_until;
+	int busy_until = 0;
 	a_vector<double> income_rate, income_sum;
-	int last_update_income_rate;
-	bool is_being_gathered;
-	int current_complete_round_trip_time;
+	int last_update_income_rate = -1;
+	bool is_being_gathered = false;
+	int current_complete_round_trip_time = 0;
 	a_vector<int> deliveries;
 	int last_find_transfer = 0;
-	resource_t() : begin_gather_frame(0), gatherer(0), dead(false), round_trip_time(10), calculated_round_trip_time(0), last_round_trip_time_calc(0), gather_time(10), busy_until(0), last_update_income_rate(-1), is_being_gathered(false), current_complete_round_trip_time(0) {}
 };
 
 a_list<resource_t> all_resources;
@@ -39,20 +38,21 @@ a_unordered_map<unit*,resource_t*> unit_resource_map;
 
 struct gatherer_t {
 	std::pair<gatherer_t*,gatherer_t*> link;
-	int live_frame;
-	unit*u;
-	resource_t*resource;
-	bool dead;
-	bool is_mining;
-	bool is_mining_gas;
-	bool is_carrying;
-	int mining_until;
-	int last_round_trip;
-	int gather_begin;
-	int last_gather_end;
-	int last_delivery;
-	bool no_mineral_gas_transfer;
-	gatherer_t() : live_frame(0), u(0), resource(0), gather_begin(0), last_gather_end(0), dead(false), is_mining(false), is_mining_gas(false), is_carrying(false), mining_until(0), last_round_trip(0), last_delivery(0), no_mineral_gas_transfer(false) {}
+	int live_frame = 0;
+	unit*u = nullptr;
+	resource_t*resource = nullptr;
+	bool dead = false;
+	bool is_mining = false;
+	bool is_mining_gas = false;
+	bool is_carrying = false;
+	int mining_until = 0;
+	int last_round_trip = 0;
+	int gather_begin = 0;
+	int last_gather_end = 0;
+	int last_delivery = 0;
+	bool no_mineral_gas_transfer = false;
+	bool round_trip_invalid = false;
+	int last_find_depot = 0;
 };
 
 a_list<gatherer_t> all_gatherers;
@@ -292,16 +292,13 @@ void process(gatherer_t&g) {
 	if (is_mining || is_waiting || (!u->is_carrying_minerals_or_gas && g.resource && units_distance(u,g.resource->u)<=3)) {
 		if (g.last_round_trip) {
 			int rt = current_frame-g.last_round_trip;
-			log("round trip took %d frames\n",rt);
+			if (g.round_trip_invalid) log("round trip (invalid) took %d frames\n", rt);
+			else log("round trip took %d frames\n", rt);
 			g.last_round_trip = 0;
 
 			if (g.resource) {
-				if (g.resource->round_trip_time!=rt) {
-					log(" rt %d -> %d\n",g.resource->round_trip_time,rt);
-					//g.resource->round_trip_time = rt;
-					//g.resource->last_round_trip_time_calc = current_frame;
-				}
-				g.resource->actual_round_trip_times.emplace_back(current_frame,rt);
+				if (g.round_trip_invalid) g.round_trip_invalid = false;
+				else g.resource->actual_round_trip_times.emplace_back(current_frame, rt);
 			}
 		}
 	}
@@ -343,14 +340,15 @@ void process(gatherer_t&g) {
 		}
 	}
 
-	if (is_carrying || u->game_order==BWAPI::Orders::HarvestGas || u->game_order==BWAPI::Orders::MiningMinerals) {
-		if (!u->controller->depot) {
-			if (!resource_depots.empty()) {
-				//u->controller->depot = resource_depots.front();
-				u->controller->depot = get_best_score(resource_depots, [&](unit*du) {
-					return units_pathing_distance(u, du);
-				});
-			}
+	if (current_frame - g.last_find_depot >= 60) {
+		g.last_find_depot = current_frame;
+
+		unit*nearest_depot = get_best_score(resource_depots, [&](unit*du) {
+			return units_pathing_distance(u, du);
+		});
+		if (nearest_depot != u->controller->depot) {
+			u->controller->depot = nearest_depot;
+			g.round_trip_invalid = true;
 		}
 	}
 
