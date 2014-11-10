@@ -60,6 +60,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
+      <SubSystem>Console</SubSystem>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -86,6 +87,7 @@
     <ClInclude Include="src/stats.h" />
     <ClInclude Include="src/units.h" />
     <ClInclude Include="src/unit_controls.h" />
+    <ClInclude Include="src\multitasking_sync.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

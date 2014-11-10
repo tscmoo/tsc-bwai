@@ -173,6 +173,7 @@ namespace square_pathing {
 #include "ranges.h"
 #include "common.h"
 #include "multitasking.h"
+#include "multitasking_sync.h"
 #include "grid.h"
 #include "stats.h"
 #include "render.h"

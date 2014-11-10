@@ -43,6 +43,7 @@ namespace detail {
 		enum {sig_no_signal, sig_term};
 		int raise_signal = sig_no_signal;
 		int sleep_until = 0;
+		int wait_counter = 0;
 		task_id join_task = invalid_task_id;
 		a_vector<task_id> joiners;
 		const char*name = nullptr;
@@ -91,6 +92,7 @@ namespace detail {
 			//log("%d is running\n",id);
 			scheduled_task&t = tasks[id];
 			if (!t.raise_signal) {
+				if (t.wait_counter > 0) continue;
 				if (t.sleep_until && current_frame<t.sleep_until) continue;
 				if (t.join_task!=invalid_task_id) continue;
 			}
@@ -237,6 +239,23 @@ namespace detail {
 		tasks[id].joiners.push_back(get_task_id(current_task));
 		schedule();
 	}
+	void wait() {
+		++current_task->wait_counter;
+		schedule();
+	}
+	bool try_wait() {
+		if (current_task->wait_counter < 0) {
+			++current_task->wait_counter;
+			return true;
+		}
+		return false;
+	}
+	void wake(task_id id) {
+		auto&t = tasks[id];
+		if (--t.wait_counter == 0) {
+			if (t.priority < current_task->priority) schedule();
+		}
+	}
 
 	void terminate_all() {
 		for (task_id id : running_tasks) {
@@ -251,6 +270,10 @@ namespace detail {
 		running_tasks.resize(tasks.size());
 
 	}
+}
+
+task_id current_task_id() {
+	return detail::get_task_id(detail::current_task);
 }
 
 void yield_point() {
@@ -273,6 +296,16 @@ void sleep(int frames) {
 
 void join(task_id id) {
 	detail::join(id);
+}
+
+void wait() {
+	detail::wait();
+}
+bool try_wait() {
+	return detail::try_wait();
+}
+void wake(task_id id) {
+	detail::wake(id);
 }
 
 void run() {
