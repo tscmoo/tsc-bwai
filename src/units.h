@@ -555,6 +555,7 @@ unit*new_unit(BWAPI::Unit game_unit) {
 unit*get_unit(BWAPI::Unit game_unit) {
 	unit*u = (unit*)game_unit->getClientInfo();
 	if (!u) {
+		if (!game_unit->isVisible() || !game_unit->exists()) return nullptr;
 		u = new_unit(game_unit);
 		game_unit->setClientInfo(u);
 	}
