@@ -193,8 +193,8 @@ namespace detail {
 				current_task = t;
 				check_signals();
 				f();
-			} catch (const sig_term&sig) {
-				log("%s: got sig_term : %s\n", current_task->name, sig.what());
+			} catch (const sig_term&) {
+				log("%s: terminated\n", current_task->name);
 			} catch (const std::exception&e) {
 				log("%s: caught exception : %s\n", current_task->name, e.what());
 				std::terminate();
