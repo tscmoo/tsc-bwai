@@ -3,6 +3,12 @@
 struct player_t {
 	BWAPI::Player game_player;
 	bool is_enemy;
+	double minerals_spent;
+	double gas_spent;
+	double minerals_lost;
+	double gas_lost;
+	int resource_depots_seen;
+	int workers_seen;
 };
 
 
@@ -22,6 +28,7 @@ struct unit_type {
 	int race;
 	int tile_width, tile_height;
 	double minerals_cost, gas_cost;
+	double total_minerals_cost, total_gas_cost;
 	int build_time;
 	bool is_building;
 	bool is_addon;
@@ -38,6 +45,7 @@ struct unit_type {
 	bool is_flyer;
 	enum { size_none, size_small, size_medium, size_large };
 	int size;
+	bool is_two_units_in_one_egg;
 };
 
 struct weapon_stats {
@@ -273,6 +281,12 @@ player_t*get_player(BWAPI::Player game_player) {
 		p = &player_container.back();
 		p->game_player = game_player;
 		p->is_enemy = game_player->isEnemy(game->self());
+		p->minerals_spent = 0.0;
+		p->gas_spent = 0.0;
+		p->minerals_lost = 0.0;
+		p->gas_lost = 0.0;
+		p->resource_depots_seen = 0;
+		p->workers_seen = 0;
 	}
 	return p;
 }
@@ -290,6 +304,7 @@ unit_type*get_unit_type(BWAPI::UnitType game_unit_type) {
 	get_unit_type(r,game_unit_type);
 	return r;
 }
+std::tuple<double, double> get_unit_value(unit_type*from, unit_type*to);
 unit_type*new_unit_type(BWAPI::UnitType game_unit_type,unit_type*ut) {
 	ut->game_unit_type = game_unit_type;
 	ut->name = game_unit_type.getName().c_str();
@@ -307,6 +322,7 @@ unit_type*new_unit_type(BWAPI::UnitType game_unit_type,unit_type*ut) {
 	ut->tile_height = game_unit_type.tileHeight();
 	ut->minerals_cost = (double)game_unit_type.mineralPrice();
 	ut->gas_cost = (double)game_unit_type.gasPrice();
+	std::tie(ut->total_minerals_cost, ut->total_gas_cost) = get_unit_value(nullptr, ut);
 	ut->build_time = game_unit_type.buildTime();
 	ut->is_building = game_unit_type.isBuilding();
 	ut->is_addon = game_unit_type.isAddon();
@@ -348,6 +364,7 @@ unit_type*new_unit_type(BWAPI::UnitType game_unit_type,unit_type*ut) {
 	default:
 		xcept("unknown size %s for unit %s", game_unit_type.size().getName(), game_unit_type.getName());
 	}
+	ut->is_two_units_in_one_egg = game_unit_type.isTwoUnitsInOneEgg();
 	return ut;
 }
 unit_type*get_unit_type(unit_type*&rv,BWAPI::UnitType game_unit_type) {
@@ -358,8 +375,7 @@ unit_type*get_unit_type(unit_type*&rv,BWAPI::UnitType game_unit_type) {
 	return new_unit_type(game_unit_type,ut);
 }
 
-void update_unit_value(unit*u, unit_type*from, unit_type*to) {
-	if (from == to) return;
+std::tuple<double, double> get_unit_value(unit_type*from, unit_type*to) {
 	double minerals = 0.0;
 	double gas = 0.0;
 	log("update unit value for %s -> %s\n", from ? from->name : "null", to->name);
@@ -373,8 +389,9 @@ void update_unit_value(unit*u, unit_type*from, unit_type*to) {
 				}
 				if (t == unit_types::larva) break;
 				log(" +> %s - %g %g\n", t->name, t->minerals_cost, t->gas_cost);
-				minerals += t->minerals_cost;
-				gas += t->gas_cost;
+				double mult = t->is_two_units_in_one_egg ? 0.5 : 1.0;
+				minerals += t->minerals_cost * mult;
+				gas += t->gas_cost * mult;
 			}
 		};
 		trace_back();
@@ -382,23 +399,39 @@ void update_unit_value(unit*u, unit_type*from, unit_type*to) {
 			log("maybe canceled?\n");
 			unit_type*prev_from = from;
 			double mult = from->is_building ? 0.75 : 1.0;
-			minerals = -from->minerals_cost*mult;
-			gas = -from->gas_cost*mult;
+			minerals = -from->minerals_cost * mult;
+			gas = -from->gas_cost * mult;
 			from = from->builder_type;
 			trace_back();
 			if (from) from = prev_from;
 		}
 	} else {
+		// TODO: archons, siege tanks, possibly other units?
 		minerals = to->minerals_cost;
 		gas = to->gas_cost;
 	}
+	if (from != nullptr) xcept("unable to trace how %s changed into %s\n", from->name, to->name);
+	log("final cost: %g %g\n", minerals, gas);
+	return std::make_tuple(minerals, gas);
+}
+
+void update_unit_value(unit*u, unit_type*from, unit_type*to) {
+	if (from == to) return;
+	double min, gas;
+	std::tie(min, gas) = get_unit_value(from, to);
 	if (from == nullptr) {
-		log("final cost: %g %g\n", minerals, gas);
-		u->minerals_value += minerals;
-		u->gas_value += gas;
-		return;
+		if (to->is_resource_depot && ++u->owner->resource_depots_seen<=1) {
+			if (to->race == race_zerg) min -= 300;
+			else min -= 400;
+		}
+		if (to->is_worker && ++u->owner->workers_seen <= 4) {
+			min -= 50;
+		}
 	}
-	xcept("unable to trace how %s changed into %s\n", from->name, to->name);
+	u->owner->minerals_spent += min - u->minerals_value;
+	u->owner->gas_spent += gas - u->gas_value;
+	u->minerals_value += min;
+	u->gas_value += gas;
 }
 
 void update_unit_type(unit*u) {
@@ -523,6 +556,7 @@ unit_stats*get_unit_stats(unit_type*type,player_t*player) {
 unit*get_unit(BWAPI::Unit game_unit);
 void update_unit_stuff(unit*u) {
 	auto position = u->game_unit->getPosition();
+	if (!u->game_unit->exists()) xcept("attempt to update inaccessible unit");
 	if (u->game_unit->getID() < 0) xcept("(update) %s->getId() is %d\n", u->type->name, u->game_unit->getID());
 	if (u->visible != u->game_unit->isVisible()) xcept("visible mismatch in unit %s (%d vs %d)", u->type->name, u->visible, u->game_unit->isVisible());
 	if ((size_t)position.x >= (size_t)grid::map_width || (size_t)position.y >= (size_t)grid::map_height) xcept("unit %s is outside map", u->type->name);
@@ -616,7 +650,7 @@ unit*new_unit(BWAPI::Unit game_unit) {
 unit*get_unit(BWAPI::Unit game_unit) {
 	unit*u = (unit*)game_unit->getClientInfo();
 	if (!u) {
-		if ((!game_unit->isVisible() || !game_unit->exists()) && current_frame > 0) return nullptr;
+		if (!game_unit->exists()) return nullptr;
 		u = new_unit(game_unit);
 		game_unit->setClientInfo(u);
 	}
@@ -805,6 +839,8 @@ void update_units_task() {
 				if (u->visible) update_unit_stuff(u);
 				u->visible = false;
 				u->dead = true;
+				u->owner->minerals_lost += u->minerals_value;
+				u->owner->gas_lost += u->gas_value;
 				destroyed_units.push_back(u);
 				break;
 			case event_t::t_renegade:
@@ -855,6 +891,7 @@ void update_units_task() {
 			if (u->gone) {
 				log("%s is no longer gone\n",u->type->name);
 				u->gone = false;
+				events.emplace_back(event_t::t_refresh, u->game_unit);
 			}
 		}
 
@@ -879,6 +916,7 @@ void update_units_task() {
 				if (is_visible_around(u->pos)) {
 					log("%s is gone\n",u->type->name);
 					u->gone = true;
+					events.emplace_back(event_t::t_refresh, u->game_unit);
 				}
 			}
 		}
@@ -919,6 +957,13 @@ void render() {
 // 		game->drawBoxMap(u->building->pos.x, u->building->pos.y, u->building->pos.x + 32, u->building->pos.y + 32, BWAPI::Colors::White);
 // 	}
 
+	render::draw_screen_stacked_text(280, 20, format("actual spent minerals: %d  gas: %d", my_player->game_player->spentMinerals(), my_player->game_player->spentGas()));
+	render::draw_screen_stacked_text(280, 20, format("  calc spent minerals: %g  gas: %g", my_player->minerals_spent, my_player->gas_spent));
+	render::draw_screen_stacked_text(280, 20, format("    op spent minerals: %g  gas: %g", opponent_player->minerals_spent, opponent_player->gas_spent));
+
+	render::draw_screen_stacked_text(480, 20, format("my lost minerals: %g  gas: %g", my_player->minerals_lost, my_player->gas_lost));
+	render::draw_screen_stacked_text(480, 20, format("op lost minerals: %g  gas: %g", opponent_player->minerals_lost, opponent_player->gas_lost));
+
 }
 
 void init() {
@@ -930,22 +975,6 @@ void init() {
 	multitasking::spawn(update_buildings_walk_squares_task,"update buildings walk squares");
 
 	render::add(render);
-
-// 	log("supply depot armor: %d\n", my_player->game_player->armor(BWAPI::UnitTypes::Terran_Supply_Depot));
-// 
-// 	for (auto&v : BWAPI::UnitTypes::allUnitTypes()) {
-// 		//unit_type*ut = get_unit_type(v);
-// 		
-// 		unit*u;
-// 		//log("%s : %s %s\n", v.getName(), v.groundWeapon().damageType().getName(), v.airWeapon().damageType().getName());
-// 		log("%s : %s %s\n", v.getName(), v.groundWeapon().getName(), v.airWeapon().getName());
-// 		log("%s : %d %d\n", v.getName(), v.groundWeapon().damageAmount(), v.airWeapon().damageAmount());
-// 		log("%s : %d %d\n", v.getName(), v.maxGroundHits(), v.maxAirHits());
-// 		if (v.groundWeapon() != BWAPI::WeaponTypes::None && v.maxGroundHits() == 0) log("error\n");
-// 		if (v.airWeapon() != BWAPI::WeaponTypes::None && v.maxAirHits() == 0) log("error\n");
-// 	}
-// 
-// 	xcept("stop");
 
 }
 
