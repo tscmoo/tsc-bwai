@@ -290,6 +290,9 @@ a_string short_type_name(unit_type*type) {
 	if (s.find("Terran ")==0) return s.substr(7);
 	if (s.find("Protoss ")==0) return s.substr(8);
 	if (s.find("Zerg ")==0) return s.substr(5);
+	if (s.find("Terran_") == 0) return s.substr(7);
+	if (s.find("Protoss_") == 0) return s.substr(8);
+	if (s.find("Zerg_") == 0) return s.substr(5);
 
 	return s;
 }

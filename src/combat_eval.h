@@ -68,14 +68,19 @@ namespace combat_eval {
 				for (int i = 0; i < 2; ++i) {
 					team_t&my_team = teams[i];
 					team_t&enemy_team = teams[i ^ 1];
+					double max_width = 32 * 4;
+					double acc_width = 0.0;
 					for (auto&c : my_team.units) {
 						if (c.hp <= 0) continue;
+						//if (acc_width >= max_width) continue;
+						acc_width += c.st->type->width;
 						combatant*target = c.target;
 						if (!target || target->hp <= 0) {
 							target = nullptr;
 							for (auto&ec : enemy_team.units) {
 								if (ec.st->type->is_flyer && !c.st->air_weapon) continue;
 								if (!ec.st->type->is_flyer && !c.st->ground_weapon) continue;
+								if (ec.st->type->is_building) continue;
 								if (ec.hp > 0) {
 									target = &ec;
 									break;

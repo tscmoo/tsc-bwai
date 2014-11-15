@@ -68,7 +68,6 @@
     <ClCompile Include="src/main.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="src/bound_pathing.h" />
     <ClInclude Include="src/build.h" />
     <ClInclude Include="src/buildpred.h" />
     <ClInclude Include="src/build_spot_finder.h" />
@@ -88,7 +87,10 @@
     <ClInclude Include="src/stats.h" />
     <ClInclude Include="src/units.h" />
     <ClInclude Include="src/unit_controls.h" />
+    <ClInclude Include="src\get_upgrades.h" />
     <ClInclude Include="src\multitasking_sync.h" />
+    <ClInclude Include="src\players.h" />
+    <ClInclude Include="src\upgrades.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

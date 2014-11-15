@@ -151,7 +151,7 @@ void update_incomes() {
 			xy resource_top_left = r.u->pos - xy(worker_type->dimension_right() + r.u->type->dimension_left(),worker_type->dimension_down() + r.u->type->dimension_up());
 			xy resource_bottom_right = r.u->pos + xy(worker_type->dimension_left() + r.u->type->dimension_right(),worker_type->dimension_up() + r.u->type->dimension_down());
 			xy n_resource_pos = nearest_spot_in_square(depot_pos,resource_top_left,resource_bottom_right);
-			round_trip_time = frames_to_reach(units::get_unit_stats(worker_type,units::my_player),0.0,(n_depot_pos - n_resource_pos).length()) * 2;
+			round_trip_time = frames_to_reach(units::get_unit_stats(worker_type,players::my_player),0.0,(n_depot_pos - n_resource_pos).length()) * 2;
 			round_trip_time += 15 + 4;
 
 			round_trip_time = (int)(round_trip_time * resource_gathering::global_calculated_modifier);

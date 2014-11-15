@@ -47,11 +47,19 @@ void move(unit_controller*c) {
 
 	if (diag_distance(u->pos - c->go_to) <= 32)  c->last_reached_go_to = current_frame;
 
-	xy move_to = square_pathing::get_move_to(u, c->go_to, c->last_reached_go_to);
+	xy move_to;
+	if (u->type->is_flyer) {
 
-	xy pos = square_pathing::get_pos_in_square(move_to, u->type);
-	//if (pos == xy()) log(" !! move: get_pos_in_square for %s failed\n", u->type->name);
-	if (pos != xy())  move_to = pos;
+		move_to = c->go_to;
+
+	} else {
+
+		move_to = square_pathing::get_move_to(u, c->go_to, c->last_reached_go_to);
+
+		xy pos = square_pathing::get_pos_in_square(move_to, u->type);
+		//if (pos == xy()) log(" !! move: get_pos_in_square for %s failed\n", u->type->name);
+		if (pos != xy())  move_to = pos;
+	}
 	
 	//if (u->game_order != BWAPI::Orders::Move || u->game_unit->getOrderTargetPosition() != BWAPI::Position(move_to.x, move_to.y)) {
 	if (c->last_move_to_pos != move_to || current_frame >= c->last_move_to + 30) {
@@ -164,7 +172,7 @@ void process(a_vector<unit_controller*>&controllers) {
 					}// else log("building, lalala\n");
 				} else if (is_inside && current_frame+latency_frames>=c->wait_until) {
 					//log("build!\n");
-					u->game_unit->build(c->target_type->game_unit_type,BWAPI::TilePosition(build_pos.x / 32, build_pos.y / 32));
+					bwapi_call_build(u->game_unit, c->target_type->game_unit_type, BWAPI::TilePosition(build_pos.x / 32, build_pos.y / 32));
 					c->noorder_until = current_frame + 7;
 				} else {
 					//log("move to %d %d!\n",build_pos.x,build_pos.y);
@@ -189,7 +197,7 @@ void process(a_vector<unit_controller*>&controllers) {
 			if (u->order_target != c->target || u->game_order != BWAPI::Orders::AttackUnit) {
 				if (c->target == nullptr) xcept("attack null unit");
 				if (!u->game_unit->attack(c->target->game_unit)) {
-					xy order_pos(u->game_unit->getOrderTargetPosition().x, u->game_unit->getOrderTargetPosition().y);
+					xy order_pos(((bwapi_pos)u->game_unit->getOrderTargetPosition()).x, ((bwapi_pos)u->game_unit->getOrderTargetPosition()).y);
 					if (u->game_order != BWAPI::Orders::AttackMove || diag_distance(order_pos - c->target->pos) >= 32 * 4) {
 						u->game_unit->attack(BWAPI::Position(c->target->pos.x, c->target->pos.y));
 					}

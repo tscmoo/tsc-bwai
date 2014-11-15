@@ -6,11 +6,11 @@ struct st_base {
 	refcounted_ptr<resource_spots::spot> s;
 	bool verified;
 };
+struct unit_match_info;
 struct st_unit {
 	unit_type*type;
 	int busy_until = 0;
 	bool has_addon = false;
-	bool verified = false;
 	st_unit(unit_type*type) : type(type) {}
 };
 
@@ -19,29 +19,68 @@ struct state {
 	int frame = 0;
 	double minerals = 0, gas = 0;
 	std::array<double, 3> used_supply, max_supply;
-	a_map<unit_type*, a_vector<st_unit>> units;
+	a_unordered_map<unit_type*, a_vector<st_unit>> units;
 	a_multimap<int, unit_type*> production;
 	a_multimap<int, std::tuple<unit_type*, resource_spots::spot*>> produced;
 	struct resource_info_t {
 		double gathered = 0.0;
 		int workers = 0;
-		double start_resources = 0.0;
-		double cur_resources = 0.0;
+		double last_seen_resources;
+		resource_info_t(resource_spots::resource_t*r) : last_seen_resources(r->u->resources) {}
 	};
-	a_map<resource_spots::resource_t*, resource_info_t> resource_info;
+	a_unordered_map<resource_spots::resource_t*, resource_info_t> resource_info;
 	a_vector<st_base> bases;
 	int idle_workers = 0;
 	int army_size = 0;
 };
 
+bool free_worker(state&st, bool minerals) {
+	auto*worst = get_best_score_p(st.resource_info, [&](const std::pair<resource_spots::resource_t*const, state::resource_info_t>*ptr) {
+		auto&v = *ptr;
+		if (v.second.workers == 0) return 0.0;
+		if (v.first->u->type->is_minerals != minerals) return 0.0;
+		int n = (int)v.first->full_income_workers[st.race] - (v.second.workers - 1);
+		double score = 0.0;
+		if (n > 0) score = v.first->income_rate[st.race];
+		else if (n > -1) score = v.first->income_rate[st.race] * v.first->last_worker_mult[st.race];
+		return -score - 1.0;
+	}, 0.0);
+	if (!worst) return false;
+	--worst->second.workers;
+	++st.idle_workers;
+	return true;
+}
+
 st_base&add_base(state&st, resource_spots::spot&s) {
 	st.bases.push_back({ &s, false });
 	for (auto&r : s.resources) {
 		if (r.u->type->is_gas) continue;
-		st.resource_info[&r];
+		st.resource_info.emplace(&r,&r);
 	}
 	return st.bases.back();
 }
+void rm_base(state&st, resource_spots::spot&s) {
+	double resources_lost[2] = { 0, 0 };
+	for (auto&r : s.resources) {
+		auto i = st.resource_info.find(&r);
+		if (i != st.resource_info.end()) {
+			st.idle_workers += i->second.workers;
+			resources_lost[i->first->u->type->is_gas] += i->second.gathered;
+			st.resource_info.erase(i);
+		}
+	}
+	log("rm_base: resources lost: %g %g\n", resources_lost[0], resources_lost[1]);
+	st.minerals -= resources_lost[0];
+	st.gas -= resources_lost[1];
+	for (auto i = st.bases.begin(); i != st.bases.end(); ++i) {
+		if (&*i->s == &s) {
+			st.bases.erase(i);
+			return;
+		}
+	}
+	xcept("rm_base: no such base");
+}
+
 st_unit&add_unit(state&st, unit_type*ut) {
 	auto&vec = st.units[ut];
 	vec.emplace_back(ut);
@@ -56,44 +95,64 @@ st_unit&add_unit_and_supply(state&st, unit_type*ut) {
 	return u;
 }
 
+void rm_unit(state&st, unit_type*ut) {
+	auto&vec = st.units[ut];
+	vec.pop_back();
+	if (ut->is_worker) {
+		if (!st.idle_workers) {
+			if (!free_worker(st, true) && !free_worker(st, false)) xcept("buildpred rm_unit: failed to find worker to remove");
+		}
+		--st.idle_workers;
+	}
+	if (!ut->is_building && !ut->is_worker) --st.army_size;
+}
+void rm_unit_and_supply(state&st, unit_type*ut) {
+	rm_unit(st, ut);
+	if (ut->required_supply) st.used_supply[ut->race] -= ut->required_supply;
+	if (ut->provided_supply) st.max_supply[ut->race] -= ut->provided_supply;
+}
+
 struct build_rule {
 	unit_type*ut;
-	double army_supply_percentage;
+	double army_size_percentage;
 	double weight;
 };
 
 struct ruleset {
 	int end_frame = 0;
 	int bases = 0;
-	a_vector<build_rule> build;
+	//a_vector<build_rule> build;
+	std::function<bool(state&)> func;
 };
 
 unit_type*failed = (unit_type*)1;
 unit_type*timeout = (unit_type*)2;
 
-unit_type* advance(state&st, unit_type*build, int end_frame, bool build_right_now) {
+unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep) {
 
 	if (st.frame >= end_frame) return timeout;
 
 	auto transfer_workers = [&](bool minerals) {
+		int count = 0;
 		while (st.idle_workers != 0) {
 			//log("%d resources\n", st.resource_info.size());
 			auto*best = get_best_score_p(st.resource_info, [&](const std::pair<resource_spots::resource_t*const, state::resource_info_t>*ptr) {
 				auto&v = *ptr;
-				if (v.first->u->type->is_minerals == minerals) {
-					int n = (int)v.first->full_income_workers[st.race] - v.second.workers;
-					double score = 0.0;
-					if (n > 0) score = v.first->income_rate[st.race];
-					else if (n > -1) score = v.first->income_rate[st.race] * v.first->last_worker_mult[st.race];
-					return score;
-				} else return 0.0;
+				if (v.first->u->type->is_minerals != minerals) return 0.0;
+				int n = (int)v.first->full_income_workers[st.race] - v.second.workers;
+				double score = 0.0;
+				if (n > 0) score = v.first->income_rate[st.race];
+				else if (n > -1) score = v.first->income_rate[st.race] * v.first->last_worker_mult[st.race];
+				return score;
 			}, 0.0);
 			if (best) {
 				--st.idle_workers;
 				++best->second.workers;
+				++count;
 				//log("transfer worker yey\n");
 			} else break;
 		}
+		return count;
 	};
 	//if (st.gas < st.minerals) transfer_workers(false);
 	transfer_workers(false);
@@ -122,32 +181,26 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool build_right_no
 		}
 	}
 
+	bool dont_free_workers = false;
 	while (true) {
-		double min_income = 0;
-		double gas_income = 0;
-		for (auto&v : st.resource_info) {
-			auto&r = *v.first;
-			double rate = r.income_rate[st.race];
-			double w = std::min((double)v.second.workers, r.full_income_workers[st.race]);
-			double inc = rate * w;
-			if (v.second.workers > w) inc += rate * r.last_worker_mult[st.race];
-			if (r.u->type->is_gas) gas_income += inc;
-			else min_income += inc;
-		}
+		//min_income *= 0.5;
+		//gas_income *= 0.5;
+		//log("frame %d: min_income %g gas_income %g\n", st.frame, min_income, gas_income);
 
 		if (!st.production.empty()) {
 			auto&v = *st.production.begin();
 			if (v.first <= st.frame) {
 				add_unit(st, v.second);
+				//st.max_supply[v.second->race] += v.second->provided_supply;
 				st.production.erase(st.production.begin());
 				if (v.second->is_addon) {
-					auto*ptr = get_best_score_p(st.units[v.second->builder_type], [&](st_unit*st_u) {
-						if (st_u->busy_until <= current_frame) return 0;
-						return 1;
-					});
-					if (ptr) {
-						ptr->has_addon = true;
-					}
+// 					auto*ptr = get_best_score_p(st.units[v.second->builder_type], [&](st_unit*st_u) {
+// 						if (st_u->busy_until <= current_frame) return 0;
+// 						return 1;
+// 					});
+// 					if (ptr) {
+// 						ptr->has_addon = true;
+// 					}
 				}
 				if (v.second->is_worker) {
 					transfer_workers(false);
@@ -165,35 +218,70 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool build_right_no
 				st.used_supply[t->race] += t->required_supply;
 				st.max_supply[t->race] += t->provided_supply;
 			};
-			bool can_build = true;
-			if (build->minerals_cost) {
-				if (st.minerals < build->minerals_cost) can_build = false;
-			}
-			if (can_build && build->gas_cost) {
-				if (st.gas < build->gas_cost) {
-					bool found = false;
-					for (auto&v : st.bases) {
-						for (auto&r : v.s->resources) {
-							if (!r.u->type->is_gas) continue;
-							if (!st.resource_info.emplace(std::piecewise_construct, std::make_tuple(&r), std::make_tuple()).second) continue;
-							found = true;
-							break;
-						}
-						if (found) break;
-					}
-					if (found) {
-						add_built(unit_types::refinery);
-					} else if (gas_income == 0) return failed;
+			//log("frame %d: min %g gas %g\n", st.frame, st.minerals, st.gas);
+			bool has_enough_minerals = build->minerals_cost == 0 || st.minerals >= build->minerals_cost;
+			bool has_enough_gas = build->gas_cost == 0 || st.gas>=build->gas_cost;
+			if (has_enough_minerals && !has_enough_gas && !dont_free_workers) {
+				dont_free_workers = true;
+				if (free_worker(st, true)) {
+					free_worker(st, true);
+					transfer_workers(false);
+					transfer_workers(true);
+					//log("transfer -> gas\n");
+					continue;
 				}
+			}
+			if (has_enough_gas && !has_enough_minerals && !dont_free_workers) {
+				dont_free_workers = true;
+				if (free_worker(st, false)) {
+					free_worker(st, false);
+					transfer_workers(true);
+					transfer_workers(false);
+					//log("transfer -> min\n");
+					continue;
+				}
+			}
+			if (!has_enough_gas) {
+				bool found = false;
+				for (auto&v : st.bases) {
+					for (auto&r : v.s->resources) {
+						if (!r.u->type->is_gas) continue;
+						if (!st.resource_info.emplace(std::piecewise_construct, std::make_tuple(&r), std::make_tuple(&r)).second) continue;
+						found = true;
+						break;
+					}
+					if (found) break;
+				}
+				//if (found && !nodep) {
+				if (found) {
+					//return unit_types::refinery;
+ 					add_built(unit_types::refinery);
+ 					dont_free_workers = false;
+ 					//log("refinery built\n");
+ 					for (int i = 0; i < 3; ++i) free_worker(st, true);
+ 					transfer_workers(false);
+ 					transfer_workers(true);
+// 					if (no_refinery_depots) return failed;
+ 					return nullptr;
+					continue;
+				}/* else if (gas_income == 0) {
+					for (int i = 0; i < 3; ++i) free_worker(st, true);
+					if (transfer_workers(false) == 0) return failed;
+					transfer_workers(true);
+				}*/
 			}
 			if (build->required_supply) {
-				if (st.used_supply[build->race] + build->required_supply>200) return failed;
+				//if (st.used_supply[build->race] + build->required_supply>200) return failed;
 				if (st.used_supply[build->race] + build->required_supply > st.max_supply[build->race]) {
-					can_build = false;
-					add_built(unit_types::supply_depot);
+					//if (nodep) return failed;
+					//return unit_types::supply_depot;
+ 					add_built(unit_types::supply_depot);
+// 					if (no_refinery_depots) return failed;
+// 					return nullptr;
+					continue;
 				}
 			}
-			if (can_build) {
+			if (has_enough_minerals && has_enough_gas) {
 				st_unit*builder = nullptr;
 				st_unit*builder_without_addon = nullptr;
 				bool builder_exists = false;
@@ -224,12 +312,17 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool build_right_no
 						}
 					}
 					if (!found) {
-						if (!build_right_now) {
-							if (addon_required) return addon_required;
-							return build->builder_type;
+						if (!nodep) {
+// 							if (addon_required) return addon_required;
+// 							//if (addon_required) add_built(addon_required);
+// 							add_built(build->builder_type);
+// 							return nullptr;
+							if (!builder_exists) {
+								if (addon_required) return addon_required;
+								return build->builder_type;
+							}
 						} else {
 							if (!builder_exists) return failed;
-							//return failed;
 						}
 					}
 				} else {
@@ -239,14 +332,30 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool build_right_no
 					st.minerals -= build->minerals_cost;
 					st.gas -= build->gas_cost;
 					st.used_supply[build->race] += build->required_supply;
+					if (build->is_addon) builder->has_addon = true;
 					//st.max_supply[build->race] += build->provided_supply;
+					//log("%s successfully built\n", build->name);
 					return (unit_type*)nullptr;
 				}
 			}
 		}
 		int f = std::min(15, end_frame - st.frame);
-		st.minerals += min_income * f;
-		st.gas += gas_income * f;
+
+		double min_income = 0;
+		double gas_income = 0;
+		for (auto&v : st.resource_info) {
+			auto&r = *v.first;
+			double rate = r.income_rate[st.race];
+			double w = std::min((double)v.second.workers, r.full_income_workers[st.race]);
+			double inc = rate * w;
+			if (v.second.workers > w) inc += rate * r.last_worker_mult[st.race];
+			inc *= f;
+			v.second.gathered += inc;
+			if (r.u->type->is_gas) gas_income += inc;
+			else min_income += inc;
+		}
+		st.minerals += min_income;
+		st.gas += gas_income;
 		st.frame += f;
 
 		if (st.frame >= end_frame) return timeout;
@@ -263,6 +372,7 @@ void run(a_vector<state>&all_states, ruleset rules) {
 	unit_type*worker_type = unit_types::scv;
 
 	auto initial_state = all_states.back();
+	if (initial_state.bases.empty()) return;
 
 	a_vector<refcounted_ptr<resource_spots::spot>> available_bases;
 	for (auto&s : resource_spots::spots) {
@@ -288,136 +398,34 @@ void run(a_vector<state>&all_states, ruleset rules) {
 	unit_type*next_t = nullptr;
 	a_vector<std::tuple<double, build_rule*, int>> sorted_build;
 	//build_rule worker_rule{ unit_types::scv, 1.0, 1.0 };
-	for (size_t i = 0; i < rules.build.size(); ++i) {
-		sorted_build.emplace_back(0.0, &rules.build[i], 0);
-	}
+// 	for (size_t i = 0; i < rules.build.size(); ++i) {
+// 		sorted_build.emplace_back(0.0, &rules.build[i], 0);
+// 	}
 	while (st.frame < rules.end_frame) {
-		//multitasking::yield_point();
+		multitasking::yield_point();
 
-		int highest_delta = 0;
-		for (auto&v : sorted_build) {
-			auto&r = *std::get<1>(v);
-			int count = st.units[r.ut].size();
-			int desired_count = (int)(r.army_supply_percentage*st.army_size);
-			int delta = desired_count - count;
-			std::get<2>(v) = delta;
-			if (delta > highest_delta) highest_delta = delta;
-		}
-		if (highest_delta == 0) highest_delta = 1;
-		for (auto&v : sorted_build) {
-			auto&r = *std::get<1>(v);
-			int delta = std::get<2>(v);
-			double adjusted_weight = r.weight * ((double)delta / (double)highest_delta);
-			std::get<0>(v) = -adjusted_weight;
-		}
-		if (!std::is_sorted(sorted_build.begin(), sorted_build.end())) std::sort(sorted_build.begin(), sorted_build.end());
-
-		int build_worker_frame = -1;
-		bool worker_override = false;
-		if (advance(st, unit_types::scv, rules.end_frame, true)) st = all_states.back();
-		else {
-			if (st.minerals < 10) worker_override = true;
-			build_worker_frame = st.frame;
-			st = all_states.back();
-		}
+		int workers = st.units[unit_types::scv].size();
 
 		int expand_frame = -1;
-		if ((int)st.bases.size() < rules.bases && next_base) {
+		if ((int)st.bases.size() < rules.bases && next_base && workers >= 14) {
 			unit_type*t = unit_types::cc;
 			if (advance(st, t, rules.end_frame, true)) st = all_states.back();
 			else {
-				expand_frame = st.frame;
-				st = all_states.back();
+				auto s = next_base;
+				add_base(st, *s);
+				std::get<1>((--st.produced.end())->second) = s;
+				find_and_erase(available_bases, s);
+
+				next_base = get_next_base();
+
+				all_states.push_back(st);
+				continue;
 			}
 		}
 
-		auto try_build = [&](unit_type*ut) {
-			unit_type*t = ut;
-			while (true) {
-				t = advance(st, t, rules.end_frame, false);
-				if (t) {
-					st = all_states.back();
- 					if (t == failed) return false;
- 					if (t == timeout) return false;
-					continue;
-				}
-				return true;
-			}
-		};
+		if (!rules.func(st)) break;
 
-		double best_score = std::numeric_limits<double>::infinity();
-		state best_st;
-		if (!worker_override && expand_frame == -1) {
-			for (auto&v : sorted_build) {
-				double weight = std::get<0>(v);
-				unit_type*ut = std::get<1>(v)->ut;
-				if (!try_build(ut)) {
-					log("%s failed to build\n", ut->name);
-					st = all_states.back();
-					continue;
-				}
-				double score = st.frame / (weight + 1.0);
-				//log("%s can be built at %d with score %f\n", ut->name, st.frame, score);
-				if (score < best_score) {
-					best_score = score;
-					best_st = std::move(st);
-				}
-				st = all_states.back();
-			}
-		}
-		if (expand_frame != -1 && (expand_frame < build_worker_frame || build_worker_frame == -1)) {
-			unit_type*t = unit_types::cc;
-			if (advance(st, t, rules.end_frame, true)) xcept("unreachable: buildpred failed to build cc");
-			auto s = next_base;
-			add_base(st, *s);
-			std::get<1>((--st.produced.end())->second) = s;
-			find_and_erase(available_bases, s);
-			all_states.push_back(st);
-
-			next_base = get_next_base();
-		} else if (build_worker_frame != -1 && build_worker_frame < best_score) {
-			if (advance(st, unit_types::scv, rules.end_frame, true)) xcept("unreachable: buildpred failed to build worker");
-		} else {
-			if (best_score == std::numeric_limits<double>::infinity()) break;
-			st = std::move(best_st);
-		}
 		all_states.push_back(st);
-
-//		unit_type*t = nullptr;
-
-//		int end_frame = rules.end_frame;
-// 		if (st.units[unit_types::scv].size() < 60) {
-// 			t = unit_types::scv;
-// 			if (advance(st, t, rules.end_frame)) st = all_states.back();
-// 			//else end_frame = std::min(end_frame, st.frame + t->build_time);
-// 		}
-// 
-// 		if (st.used_supply[race] > 12) {
-// 			if ((int)st.bases.size() < rules.bases && !available_bases.empty() && next_base) {
-// 				t = unit_types::cc;
-// 				if (advance(st, t, end_frame)) st = all_states.back();
-// 				else {
-// 					auto s = next_base;
-// 					add_base(st, *s);
-// 					std::get<1>((--st.produced.end())->second) = s;
-// 					find_and_erase(available_bases, s);
-// 					all_states.push_back(st);
-// 
-// 					next_base = get_next_base();
-// 				}
-// 			}
-// 		}
-// 		if (next_t) t = next_t;
-// 		else t = rules.build;
-// 		next_t = advance(st, t, end_frame, false);
-// 		if (next_t == failed) break;
-// 		if (next_t == timeout) continue;
-// 		if (next_t && next_t->is_worker) break;
-// 		if (next_t) {
-// 			st = all_states.back();
-// 			continue;
-// 		}
-// 		all_states.push_back(st);
 	}
 	if (all_states.back().frame < rules.end_frame) {
 		auto st = all_states.back();
@@ -426,7 +434,7 @@ void run(a_vector<state>&all_states, ruleset rules) {
 		}
 		all_states.push_back(std::move(st));
 	}
-	if (all_states.back().frame != rules.end_frame) xcept("all_states.back().frame is %d, expected %d", all_states.back().frame, rules.end_frame);
+	//if (all_states.back().frame != rules.end_frame) xcept("all_states.back().frame is %d, expected %d", all_states.back().frame, rules.end_frame);
 
 }
 
@@ -495,7 +503,9 @@ void add_builds(const state&st) {
 
 struct variant {
 	bool expand;
-	a_vector<build_rule> build;
+	//a_vector<build_rule> build;
+	std::function<bool(state&)> func;
+	double score = 0.0;
 };
 a_vector<variant> variants;
 
@@ -504,203 +514,714 @@ void init_variants() {
 		variant v;
 		v.expand = i == 1;
 
-		v.build.push_back({ unit_types::marine, 1.0, 1.0 });
+		static const auto depbuild_until = [](state&st, const state&prev_st, unit_type*ut, int end_frame) {
+			if (&st == &prev_st) xcept("&st == &prev_st");
+			unit_type*t = ut;
+			while (true) {
+				t = advance(st, t, end_frame, false);
+				if (t) {
+					st = prev_st;
+					if (t == failed) return false;
+					if (t == timeout) return false;
+					continue;
+				}
+				return true;
+			}
+		};
+		static const auto depbuild = [](state&st, const state&prev_st, unit_type*ut) {
+			return depbuild_until(st, prev_st, ut, st.frame + 15 * 60 * 4);
+		};
+		static const auto depbuild_now = [](state&st, const state&prev_st, unit_type*ut) {
+			return depbuild_until(st, prev_st, ut, st.frame + 4);
+		};
+		static const auto build_now = [](state&st, unit_type*ut) {
+			return advance(st, ut, st.frame + 4, true) == nullptr;
+		};
+		static const auto build_nodep = [](state&st, unit_type*ut) {
+			return advance(st, ut, st.frame + 15 * 60 * 4, true) == nullptr;
+		};
+		static const auto could_build_instead = [](state&st, unit_type*ut) {
+			unit_type*lt = (--st.production.end())->second;
+			return (ut->minerals_cost == 0 || st.minerals + lt->minerals_cost >= ut->minerals_cost) && (ut->gas_cost == 0 || st.gas + lt->gas_cost >= ut->gas_cost);
+		};
+		static const auto nodelay_n = [](state&st, unit_type*ut, int n, const std::function<bool(state&)>&func) {
+			auto prev_st = st;
+			if (depbuild(st, prev_st, ut)) {
+				auto imm_st = st;
+				st = prev_st;
+				if (func(st)) {
+					auto del_st = st;
+					if (depbuild(st, del_st, ut)) {
+						if (st.frame <= imm_st.frame + n) {
+							st = std::move(del_st);
+							return true;
+						} else {
+							st = std::move(imm_st);
+							return true;
+						}
+					} else {
+						st = std::move(imm_st);
+						return true;
+					}
+				} else {
+					st = std::move(imm_st);
+					return true;
+				}
+			} else {
+				st = std::move(prev_st);
+				return func(st);
+			}
+		};
+		static const auto nodelay = [](state&st, unit_type*ut, const std::function<bool(state&)>&func) {
+			if (ut->is_worker && st.units[ut].size() >= 70) return func(st);
+			return nodelay_n(st, ut, 0, func);
+		};
+// 		v.func = std::bind(nodelay, std::placeholders::_1, [=](state&st) {
+// 			return nodelay(st, unit_types::barracks, std::bind(depbuild, std::placeholders::_1, unit_types::marine));
+// 		});
+		v.func = [](state&st) {
+			return nodelay(st, unit_types::scv, [](state&st) {
+				return nodelay(st, unit_types::marine, [](state&st) {
+					return depbuild(st, state(st), unit_types::barracks);
+				});
+			});
+		};
+		variants.push_back(v);
+		v.func = [](state&st) {
+			return nodelay(st, unit_types::scv, [](state&st) {
+				return nodelay(st, unit_types::vulture, [](state&st) {
+					return depbuild(st, state(st), unit_types::factory);
+				});
+			});
+		};
+		variants.push_back(v);
+		v.func = [](state&st) {
+			return nodelay(st, unit_types::scv, [](state&st) {
+				if (st.minerals >= 300) {
+					return nodelay(st, unit_types::vulture, [](state&st) {
+						return depbuild(st, state(st), unit_types::factory);
+					});
+				}
+				return nodelay(st, unit_types::siege_tank_tank_mode, [](state&st) {
+					unit_type*t = unit_types::factory;
+					for (auto&v : st.units[t]) {
+						if (!v.has_addon) {
+							t = unit_types::machine_shop;
+							break;
+						}
+					}
+					return nodelay(st, t, [](state&st) {
+						return depbuild(st, state(st), unit_types::vulture);
+					});
+				});
+			});
+		};
+		variants.push_back(v);
+		v.func = [](state&st) {
+			return nodelay(st, unit_types::scv, [](state&st) {
+				return nodelay(st, unit_types::siege_tank_tank_mode, [](state&st) {
+					unit_type*t = unit_types::factory;
+					for (auto&v : st.units[t]) {
+						if (!v.has_addon) {
+							t = unit_types::machine_shop;
+							break;
+						}
+					}
+					return nodelay(st, t, [](state&st) {
+						return depbuild(st, state(st), unit_types::vulture);
+					});
+				});
+			});
+		};
+		variants.push_back(v);
+		v.func = [](state&st) {
+			return nodelay(st, unit_types::scv, [](state&st) {
+				if (st.minerals >= 300) {
+					return nodelay(st, unit_types::vulture, [](state&st) {
+						return depbuild(st, state(st), unit_types::factory);
+					});
+				}
+				unit_type*t = unit_types::siege_tank_tank_mode;
+				if (st.units[t].size() > st.units[unit_types::goliath].size()) t = unit_types::goliath;
+				return nodelay(st, t, [](state&st) {
+					unit_type*t = unit_types::factory;
+					for (auto&v : st.units[t]) {
+						if (!v.has_addon) {
+							t = unit_types::machine_shop;
+							break;
+						}
+					}
+					return nodelay(st, t, [](state&st) {
+						return depbuild(st, state(st), unit_types::vulture);
+					});
+				});
+			});
+		};
+		variants.push_back(v);
+		v.func = [](state&st) {
+			return nodelay(st, unit_types::scv, [](state&st) {
+				if (st.minerals >= 300) {
+					return nodelay(st, unit_types::vulture, [](state&st) {
+						return depbuild(st, state(st), unit_types::factory);
+					});
+				}
+				return nodelay(st, unit_types::goliath, [](state&st) {
+					return nodelay(st, unit_types::factory, [](state&st) {
+						return depbuild(st, state(st), unit_types::vulture);
+					});
+				});
+			});
+		};
+		variants.push_back(v);
+		v.func = [](state&st) {
+			return nodelay(st, unit_types::scv, [](state&st) {
+				return nodelay(st, unit_types::wraith, [](state&st) {
+					return nodelay(st, unit_types::starport, [](state&st) {
+						return depbuild(st, state(st), unit_types::vulture);
+					});
+				});
+			});
+		};
+		variants.push_back(v);
+		v.func = [](state&st) {
+			return nodelay(st, unit_types::scv, [](state&st) {
+				if (st.units[unit_types::goliath].size() < st.units[unit_types::battlecruiser].size() * 4) {
+					return nodelay(st, unit_types::goliath, [](state&st) {
+						return nodelay(st, unit_types::factory, [](state&st) {
+							return depbuild(st, state(st), unit_types::vulture);
+						});
+					});
+				}
+				return nodelay(st, unit_types::battlecruiser, [](state&st) {
+// 					if (st.units[unit_types::starport].size() >= 5) {
+// 						return depbuild(st, state(st), unit_types::vulture);
+// 					}
+					unit_type*t = unit_types::starport;
+					for (auto&v : st.units[t]) {
+						if (!v.has_addon) {
+							t = unit_types::control_tower;
+							break;
+						}
+					}
+					return nodelay(st, t, [](state&st) {
+						return depbuild(st, state(st), unit_types::vulture);
+					});
+				});
+			});
+		};
 		variants.push_back(v);
 	}
 }
 
 a_vector<std::tuple<variant, state>> opponent_states;
-bool is_updating_opponent_states;
+multitasking::mutex opponent_states_mut;
 
-void update_units() {
+struct unit_match_info {
+	unit_type*type = nullptr;
+	double minerals_value = 0.0;
+	double gas_value = 0.0;
+	bool dead = false;
+};
+a_unordered_map<unit*, unit_match_info> umi_map;
+a_unordered_map<unit_type*, size_t> umi_live_count;
 
+void free_up_resources(state&st, double minerals, double gas) {
+	if ((minerals == 0 || st.minerals >= minerals) && (gas == 0 || st.gas >= gas)) return;
+	log(" -- st %p -- free up resources - need %g %g, have %g %g\n", &st, minerals, gas, st.minerals, st.gas);
+	for (auto i = st.produced.rbegin(); i != st.produced.rend() && (st.minerals < minerals || st.gas < gas);) {
+		unit_type*ut = std::get<0>(i->second);
+		auto&vec = st.units[ut];
+		bool rm = false;
+		if (vec.size() > umi_live_count[ut]) {
+			if (minerals && minerals > st.minerals && ut->total_minerals_cost) rm = true;
+			if (gas && gas > st.gas && ut->total_gas_cost) rm = true;
+		}
+		if (rm) {
+			st.minerals += ut->total_minerals_cost;
+			st.gas += ut->total_gas_cost;
+			//if (ut->required_supply) st.used_supply[ut->race] -= ut->required_supply;
+			//if (ut->provided_supply) st.max_supply[ut->race] -= ut->provided_supply;
+			rm_unit_and_supply(st, ut);
+			log(" -- st %p -- %s removed to free up resources\n", &st, ut->name);
+			auto ri = i;
+			st.produced.erase((++ri).base());
+			i = st.produced.rbegin();
+			//vec.pop_back();
+		} else ++i;
+	}
+	log(" -- st %p -- freed up - have %g %g\n", &st, st.minerals, st.gas);
+};
 
+void umi_update(unit*u) {
+	auto umi_add_unit = [&](unit_type*ut, double minerals, double gas, bool always_add) {
+		size_t&live_count = umi_live_count[ut];
+		for (auto&v : opponent_states) {
+			auto&st = std::get<1>(v);
+			auto&vec = st.units[ut];
+			if (always_add) {
+				free_up_resources(st, u->minerals_value, u->gas_value);
+				add_unit_and_supply(st, ut);
+				log(" -- st %p -- %s force added\n", &st, ut->name);
+			} else {
+				if (vec.size() > live_count) {
+					log(" -- st %p -- %s matched\n", &st, ut->name);
+					st.minerals += ut->total_minerals_cost;
+					st.gas += ut->total_gas_cost;
+				} else {
+					free_up_resources(st, u->minerals_value, u->gas_value);
+					add_unit_and_supply(st, ut);
+					log(" -- st %p -- %s added (no match)\n", &st, ut->name);
+				}
+			}
+			st.minerals -= minerals;
+			st.gas -= gas;
+		}
+		++live_count;
+	};
+	auto umi_rm_unit = [&](unit_type*ut, double minerals, double gas) {
+		for (auto&v : opponent_states) {
+			auto&st = std::get<1>(v);
+			log(" -- st %p -- %s removed\n", &st, ut->name);
+			rm_unit_and_supply(st, ut);
+			st.minerals += minerals;
+			st.gas += gas;
+		}
+		--umi_live_count[ut];
+	};
+	auto&umi = umi_map[u];
+	if (umi.dead) {
+		log(" !! umi_update for dead unit (u->dead: %d)", u->dead);
+		return;
+	}
+	//if (umi.dead) xcept("umi_update for dead unit (u->dead: %d)", u->dead);
+	if (u->type != umi.type) {
+		bool is_new = true;
+		if (umi.type) {
+			umi_rm_unit(umi.type, umi.minerals_value, umi.gas_value);
+			is_new = false;
+		}
+		umi.type = u->type;
+		umi.minerals_value = u->minerals_value;
+		umi.gas_value = u->gas_value;
+		umi_add_unit(umi.type, umi.minerals_value, umi.gas_value, !is_new);
+		if (umi.type->is_refinery) {
 
+		}
+	}
+	if (u->dead) {
+		umi_rm_unit(umi.type, 0, 0);
+		umi.dead = true;
+	}
+
+	for (auto&v : opponent_states) {
+		auto&st = std::get<1>(v);
+		log(" -- st %p -- min %g gas %g supply %g/%g\n", &st, st.minerals, st.gas, st.used_supply[st.race], st.max_supply[st.race]);
+
+		for (auto&v : st.units) {
+			unit_type*ut = std::get<0>(v);
+			auto&vec = std::get<1>(v);
+			if (vec.size() < umi_live_count[ut]) xcept("umi_live_count mismatch in state %p for %s - %d vs %d\n", &st, ut->name, vec.size(), umi_live_count[ut]);
+		}
+	}
+	log("umi_update: %s updated -- \n", umi.type->name);
 }
 
-void run_buildpred(const state&my_current_state) {
+a_vector<unit*> umi_update_queue;
+size_t opponent_states_update_count = 0;
 
-	//if (current_frame < 15 * 60) opponent_states.clear();
-	//opponent_states.clear();
+void on_new_unit(unit*u) {
+	log("new unit: %s\n", u->type->name);
+	if (!u->owner->is_enemy) return;
+	umi_update_queue.push_back(u);
+}
+void on_type_change(unit*u, unit_type*old_type) {
+	log("unit type %s changed to %s\n", old_type->name, u->type->name);
+	if (!u->owner->is_enemy) return;
+	umi_update_queue.push_back(u);
+}
+void on_destroy(unit*u) {
+	log("unit %s was destroyed\n", u->type->name);
+	if (!u->owner->is_enemy) return;
+	umi_update_queue.push_back(u);
+}
 
-	auto rules_from_variant = [&](const state&st, variant var, int end_frame) {
-		ruleset rules;
-		rules.end_frame = end_frame;
-		rules.bases = st.bases.size() + (var.expand ? 1 : 0);
-		rules.build = var.build;
-		return rules;
-	};
+a_vector<refcounted_ptr<resource_spots::spot>> starting_spots;
 
-	if (opponent_states.empty()) {
-		for (auto&v : game->getStartLocations()) {
-			xy start_pos(v.x * 32, v.y * 32);
-			auto&bs = grid::get_build_square(start_pos);
-
-			auto*s = get_best_score_p(resource_spots::spots, [&](resource_spots::spot*s) {
-				return diag_distance(start_pos - s->cc_build_pos);
-			});
-			if (s) {
-				for (auto&var : variants) {
-					opponent_states.emplace_back();
-					std::get<0>(opponent_states.back()) = var;
-					state initial_state;
-					initial_state.frame = 0;
-					initial_state.minerals = 50;
-					initial_state.gas = 0;
-					initial_state.used_supply = { 0, 0, 0 };
-					initial_state.max_supply = { 0, 0, 0 };
-					add_base(initial_state, *s);
-					add_unit_and_supply(initial_state, unit_types::cc);
-					add_unit_and_supply(initial_state, unit_types::scv);
-					add_unit_and_supply(initial_state, unit_types::scv);
-					add_unit_and_supply(initial_state, unit_types::scv);
-					add_unit_and_supply(initial_state, unit_types::scv);
-					std::get<1>(opponent_states.back()) = std::move(initial_state);
+void update_opponent_builds() {
+	std::lock_guard<multitasking::mutex> l(opponent_states_mut);
+	if (opponent_states.empty()) return;
+	if (!umi_update_queue.empty()) {
+		static a_vector<unit*> queue;
+		queue.clear();
+		std::swap(queue, umi_update_queue);
+		for (unit*u : queue) {
+			++opponent_states_update_count;
+			umi_update(u);
+		}
+	}
+	for (auto&s : resource_spots::spots) {
+		if (!grid::is_visible(s.cc_build_pos, 4, 3)) continue;
+		bool has_this_base = false;
+		for (unit*e : enemy_buildings) {
+			if (!e->building || !e->type->is_resource_depot) continue;
+			if (diag_distance(e->building->build_pos - s.cc_build_pos) > 32 * 8) continue;
+			has_this_base = true;
+			break;
+		}
+		auto find = [&](state&st, resource_spots::spot&s) {
+			for (auto&v : st.bases) {
+				if (&*v.s == &s) return true;
+			}
+			return false;
+		};
+		for (auto&v : opponent_states) {
+			auto&st = std::get<1>(v);
+			if (has_this_base != find(st, s)) {
+				++opponent_states_update_count;
+				if (has_this_base) {
+					log(" -- st %p - add base %p\n", &st, &s);
+					add_base(st, s).verified = true;
+					for (auto&v : st.bases) {
+						if (!v.verified) {
+							log(" -- st %p - remove unverified base %p\n", &st, &s);
+							rm_base(st, *v.s);
+							break;
+						}
+					}
+				} else {
+					log(" -- st %p - remove base %p\n", &st, &s);
+					rm_base(st, s);
 				}
-				break;
+			}
+		}
+	}
+	for (auto&v : opponent_states) {
+		auto&st = std::get<1>(v);
+		if (!st.bases.empty()) continue;
+		resource_spots::spot*s = nullptr;
+		for (int i = 0; i < 10 && (!s || grid::is_visible(s->cc_build_pos)); ++i) s = starting_spots[rng(starting_spots.size())];
+		if (s) {
+			add_base(st, *s);
+			if (st.minerals < 0) {
+				for (auto&v : st.resource_info) {
+					if (v.first->u->type->is_gas) continue;
+					v.second.gathered = -st.minerals;
+					st.minerals = 0;
+					break;
+				}
 			}
 		}
 	}
 
-	is_updating_opponent_states = true;
 	for (auto&v : opponent_states) {
-		variant&var = std::get<0>(v);
 		auto&st = std::get<1>(v);
-		a_vector<state> all_states;
-		all_states.push_back(st);
-		//run(all_states, rules_from_variant(all_states.back(), var, current_frame + 15 * 600));
-		run(all_states, rules_from_variant(all_states.back(), var, current_frame + 15 * 300));
-		while (all_states.back().frame > current_frame) all_states.pop_back();
-		if (all_states.empty()) xcept("unreachable: all_states.empty()");
-		st = std::move(all_states.back());
-		{
-			log("%f %f %f %f\n", st.minerals, st.gas, st.used_supply[race_terran], st.max_supply[race_terran]);
-			log("opponent state (frame %d)--- \n", st.frame);
-			for (auto&v : st.units) {
+		a_map<resource_spots::spot*, int> count[2];
+		a_map<resource_spots::spot*, double> sum[2];
+		for (auto&v : st.resource_info) {
+			++count[v.first->u->type->is_gas][v.first->s];
+			sum[v.first->u->type->is_gas][v.first->s] += v.second.gathered;
+		}
+		for (auto&v : st.resource_info) {
+			v.second.gathered = sum[v.first->u->type->is_gas][v.first->s] / count[v.first->u->type->is_gas][v.first->s];
+
+			//log(" resource-- %p gathered is %g\n", v.first->u, v.second.gathered);
+		}
+	}
+
+	for (auto&v : opponent_states) {
+		auto&st = std::get<1>(v);
+		double total_adjust[2] = { 0, 0 };
+		for (auto&v : st.resource_info) {
+			double res = v.first->u->resources;
+			if (v.first->u->dead || v.first->u->gone) res = 0.0;
+			if (res == v.second.last_seen_resources) continue;
+			double actual_gathered = v.second.last_seen_resources - res;
+			double adjust = actual_gathered - v.second.gathered;
+			log(" resource-- %p - last_seen_resources is %g, res is %g, gathered is %g, actual_gathered is %g\n", v.first->u, v.second.last_seen_resources, res, v.second.gathered, actual_gathered);
+			v.second.gathered = 0.0;
+			v.second.last_seen_resources = res;
+			total_adjust[v.first->u->type->is_gas] += adjust;
+		}
+		if (total_adjust[0] || total_adjust[1]) {
+			log(" -- adjust resources -- %+g minerals %+g gas\n", total_adjust[0], total_adjust[1]);
+			st.minerals += total_adjust[0];
+			st.gas += total_adjust[1];
+
+			if (st.minerals < 0 || st.gas < 0) {
+				free_up_resources(st, 1, 1);
+			}
+		}
+	}
+	
+}
+
+bool attack_now = false;
+
+void run_buildpred(const state&my_current_state) {
+
+	if (current_frame < 15 * 60 && opponent_states_update_count == 0) opponent_states.clear();
+
+	auto rules_from_variant = [&](const state&st, variant var, int end_frame) {
+		size_t verified_bases = 0;
+		for (auto&v : st.bases) {
+			if (v.verified) ++verified_bases;
+		}
+		ruleset rules;
+		rules.end_frame = end_frame;
+		rules.bases = verified_bases + (var.expand ? 1 : 0);
+		//rules.build = var.build;
+		rules.func = var.func;
+		return rules;
+	};
+
+	starting_spots.clear();
+	for (auto&v : game->getStartLocations()) {
+		bwapi_pos p = v;
+		xy start_pos(p.x * 32, p.y * 32);
+		auto&bs = grid::get_build_square(start_pos);
+		auto*s = get_best_score_p(resource_spots::spots, [&](resource_spots::spot*s) {
+			return diag_distance(start_pos - s->cc_build_pos);
+		});
+		if (s) starting_spots.push_back(s);
+	}
+
+	{
+		auto&st = my_current_state;
+		log("min %g gas %g supply %g/%g  bases %d\n", st.minerals, st.gas, st.used_supply[st.race], st.max_supply[st.race], st.bases.size());
+		log("my current state (frame %d)--- \n", st.frame);
+		for (auto&v : st.units) {
+			if (!v.first || !v.second.size()) continue;
+			log(" %dx%s", v.second.size(), short_type_name(v.first));
+		}
+		log("\n");
+	}
+
+	{
+		std::lock_guard<multitasking::mutex> l(opponent_states_mut);
+		if (opponent_states.empty() && !starting_spots.empty()) {
+			resource_spots::spot*s = nullptr;
+			for (int i = 0; i < 10 && (!s || grid::is_visible(s->cc_build_pos)); ++i) s = starting_spots[rng(starting_spots.size())];
+			for (auto&var : variants) {
+				opponent_states.emplace_back();
+				std::get<0>(opponent_states.back()) = var;
+				state initial_state;
+				initial_state.frame = 0;
+				initial_state.minerals = 50;
+				initial_state.gas = 0;
+				initial_state.used_supply = { 0, 0, 0 };
+				initial_state.max_supply = { 0, 0, 0 };
+				add_base(initial_state, *s);
+				add_unit_and_supply(initial_state, unit_types::cc);
+				add_unit_and_supply(initial_state, unit_types::scv);
+				add_unit_and_supply(initial_state, unit_types::scv);
+				add_unit_and_supply(initial_state, unit_types::scv);
+				add_unit_and_supply(initial_state, unit_types::scv);
+				std::get<1>(opponent_states.back()) = std::move(initial_state);
+			}
+		}
+
+		for (auto&v : opponent_states) {
+			variant&var = std::get<0>(v);
+			auto&st = std::get<1>(v);
+			a_vector<state> all_states;
+			all_states.push_back(st);
+			run(all_states, rules_from_variant(all_states.back(), var, current_frame + 15 * 300));
+			state*closest = &all_states.front();
+			for (auto&v : all_states) {
+				if (v.frame <= current_frame) closest = &v;
+				else break;
+			}
+			st = std::move(*closest);
+			//if (st.frame != current_frame) advance(st, nullptr, current_frame, false, false);
+			{
+				log("min %g gas %g supply %g/%g  bases %d\n", st.minerals, st.gas, st.used_supply[st.race], st.max_supply[st.race], st.bases.size());
+				log("opponent state (frame %d)--- \n", st.frame);
+				for (auto&v : st.units) {
+					if (!v.first || !v.second.size()) continue;
+					log(" %dx%s", v.second.size(), short_type_name(v.first));
+				}
+				log("\n");
+			}
+		}
+	}
+	if (opponent_states.empty()) {
+		log("opponent_states is empty :(\n");
+		return;
+	}
+
+	a_vector<state> all_states;
+	state my_end_state;
+	state op_end_state;
+
+	struct result_t {
+		size_t my_idx;
+		double score;
+		state my_st;
+		state op_st;
+		bool operator<(const result_t&n) {
+			return score > n.score;
+		}
+	};
+	a_vector<result_t> results_ordered, results_unordered;
+
+	a_unordered_set<size_t> invalid_idx;
+
+	auto try_defend = [&](int my_frame_offset, int op_frame_offset) {
+
+		a_vector<state> my_states, op_states;
+		for (auto&var : variants) {
+			all_states.clear();
+			all_states.push_back(my_current_state);
+			int end_frame = current_frame + my_frame_offset;
+			run(all_states, rules_from_variant(all_states.back(), var, end_frame));
+			if (all_states.size() > 1 && all_states.back().frame > end_frame) all_states.pop_back();
+			my_states.push_back(std::move(all_states.back()));
+		}
+		for (auto&v : opponent_states) {
+			all_states.clear();
+			all_states.push_back(std::get<1>(v));
+			int end_frame = current_frame + op_frame_offset;
+			run(all_states, rules_from_variant(all_states.back(), std::get<0>(v), end_frame));
+			if (all_states.size() > 1 && all_states.back().frame > end_frame) all_states.pop_back();
+			op_states.push_back(all_states.back());
+		}
+
+		results_unordered.clear();
+		
+		for (size_t my_idx = 0; my_idx < my_states.size(); ++my_idx) {
+			auto&mys = my_states[my_idx];
+			if (invalid_idx.find(my_idx) != invalid_idx.end()) {
+				results_unordered.push_back({ my_idx, -std::numeric_limits<double>::infinity(), mys, op_states[my_idx] });
+				continue;
+			}
+			
+			double op_best_score = std::numeric_limits<double>::infinity();
+			state*op_best_state = nullptr;
+			for (auto&ops : op_states) {
+				multitasking::yield_point();
+
+				combat_eval::eval eval;
+				for (auto&v : mys.units) {
+					if (!v.first || !v.second.size()) continue;
+					if (v.first->is_building) continue;
+					if (v.first->is_worker) continue;
+					for (size_t i = 0; i < v.second.size(); ++i) eval.add_unit(units::get_unit_stats(v.first, players::opponent_player), 0);
+				}
+				for (auto&v : ops.units) {
+					if (!v.first || !v.second.size()) continue;
+					if (v.first->is_building) continue;
+					if (v.first->is_worker) continue;
+					for (size_t i = 0; i < v.second.size(); ++i) eval.add_unit(units::get_unit_stats(v.first, players::my_player), 1);
+				}
+				eval.run();
+
+				double my_supply_left = eval.teams[0].end_supply;
+				double op_supply_left = eval.teams[1].end_supply;
+
+				double score = my_supply_left - op_supply_left;
+				if (score < op_best_score) {
+					op_best_score = score;
+					op_best_state = &ops;
+				}
+			}
+			results_unordered.push_back({ my_idx, op_best_score, mys, *op_best_state });
+		}
+		results_ordered = results_unordered;
+		std::sort(results_ordered.begin(), results_ordered.end());
+
+		return results_ordered.front().score > 0;
+	};
+
+	try_defend(15 * 60 * 20, 15 * 60 * 20);
+	auto preference = results_ordered;
+	{
+		log(" -- preference --\n");
+		for (auto&v : preference) {
+			auto&my_state = v.my_st;
+			log("-- idx %d - score %g\n", v.my_idx, v.score);
+			log("-- --- frame %d  min %g gas %g supply %g/%g bases %d\n", my_state.frame, my_state.minerals, my_state.gas, my_state.used_supply[my_state.race], my_state.max_supply[my_state.race], my_state.bases.size());
+			for (auto&v : my_state.units) {
+				if (!v.first || !v.second.size()) continue;
+				log(" %dx%s", v.second.size(), short_type_name(v.first));
+			}
+			log("\n");
+
+			if (v.score <= 0) invalid_idx.insert(v.my_idx);
+		}
+	}
+	attack_now = false;
+	bool can_expand = my_current_state.bases.size() == 1;
+	if (try_defend(0, 15 * 60 * 0)) {
+		log("0 minute attack ok\n");
+		attack_now = true;
+		can_expand = true;
+	} else {
+		if (try_defend(15 * 60 * 4, 15 * 60 * 4)) {
+			log("4 minute engagement ok\n");
+			can_expand = true;
+		} else {
+			if (try_defend(15 * 60 * 4, 0)) {
+				log("4 minute defence ok\n");
+			} else {
+				log("I'm fucked :(\n");
+			}
+		}
+	}
+	{
+		log(" -- results ordered --\n");
+		for (auto&v : results_ordered) {
+			auto&my_state = v.my_st;
+			log("-- idx %d - score %g\n", v.my_idx, v.score);
+			log("-- --- frame %d  min %g gas %g supply %g/%g bases %d\n", my_state.frame, my_state.minerals, my_state.gas, my_state.used_supply[my_state.race], my_state.max_supply[my_state.race], my_state.bases.size());
+			for (auto&v : my_state.units) {
+				if (!v.first || !v.second.size()) continue;
 				log(" %dx%s", v.second.size(), short_type_name(v.first));
 			}
 			log("\n");
 		}
 	}
-	is_updating_opponent_states = false;
-
-	a_vector<a_vector<state>> my_snapshots;
-	a_vector<a_vector<state>> opponent_snapshots;
-	auto save_snapshots = [&](a_vector<state>&dst, a_vector<state>&all_states, int add_frames) {
-		int last_frame = std::numeric_limits<int>::min();
-		for (size_t i = 0; i <= all_states.size(); ++i) {
-			auto&st = i < all_states.size() ? all_states[i] : all_states.back();
-			int frame = i < all_states.size() ? st.frame : std::numeric_limits<int>::max();
-			auto save = [&](int at) {
-				at += current_frame;
-				at -= add_frames;
-				if (frame >= at && last_frame < at) dst.push_back(st);
-			};
-			save(15 * 30);
-			save(15 * 60 * 2);
-			save(15 * 60 * 5);
-			save(15 * 60 * 10);
-			last_frame = frame;
-		}
-		log("dst.size() is %d\n", dst.size());
-	};
-	for (auto&var : variants) {
-		a_vector<state> all_states;
-		all_states.push_back(my_current_state);
-		run(all_states, rules_from_variant(all_states.back(), var, current_frame + 15 * 600));
-		my_snapshots.emplace_back();
-		save_snapshots(my_snapshots.back(), all_states, 0);
-	}
-	for (auto&v : opponent_states) {
-		a_vector<state> all_states;
-		all_states.push_back(std::get<1>(v));
-		//auto&all_states = std::get<1>(v);
-		run(all_states, rules_from_variant(all_states.back(), std::get<0>(v), current_frame + 15 * 600));
-		opponent_snapshots.emplace_back();
-		save_snapshots(opponent_snapshots.back(), all_states, 15 * 60);
-	}
-
-	std::tuple<double, int, double> my_best_score{ -std::numeric_limits<double>::infinity(), 0, 0 };
-	state*my_best_state = nullptr;
-	for (auto&mys : my_snapshots) {
-		std::tuple<double, int, double> op_best_score{ std::numeric_limits<double>::infinity(), 0, 0 };
-		for (auto&ops : opponent_snapshots) {
-			bool op_won = false;
-			double op_damage_bonus = 0.0;
-			int my_bases = 0;
-			if (mys.size() != ops.size()) xcept("huh");
-			int count = 0;
-			log(" -- eval -- \n");
-			for (size_t i = 0; i < ops.size(); ++i) {
-				multitasking::yield_point();
-
-				auto&my_state = mys[i]; 
-				auto&op_state = ops[i];
-				log("my frame: %d  op frame: %d\n", my_state.frame, op_state.frame);
-				combat_eval::eval eval;
-				log(" %d -- \n", i);
-				log("my units:");
-				for (auto&v : my_state.units) {
-					log(" %dx%s", v.second.size(), short_type_name(v.first));
-					if (v.first->is_building) continue;
-					if (v.first->is_worker) continue;
-					for (size_t i = 0; i < v.second.size(); ++i) eval.add_unit(units::get_unit_stats(v.first, units::opponent_player), 0);
-				}
-				log("\n");
-				log("op units:");
-				for (auto&v : op_state.units) {
-					log(" %dx%s", v.second.size(), short_type_name(v.first));
-					if (v.first->is_building) continue;
-					if (v.first->is_worker) continue;
-					for (size_t i = 0; i < v.second.size(); ++i) eval.add_unit(units::get_unit_stats(v.first, units::my_player), 1);
-				}
-				log("\n");
-				eval.run();
-
-				log("result: supply %g %g  damage %g %g\n", eval.teams[0].end_supply, eval.teams[1].end_supply, eval.teams[0].damage_dealt, eval.teams[1].damage_dealt);
-
-				op_won = eval.teams[1].end_supply > eval.teams[0].end_supply && eval.teams[1].start_supply>15;
-				op_damage_bonus = eval.teams[1].damage_dealt - eval.teams[0].damage_dealt;
-				my_bases = my_state.bases.size();
-
-				if (op_won) break;
-				++count;
-			}
-			//auto score = std::make_tuple(op_won ? 0.0 : 1.0, -op_damage_bonus);
-			auto score = std::make_tuple(count, my_bases, -op_damage_bonus);
-			log("score: %d %d %f\n", std::get<0>(score), std::get<1>(score), std::get<2>(score));
-			if (score < op_best_score) {
-				op_best_score = score;
-			}
-		}
-		log(" - score %f %d %f\n", std::get<0>(op_best_score), std::get<1>(op_best_score), std::get<2>(op_best_score));
-		if (op_best_score > my_best_score) {
-			my_best_score = op_best_score;
-			my_best_state = &mys.back();
+	bool found = false;
+	for (auto&v : preference) {
+		if (results_unordered[v.my_idx].my_st.bases.size() > my_current_state.bases.size() && !can_expand) continue;
+		if (results_unordered[v.my_idx].score > 0) {
+			my_end_state = v.my_st;
+			op_end_state = v.op_st;
+			found = true;
+			break;
 		}
 	}
-	if (my_best_state) {
-		log("best score %f %d %f\n", std::get<0>(my_best_score), std::get<1>(my_best_score), std::get<2>(my_best_score));
-		log("best state --- \n");
-		for (auto&v : my_best_state->units) {
+	if (!found) {
+		for (auto&v : preference) {
+			if (v.my_st.bases.size() > my_current_state.bases.size()) continue;
+			my_end_state = v.my_st;
+			op_end_state = v.op_st;
+			break;
+		}
+	}
+
+	{
+		auto&my_state = my_end_state;
+		log("-- my state --- frame %d  min %g gas %g supply %g/%g bases %d\n", my_state.frame, my_state.minerals, my_state.gas, my_state.used_supply[my_state.race], my_state.max_supply[my_state.race], my_state.bases.size());
+		for (auto&v : my_state.units) {
+			if (!v.first || !v.second.size()) continue;
 			log(" %dx%s", v.second.size(), short_type_name(v.first));
 		}
 		log("\n");
-		add_builds(*my_best_state);
+		auto&op_state = op_end_state;
+		log("-- op best build --- frame %d  min %g gas %g supply %g/%g bases %d\n", op_state.frame, op_state.minerals, op_state.gas, op_state.used_supply[op_state.race], op_state.max_supply[op_state.race], op_state.bases.size());
+		for (auto&v : op_state.units) {
+			if (!v.first || !v.second.size()) continue;
+			log(" %dx%s", v.second.size(), short_type_name(v.first));
+		}
+		log("\n");
 	}
 
-// 	a_vector<a_vector<state>> my_builds;
-// 	a_vector<a_vector<state>> opponent_builds;
-// 	ruleset rules;
-// 	rules.end_frame = current_frame + 15 * 240;
-// 	rules.bases = 2;
-// 	auto hist = run(initial_state, rules);
-// 
-// 	add_builds(hist.back());
+	add_builds(my_end_state);
 
 }
 
 void buildpred_task() {
+
 	while (true) {
 
 		state initial_state;
@@ -713,12 +1234,13 @@ void buildpred_task() {
 		for (auto&s : resource_spots::spots) {
 			for (unit*u : my_resource_depots) {
 				if (diag_distance(u->building->build_pos - s.cc_build_pos) <= 32 * 4) {
-					add_base(initial_state, s);
+					add_base(initial_state, s).verified = true;
 					break;
 				}
 			}
 		}
 		for (unit*u : my_units) {
+			//if (!u->is_completed) continue;
 			if (u->type->is_addon) continue;
 			auto&st_u = add_unit(initial_state, u->type);
 			if (u->addon) st_u.has_addon = true;
@@ -728,7 +1250,7 @@ void buildpred_task() {
 			if (u->type->is_gas) {
 				for (auto&r : resource_spots::live_resources) {
 					if (r.u == u) {
-						initial_state.resource_info[&r];
+						initial_state.resource_info.emplace(&r,&r);
 						break;
 					}
 				}
@@ -740,7 +1262,7 @@ void buildpred_task() {
 					return unit_pathing_distance(unit_types::scv, u->pos, s->cc_build_pos);
 				}), identity<double>());
 			});
-			if (s) add_base(initial_state, *s);
+			if (s) add_base(initial_state, *s).verified = true;
 		}
 		log("%d bases, %d units\n", initial_state.bases.size(), initial_state.units.size());
 		if (!initial_state.bases.empty()) {
@@ -748,17 +1270,41 @@ void buildpred_task() {
 		}
 
 		multitasking::sleep(15);
+
+		static int count = 0;
+		if (++count >= 4) multitasking::sleep(15 * 30);
 	}
 
 }
 
-void update_units_task() {
+void update_opponent_builds_task() {
 	while (true) {
-		multitasking::sleep(1);
+		multitasking::sleep(15);
 
-		update_units();
+		update_opponent_builds();
 
 	}
+}
+
+void render() {
+
+	for (auto&s : resource_spots::spots) {
+		int count = 0;
+	
+		for (auto&v : opponent_states) {
+			state&st = std::get<1>(v);
+			auto find = [&]() {
+				for (auto&v : st.bases) if (&*v.s == &s) return true;
+				return false;
+			};
+			if (find()) {
+				game->drawCircleMap(s.pos.x, s.pos.y, 32 * 8 + 8 * count, BWAPI::Colors::Red);
+				++count;
+			}
+
+		}
+	}
+
 }
 
 void init() {
@@ -766,7 +1312,13 @@ void init() {
 	init_variants();
 
 	multitasking::spawn(buildpred_task, "buildpred");
-	multitasking::spawn(update_units_task, "buildpred update units");
+	multitasking::spawn(update_opponent_builds_task, "update opponent builds");
+
+	units::on_new_unit_callbacks.push_back(on_new_unit);
+	units::on_type_change_callbacks.push_back(on_type_change);
+	units::on_destroy_callbacks.push_back(on_destroy);
+
+	render::add(render);
 
 }
 

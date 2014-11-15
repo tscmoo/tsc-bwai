@@ -150,6 +150,36 @@ const double PI = 3.1415926535897932384626433;
 
 BWAPI::Game*game;
 
+constexpr bool is_bwapi_4 = std::is_pointer<BWAPI::Player>::value;
+
+using BWAPI_Player = std::conditional<is_bwapi_4, BWAPI::Player, BWAPI::Player*>::type;
+using BWAPI_Unit = std::conditional<is_bwapi_4, BWAPI::Unit, BWAPI::Unit*>::type;
+
+struct bwapi_pos {
+	int x, y;
+	bwapi_pos(BWAPI::Position pos) : bwapi_pos((bwapi_pos&)pos) {}
+	bwapi_pos(BWAPI::TilePosition pos) : bwapi_pos((bwapi_pos&)pos) {}
+};
+
+template<bool b = is_bwapi_4, typename std::enable_if<b>::type* = 0>
+bool bwapi_call_build(BWAPI_Unit unit, BWAPI::UnitType type, BWAPI::TilePosition pos) {
+	return unit->build(type, pos);
+}
+template<bool b = is_bwapi_4, typename std::enable_if<!b>::type* = 0>
+bool bwapi_call_build(BWAPI_Unit unit, BWAPI::UnitType type, BWAPI::TilePosition pos) {
+	return unit->build(pos, type);
+}
+
+template<bool b = is_bwapi_4, typename std::enable_if<b>::type* = 0>
+int bwapi_tech_type_energy_cost(BWAPI::TechType type) {
+	return type.energyCost();
+}
+template<bool b = is_bwapi_4, typename std::enable_if<!b>::type* = 0>
+int bwapi_tech_type_energy_cost(BWAPI::TechType type) {
+	return type.energyUsed();
+}
+
+
 int latency_frames;
 
 
@@ -161,6 +191,8 @@ double predicted_minerals_per_frame, predicted_gas_per_frame;
 
 enum {race_unknown = -1, race_terran = 0, race_protoss = 1, race_zerg = 2};
 
+struct player_t;
+struct upgrade_type;
 struct unit;
 struct unit_stats;
 struct unit_type;
@@ -177,6 +209,8 @@ namespace square_pathing {
 #include "grid.h"
 #include "stats.h"
 #include "render.h"
+#include "players.h"
+#include "upgrades.h"
 #include "units.h"
 #include "square_pathing.h"
 #include "unit_controls.h"
@@ -190,12 +224,15 @@ namespace square_pathing {
 #include "buildpred.h"
 #include "combat.h"
 #include "scouting.h"
+#include "get_upgrades.h"
 
 void init() {
 
 	multitasking::init();
 	grid::init();
 	stats::init();
+	players::init();
+	upgrades::init();
 	units::init();
 	square_pathing::init();
 	unit_controls::init();
@@ -208,6 +245,7 @@ void init() {
 	buildpred::init();
 	combat::init();
 	scouting::init();
+	get_upgrades::init();
 
 }
 
@@ -276,43 +314,53 @@ struct module : BWAPI::AIModule {
 	}
 
 	
-	virtual void onUnitShow(BWAPI::Unit gu) override {
+	virtual void onUnitShow(BWAPI_Unit gu) override {
 		units::on_unit_show(gu);
 	};
 
-	virtual void onUnitHide(BWAPI::Unit gu) override {
+	virtual void onUnitHide(BWAPI_Unit gu) override {
 		units::on_unit_hide(gu);
 	};
 
-	virtual void onUnitCreate(BWAPI::Unit gu) override {
+	virtual void onUnitCreate(BWAPI_Unit gu) override {
 		units::on_unit_create(gu);
 	}
 
-	virtual void onUnitMorph(BWAPI::Unit gu) override {
+	virtual void onUnitMorph(BWAPI_Unit gu) override {
 		units::on_unit_morph(gu);
 	}
 
-	virtual void onUnitDestroy(BWAPI::Unit gu) override {
+	virtual void onUnitDestroy(BWAPI_Unit gu) override {
 		units::on_unit_destroy(gu);
 	}
 
-	virtual void onUnitRenegade(BWAPI::Unit gu) override {
+	virtual void onUnitRenegade(BWAPI_Unit gu) override {
 		units::on_unit_renegade(gu);
 	}
 
-	virtual void onUnitComplete(BWAPI::Unit gu) override {
+	virtual void onUnitComplete(BWAPI_Unit gu) override {
 		units::on_unit_complete(gu);
 	}
 
 };
 
+
+template<bool b = is_bwapi_4, typename std::enable_if<b>::type* = 0>
+void bwapi_connect() {
+	while (!BWAPI::BWAPIClient.connect()) std::this_thread::sleep_for(std::chrono::seconds(1));
+	game = BWAPI::BroodwarPtr;
+}
+template<bool b = is_bwapi_4, typename std::enable_if<!b>::type* = 0>
+void bwapi_connect() {
+	BWAPI::BWAPI_init();
+	while (!BWAPI::BWAPIClient.connect()) std::this_thread::sleep_for(std::chrono::seconds(1));
+	game = BWAPI::Broodwar;
+}
+
 int main() {
 
-	//BWAPI::BWAPI_init();
 	log("connecting\n");
-	while (!BWAPI::BWAPIClient.connect()) std::this_thread::sleep_for(std::chrono::seconds(1));
-
-	game = BWAPI::BroodwarPtr;
+	bwapi_connect();
 
 	log("waiting for game start\n");
 	while (BWAPI::BWAPIClient.isConnected() && !game->isInGame()) {

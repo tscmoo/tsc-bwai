@@ -37,10 +37,10 @@ struct path_node {
 struct pathing_map {
 	bool initialized = false;
 	std::array<int, 4> dimensions;
-	tsc::dynamic_bitset walkable; // 8x8 grid
+	tsc::dynamic_bitset walkable;
 	
 	a_vector<path_node> path_nodes;
-	a_vector<path_node*> nearest_path_node; // 16x16 grid
+	a_vector<path_node*> nearest_path_node;
 	bool path_nodes_requires_update = false;
 	bool update_path_nodes = false;
 
@@ -707,7 +707,7 @@ void render() {
 	}
 
 	{
-		auto mouse_pos = game->getScreenPosition() + game->getMousePosition();
+		bwapi_pos mouse_pos = game->getScreenPosition() + game->getMousePosition();
 		if ((size_t)mouse_pos.x < (size_t)grid::map_width && (size_t)mouse_pos.y < (size_t)grid::map_height) {
 			path_node*nn = test.nearest_path_node[nearest_path_node_index(xy(mouse_pos.x, mouse_pos.y))];
 			if (nn) game->drawLineMap(mouse_pos.x, mouse_pos.y, nn->pos.x, nn->pos.y, BWAPI::Colors::Green);
@@ -743,7 +743,7 @@ void render() {
 		}
 
 	{
-		auto mouse_pos = game->getScreenPosition() + game->getMousePosition();
+		bwapi_pos mouse_pos = game->getScreenPosition() + game->getMousePosition();
 		if ((size_t)mouse_pos.x < (size_t)grid::map_width && (size_t)mouse_pos.y < (size_t)grid::map_height) {
 			xy to;
 			for (unit*u : my_units) {

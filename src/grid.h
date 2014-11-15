@@ -99,6 +99,14 @@ build_square&get_build_square(xy pos) {
 bool is_visible(xy pos) {
 	return get_build_square(pos).visible;
 }
+bool is_visible(xy pos, int tile_width, int tile_height) {
+	for (int y = 0; y < tile_height; ++y) {
+		for (int x = 0; x < tile_width; ++x) {
+			if (!is_visible(pos + xy(x * 32, y * 32))) return false;
+		}
+	}
+	return true;
+}
 template<int=0>
 void reserve_build_squares(xy pos,unit_type*ut,bool reserve=true) {
 	int w = ut->tile_width;

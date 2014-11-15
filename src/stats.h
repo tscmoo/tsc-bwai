@@ -9,7 +9,7 @@ void stats_task() {
 	a_deque<int> avg_res_hist[3];
 
 	while (true) {
-		BWAPI::Player p = game->self();
+		BWAPI_Player p = game->self();
 
 		current_minerals = (double)p->minerals();
 		current_gas = (double)p->gas();

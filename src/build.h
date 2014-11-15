@@ -5,6 +5,7 @@ namespace build {
 
 struct build_type {
 	unit_type*unit;
+	upgrade_type*upgrade;
 	unit_type*builder;
 	double minerals_cost;
 	double gas_cost;
@@ -36,16 +37,18 @@ struct build_task: refcounted {
 	bool needs_pylon, needs_creep;
 	double supply_req;
 	void*flag;
+	int upgrade_done_frame;
 };
 
 a_list<build_type> build_type_container;
-a_map<unit_type*,build_type*> build_type_map_unit;
+a_unordered_map<unit_type*,build_type*> build_type_map_unit;
 build_type*get_build_type(unit_type*unit) {
 	build_type*&r = build_type_map_unit[unit];
 	if (r) return r;
 	build_type_container.emplace_back();
 	r = &build_type_container.back();
 	r->unit = unit;
+	r->upgrade = nullptr;
 	r->builder = unit->builder_type;
 	r->minerals_cost = unit->minerals_cost;
 	r->gas_cost = unit->gas_cost;
@@ -54,6 +57,24 @@ build_type*get_build_type(unit_type*unit) {
 		r->prerequisites.push_back(get_build_type(pt));
 	}
 	r->name = unit->name;
+	return r;
+}
+a_unordered_map<upgrade_type*, build_type*> build_type_map_upgrade;
+build_type*get_build_type(upgrade_type*upgrade) {
+	build_type*&r = build_type_map_upgrade[upgrade];
+	if (r) return r;
+	build_type_container.emplace_back();
+	r = &build_type_container.back();
+	r->unit = nullptr;
+	r->upgrade = upgrade;
+	r->builder = upgrade->builder_type;
+	r->minerals_cost = upgrade->minerals_cost;
+	r->gas_cost = upgrade->gas_cost;
+	r->build_time = upgrade->build_time;
+	for (unit_type*pt : upgrade->required_units) {
+		r->prerequisites.push_back(get_build_type(pt));
+	}
+	r->name = upgrade->name;
 	return r;
 }
 
@@ -205,6 +226,7 @@ build_task*add_build_task(double priority,build_type*type) {
 	t->needs_creep = false;
 	t->supply_req = 0;
 	t->flag = nullptr;
+	t->upgrade_done_frame = 0;
 	build_tasks_for_type[type].push_back(*t);
 	build_order.push_back(*t);
 	priority_groups[priority].push_back(*t);
@@ -212,6 +234,24 @@ build_task*add_build_task(double priority,build_type*type) {
 }
 build_task*add_build_task(double priority,unit_type*type) {
 	return add_build_task(priority,get_build_type(type));
+}
+build_task*add_build_task(double priority, upgrade_type*type) {
+	return add_build_task(priority, get_build_type(type));
+}
+
+void add_build_sum(double priority, unit_type*type, int count) {
+	int sum = 0;
+	for (build::build_task&b : build::build_tasks) {
+		if (b.type->unit == type) ++sum;
+	}
+	for (; sum < count; ++sum) add_build_task(priority, type);
+}
+void add_build_sum(double priority, upgrade_type*type, int count) {
+	int sum = 0;
+	for (build::build_task&b : build::build_tasks) {
+		if (b.type->upgrade == type) ++sum;
+	}
+	for (; sum < count; ++sum) add_build_task(priority, type);
 }
 
 void cancel_build_task(build_task*t) {
@@ -318,6 +358,7 @@ void generate_build_order_task() {
 					if (b.dead) continue;
 					if (b.build_frame) continue;
 					if (b.built_unit) continue;
+					if (b.upgrade_done_frame) continue;
 					void*builder_prereq = nullptr;
 					int latest_prereq = 0;
 					for (auto*p : b.prerequisites) {
@@ -757,11 +798,51 @@ void execute_build(build_task&b) {
 		}
 
 	}
+
+	auto wait_for_building = [&](unit*builder) {
+		bool wait = false;
+		unit_building*building = builder->building;
+		if (current_frame - building->building_addon_frame <= 15) wait = true;
+		if (building->is_lifted) {
+			wait = true;
+			if (current_frame - building->building_addon_frame >= 30) {
+				auto pred = [&](grid::build_square&bs) {
+					return build_full_check(bs, builder->type);
+				};
+				xy pos = b.land_pos;
+				if (pos == xy() || !pred(grid::get_build_square(pos))) {
+					if (pred(grid::get_build_square(building->build_pos))) pos = building->build_pos;
+					else {
+						std::array<xy, 1> starts;
+						starts[0] = building->last_registered_pos;
+						pos = build_spot_finder::find_best(starts, 32, [&](grid::build_square&bs) {
+							return pred(bs);
+						}, [&](xy pos) {
+							return diag_distance(building->build_pos - pos);
+						});
+					}
+					b.land_pos = pos;
+				}
+				if (pos != xy()) {
+					xy move_to = pos + xy(builder->type->tile_width * 16, builder->type->tile_height * 16);
+					if (diag_distance(move_to - builder->pos) >= 64) {
+						builder->game_unit->move(BWAPI::Position(move_to.x, move_to.y));
+						builder->controller->noorder_until = current_frame + 15;
+					} else {
+						builder->game_unit->land(BWAPI::TilePosition(pos.x / 32, pos.y / 32));
+						builder->controller->noorder_until = current_frame + 15;
+					}
+				}
+			}
+		} else b.land_pos = xy();
+		return wait;
+	};
+
 	if (!b.type->builder->is_worker && (!b.builder || current_frame>=b.builder->controller->noorder_until)) {
 
 		if (!b.built_unit && b.type->unit) {
 			unit*builder = b.builder;
-			if (b.build_frame-current_frame<=latency_frames) {
+			if (b.build_frame - current_frame <= 15 * 30) {
 				unit_type*requires_addon = nullptr;
 				for (unit_type*prereq : b.type->unit->required_units) {
 					if (prereq->is_addon && prereq->builder_type == b.type->unit->builder_type) {
@@ -775,6 +856,9 @@ void execute_build(build_task&b) {
 					builder = get_best_score(my_units_of_type[b.type->unit->builder_type],[&](unit*u) {
 						if (requires_addon && (!u->addon || u->addon->type != requires_addon)) return std::numeric_limits<double>::infinity();
 						if (b.type->unit->is_addon && u->addon) return std::numeric_limits<double>::infinity();
+						if (b.type->unit->is_addon && u->type == unit_types::cc) {
+							//if (!u->game_unit->canBuildAddon(b.type->unit->game_unit_type)) return std::numeric_limits<double>::infinity();
+						}
 						return (double)u->remaining_whatever_time;
 					},std::numeric_limits<double>::infinity());
 				}
@@ -804,79 +888,95 @@ void execute_build(build_task&b) {
 			//if (builder && !b.built_unit && !b.builder) {
 			if (builder && !b.built_unit) {
 				if (b.type->unit && !b.type->unit->is_building) {
-					//if (builder->remaining_train_time<=latency_frames) {
-					if (builder->remaining_whatever_time <= latency_frames) {
-						if (builder->controller->noorder_until<=current_frame && builder->game_unit->train(b.type->unit->game_unit_type)) {
-							log("train hurray\n");
-							builder->controller->noorder_until = current_frame + latency_frames + 4;
-						} else {
-							log("train failed\n");
-							builder = nullptr;
+					bool wait = false;
+					if (builder->building) wait = wait_for_building(builder);
+					if (!wait) {
+						if (builder->remaining_whatever_time <= latency_frames) {
+							if (current_frame + latency_frames >= b.build_frame) {
+								if (builder->controller->noorder_until <= current_frame && builder->game_unit->train(b.type->unit->game_unit_type)) {
+									log("train hurray\n");
+									builder->controller->noorder_until = current_frame + latency_frames + 4;
+								} else {
+									log("train failed\n");
+									builder = nullptr;
+								}
+							}
 						}
 					}
 				} else if (b.type->unit && b.type->unit->is_addon) {
 					unit_building*building = builder->building;
 					if (building) {
-						if ((building->is_lifted || !building->build_squares_occupied.empty()) && current_frame-builder->creation_frame>=8) {
-							for (auto*bs_p : building->build_squares_occupied) {
-								bs_p->building = nullptr;
-							}
-							const xy addon_rel_pos(builder->type->tile_width * 32, (builder->type->tile_height - b.type->unit->tile_height) * 32);
-							auto pred = [&](grid::build_square&bs) {
-								if (!build_full_check(bs, builder->type)) return false;
-								grid::reserve_build_squares(bs.pos, builder->type);
-								auto&addon_bs = grid::get_build_square(bs.pos + addon_rel_pos);
-								bool r = build_full_check(addon_bs, b.type->unit);
-								grid::unreserve_build_squares(bs.pos, builder->type);
-								return r;
-							};
-							xy pos = b.land_pos;
-							if (pos == xy() || !pred(grid::get_build_square(pos))) {
-								if (pred(grid::get_build_square(building->build_pos))) pos = building->build_pos;
-								else {
-									std::array<xy, 1> starts;
-									starts[0] = building->build_pos;
-									pos = build_spot_finder::find_best(starts, 32, [&](grid::build_square&bs) {
-										return pred(bs);
-									}, [&](xy pos) {
-										return diag_distance(building->build_pos - pos);
-									}, false);
+						building->building_addon_frame = current_frame;
+						if (builder->type == unit_types::cc && !building->is_lifted) {
+							if (builder->remaining_whatever_time <= latency_frames && builder->controller->noorder_until <= current_frame) {
+								if (current_frame + latency_frames >= b.build_frame) {
+									builder->game_unit->buildAddon(b.type->unit->game_unit_type);
+									builder->controller->noorder_until = current_frame + 15;
 								}
-								b.land_pos = pos;
 							}
-							if (pos != xy()) {
-								if (builder->remaining_whatever_time <= latency_frames && builder->controller->noorder_until <= current_frame) {
-									log("pos is %d %d, builder->pos is %d %d\n", pos.x, pos.y, builder->pos.x, builder->pos.y);
-									if (pos != building->build_pos) {
-										if (!building->is_lifted) {
-											log(" -- lift!\n");
-											builder->game_unit->lift();
-											builder->controller->noorder_until = current_frame + 15;
-										} else {
-											xy move_to = pos + xy(builder->type->tile_width * 16, builder->type->tile_height * 16);
-											log(" -- move to %d %d ?\n", move_to.x, move_to.y);
-											if (diag_distance(move_to - builder->pos) >= 64) {
-												log(" -- move!\n");
-												game->drawLineMap(builder->pos.x, builder->pos.y, move_to.x, move_to.y, BWAPI::Colors::White);
-												builder->game_unit->move(BWAPI::Position(move_to.x, move_to.y));
+						} else {
+							if ((building->is_lifted || !building->build_squares_occupied.empty()) && current_frame - builder->creation_frame >= 8) {
+								for (auto*bs_p : building->build_squares_occupied) {
+									bs_p->building = nullptr;
+								}
+								const xy addon_rel_pos(builder->type->tile_width * 32, (builder->type->tile_height - b.type->unit->tile_height) * 32);
+								auto pred = [&](grid::build_square&bs) {
+									if (!build_full_check(bs, builder->type)) return false;
+									grid::reserve_build_squares(bs.pos, builder->type);
+									auto&addon_bs = grid::get_build_square(bs.pos + addon_rel_pos);
+									bool r = build_full_check(addon_bs, b.type->unit);
+									grid::unreserve_build_squares(bs.pos, builder->type);
+									return r;
+								};
+								xy pos = b.land_pos;
+								if (pos == xy() || !pred(grid::get_build_square(pos))) {
+									if (pred(grid::get_build_square(building->build_pos))) pos = building->build_pos;
+									else {
+										std::array<xy, 1> starts;
+										starts[0] = building->last_registered_pos;
+										pos = build_spot_finder::find_best(starts, 32, [&](grid::build_square&bs) {
+											return pred(bs);
+										}, [&](xy pos) {
+											return diag_distance(building->build_pos - pos);
+										});
+									}
+									b.land_pos = pos;
+								}
+								if (pos != xy()) {
+									if (builder->remaining_whatever_time <= latency_frames && builder->controller->noorder_until <= current_frame) {
+										//log("pos is %d %d, builder->pos is %d %d\n", pos.x, pos.y, builder->pos.x, builder->pos.y);
+										if (pos != building->build_pos) {
+											if (!building->is_lifted) {
+												//log(" -- lift!\n");
+												builder->game_unit->lift();
 												builder->controller->noorder_until = current_frame + 15;
 											} else {
-												log(" -- land!\n");
-												builder->game_unit->land(BWAPI::TilePosition(pos.x / 32, pos.y / 32));
+												xy move_to = pos + xy(builder->type->tile_width * 16, builder->type->tile_height * 16);
+												//log(" -- move to %d %d ?\n", move_to.x, move_to.y);
+												if (diag_distance(move_to - builder->pos) >= 64) {
+													//log(" -- move!\n");
+													builder->game_unit->move(BWAPI::Position(move_to.x, move_to.y));
+													builder->controller->noorder_until = current_frame + 15;
+												} else {
+													//log(" -- land!\n");
+													builder->game_unit->land(BWAPI::TilePosition(pos.x / 32, pos.y / 32));
+													builder->controller->noorder_until = current_frame + 15;
+												}
+											}
+										} else {
+											//log(" -- build addon!\n");
+											if (current_frame + latency_frames >= b.build_frame) {
+												builder->game_unit->buildAddon(b.type->unit->game_unit_type);
 												builder->controller->noorder_until = current_frame + 15;
 											}
 										}
-									} else {
-										log(" -- build addon!\n");
-										builder->game_unit->buildAddon(b.type->unit->game_unit_type);
-										builder->controller->noorder_until = current_frame + 15;
 									}
 								}
-							}
 
-							for (auto*bs_p : building->build_squares_occupied) {
-								bs_p->building = builder;
-							}
+								for (auto*bs_p : building->build_squares_occupied) {
+									bs_p->building = builder;
+								}
+							} else b.land_pos = xy();
 						}
 					}
 					else xcept("unreachable (non-building build addon)");
@@ -884,6 +984,36 @@ void execute_build(build_task&b) {
 				else xcept("unreachable (build/train unknown)");
 			}
 			if (builder!=b.builder) b.builder = builder;
+		}
+
+		if (b.type->upgrade && !b.upgrade_done_frame) {
+
+			unit*builder = b.builder;
+			if (b.build_frame - current_frame <= 15 * 30) {
+				if (!builder || current_frame - b.last_look_for_builder >= 15 * 2) {
+					b.last_look_for_builder = current_frame;
+					builder = get_best_score(my_units_of_type[b.type->builder], [&](unit*u) {
+						return (double)u->remaining_whatever_time;
+					}, std::numeric_limits<double>::infinity());
+				}
+			}
+			if (builder) {
+				bool wait = false;
+				if (builder->building) wait = wait_for_building(builder);
+				if (!wait) {
+					if (current_frame + latency_frames >= b.build_frame) {
+						if (builder->controller->noorder_until <= current_frame) {
+							bool okay = false;
+							okay |= builder->game_unit->upgrade(b.type->upgrade->game_upgrade_type);
+							okay |= builder->game_unit->research(b.type->upgrade->game_tech_type);
+							if (okay) b.upgrade_done_frame = current_frame + b.type->build_time;
+							builder->controller->noorder_until = current_frame + 15;
+						}
+					}
+				}
+			}
+
+			if (builder != b.builder) b.builder = builder;
 		}
 
 	}
@@ -919,7 +1049,7 @@ bool match_new_unit(unit*u) {
 }
 
 void on_create_unit(unit*u) {
-	if (u->owner!=units::my_player) return;
+	if (u->owner!=players::my_player) return;
 
 	bool found = match_new_unit(u);
 	if (!found) {
@@ -927,7 +1057,7 @@ void on_create_unit(unit*u) {
 	}
 }
 void on_morph_unit(unit*u) {
-	if (u->owner!=units::my_player) return;
+	if (u->owner!=players::my_player) return;
 
 	bool found = match_new_unit(u);
 	if (!found) {
@@ -939,22 +1069,31 @@ void on_morph_unit(unit*u) {
 void execute_build_task() {
 	while (true) {
 
-		for (auto i=build_tasks.begin();i!=build_tasks.end();) {
+		for (auto i = build_tasks.begin(); i != build_tasks.end();) {
 			build_task&b = *i++;
-			if (!b.type->unit) continue;
+			if (b.upgrade_done_frame && current_frame >= b.upgrade_done_frame) {
+				log("upgrade %s is done\n", b.type->name);
+				cancel_build_task(&b);
+				continue;
+			}
+			if (b.type->upgrade && players::my_player->upgrades.count(b.type->upgrade)) {
+				log("already has upgrade %s\n", b.type->name);
+				cancel_build_task(&b);
+				continue;
+			}
 			if (b.built_unit) {
 				if (b.built_unit->is_completed) {
 					log("%s is no longer being constructed!\n",b.type->name);
 					cancel_build_task(&b);
 					continue;
 				}
-				if (b.built_unit->dead || b.built_unit->type!=b.type->unit || b.built_unit->owner!=units::my_player) {
+				if (b.built_unit->dead || b.built_unit->type!=b.type->unit || b.built_unit->owner!=players::my_player) {
 					log("build task %s lost its built unit!\n",b.type->name);
 					b.built_unit = nullptr;
 				}
 			}
 			if (b.builder) {
-				if (b.builder->dead || b.builder->type!=b.type->unit->builder_type || b.builder->owner!=units::my_player) {
+				if (b.builder->dead || b.builder->type!=b.type->builder || b.builder->owner!=players::my_player) {
 					log("build task %s lost its builder\n",b.type->name);
 					b.builder = nullptr;
 				}
@@ -996,10 +1135,10 @@ void render() {
 
 	for (build_task&b : build_order) {
 		double t = b.build_frame ? (b.build_frame-current_frame)/15.0 : std::numeric_limits<double>::infinity();
-		render::draw_screen_stacked_text(16,56,format("%s - %.1fs",b.type->unit ? short_type_name(b.type->unit) : "?",t));
+		render::draw_screen_stacked_text(16, 56, format("%s - %.1fs", b.type->unit ? short_type_name(b.type->unit) : b.type->name, t));
 
 		if (b.build_pos!=xy()) {
-			game->drawTextMap(b.build_pos.x,b.build_pos.y,"%s",b.type->unit->name.c_str());
+			game->drawTextMap(b.build_pos.x, b.build_pos.y, "%s", b.type->unit->name.c_str());
 		}
 	}
 

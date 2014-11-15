@@ -244,15 +244,16 @@ void offence() {
 	if (current_frame - last_eval >= 15 * 5 && !available_units.empty()) {
 		last_eval = current_frame;
 
-		combat_eval::eval eval;
-		for (auto*cu : available_units) eval.add_unit(cu->u->stats, 0);
-		for (unit*e : enemy_units) {
-			if (e->gone) continue;
-			if (e->building || e->type->is_worker) continue;
-			eval.add_unit(e->stats, 1);
-		}
-		eval.run();
-		bool attack = eval.teams[0].damage_dealt >= eval.teams[1].damage_dealt*1.5;
+// 		combat_eval::eval eval;
+// 		for (auto*cu : available_units) eval.add_unit(cu->u->stats, 0);
+// 		for (unit*e : enemy_units) {
+// 			if (e->gone) continue;
+// 			if (e->building || e->type->is_worker) continue;
+// 			eval.add_unit(e->stats, 1);
+// 		}
+// 		eval.run();
+// 		bool attack = eval.teams[0].damage_dealt >= eval.teams[1].damage_dealt*1.5;
+		bool attack = buildpred::attack_now;
 		if (attack) {
 			log("ATTACK RAWR!\n");
 			unit*base = my_units.front();
@@ -307,6 +308,22 @@ void do_attack(combat_unit*a, const a_vector<unit*>&enemies) {
 		if (old_s < new_s * 2) target = u->target;
 	}
 	a->target = target;
+
+	if (target) {
+		weapon_stats*my_weapon = target->type->is_flyer ? a->u->stats->air_weapon : a->u->stats->ground_weapon;
+		weapon_stats*e_weapon = a->u->type->is_flyer ? target->stats->air_weapon : target->stats->ground_weapon;
+		double max_range = 1000.0;
+		if (e_weapon && my_weapon) {
+			if (my_weapon->max_range < e_weapon->max_range) max_range = my_weapon->max_range / 2;
+			if (e_weapon->min_range) max_range = e_weapon->min_range;
+		}
+		if (units_distance(target, a->u)>max_range) {
+			if (a->u->weapon_cooldown>latency_frames) {
+				a->subaction = combat_unit::subaction_move;
+				a->target_pos = target->pos;
+			}
+		}
+	}
 }
 
 void do_run(combat_unit*a,a_vector<unit*>&enemies) {
@@ -388,6 +405,8 @@ void fight() {
 				double d = units_distance(u, e);
 				if (d <= u->stats->sight_range*1.5) return true;
 				weapon_stats*w = e->type->is_flyer ? u->stats->air_weapon : u->stats->ground_weapon;
+				weapon_stats*w2 = u->type->is_flyer ? e->stats->air_weapon : e->stats->ground_weapon;
+				if (w2 && d <= w2->max_range*1.5) return true;
 				if (!w) return false;
 				return d <= w->max_range*1.5;
 			};
@@ -398,6 +417,11 @@ void fight() {
 					for (auto*cu : live_combat_units) {
 						if (!in_range(e, cu->u) && !in_range(cu->u, e)) continue;
 						add_ally(cu);
+					}
+					for (unit*e2 : enemy_units) {
+						if (e2->gone) continue;
+						if (!in_range(e, e2) && !in_range(e2, e)) continue;
+						add_enemy(e2);
 					}
 				};
 				unit*u = cu->u;
@@ -453,9 +477,28 @@ void fight() {
 			for (unit*e : nearby_enemies) add(e, 1);
 			eval.run();
 
-			bool fight = eval.teams[0].damage_dealt > eval.teams[1].damage_dealt*0.75;
+			{
+				a_map<unit_type*, int> my_count, op_count;
+				for (unit*a : nearby_allies) ++my_count[a->type];
+				for (unit*e : nearby_enemies) ++op_count[e->type];
+				log("combat::\n");
+				log("my units -");
+				for (auto&v : my_count) log(" %dx%s", v.second, short_type_name(v.first));
+				log("\n");
+				log("op units -");
+				for (auto&v : op_count) log(" %dx%s", v.second, short_type_name(v.first));
+				log("\n");
+
+				log("result: supply %g %g  damage %g %g\n", eval.teams[0].end_supply, eval.teams[1].end_supply, eval.teams[0].damage_dealt, eval.teams[1].damage_dealt);
+			}
+
+			//bool fight = eval.teams[0].damage_dealt > eval.teams[1].damage_dealt*0.75;
+			double fact = 1.0;
+			if (current_frame - cu->last_fight <= 15) fact = 0.5;
+			bool fight = eval.teams[0].end_supply > eval.teams[1].end_supply * fact;
 			if (fight) log("fight!\n");
 			else log("run!\n");
+
 
 			bool ignore = false;
 			if (eval.teams[1].damage_dealt < eval.teams[0].damage_dealt / 10) {

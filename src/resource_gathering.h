@@ -116,7 +116,7 @@ void process(resource_t&r) {
 	}
 	r.is_being_gathered = r.u->game_unit->isBeingGathered();
 
-	if (u->type->is_gas && u->owner!=units::my_player || !u->is_completed) {
+	if ((u->type->is_gas && u->owner!=players::my_player) || !u->is_completed) {
 		r.depot = 0;
 		return;
 	}
@@ -220,6 +220,8 @@ void process(resource_t&r) {
 	}
 	double next_income = 0;
 	if (r.income_rate.size()>r.gatherers.size()) next_income = r.income_rate[r.gatherers.size()];
+
+	if (my_workers.size() >= 15 && current_gas < 400) minerals_to_gas_weight = 0.25;
 
 	if (next_income>0 && (current_frame-r.last_find_transfer>=30 || current_frame<30)) {
 		r.last_find_transfer = current_frame;
