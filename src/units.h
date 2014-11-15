@@ -323,6 +323,7 @@ unit_type*new_unit_type(BWAPI::UnitType game_unit_type,unit_type*ut) {
 	ut->needs_neighboring_free_space = ut->is_building && (ut->produces_land_units || ut==unit_types::nydus_canal || ut==unit_types::bunker);
 	ut->required_supply = (double)game_unit_type.supplyRequired() / 2.0;
 	ut->provided_supply = (double)game_unit_type.supplyProvided() / 2.0;
+	ut->is_flyer = game_unit_type.isFlyer();
 	ut->size = unit_type::size_none;
 	if (game_unit_type.size().getID() == BWAPI::UnitSizeTypes::Small) ut->size = unit_type::size_small;
 	if (game_unit_type.size().getID() == BWAPI::UnitSizeTypes::Medium) ut->size = unit_type::size_medium;
