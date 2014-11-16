@@ -296,7 +296,7 @@ struct module : BWAPI::AIModule {
 
 		static a_map<multitasking::task_id, double> last_cpu_time;
 		for (auto id : multitasking::detail::running_tasks) {
-			last_cpu_time[id] = multitasking::detail::tasks[id].cpu_time;
+			last_cpu_time[id] = multitasking::get_cpu_time(id);
 		}
 
 		multitasking::run();
@@ -307,7 +307,7 @@ struct module : BWAPI::AIModule {
 			log(" WARNING: frame took %fs!\n", elapsed);
 			for (auto id : multitasking::detail::running_tasks) {
 				auto&t = multitasking::detail::tasks[id];
-				log(" - %s took %f\n", t.name, t.cpu_time - last_cpu_time[id]);
+				log(" - %s took %f\n", t.name, multitasking::get_cpu_time(id) - last_cpu_time[id]);
 			}
 		}
 

@@ -257,6 +257,11 @@ namespace detail {
 		}
 	}
 
+	double get_cpu_time(task_id id) {
+		if (current_task && get_task_id(current_task) == id) return time() - current_task->last_schedule_time;
+		return tasks[id].cpu_time;
+	}
+
 	void terminate_all() {
 		for (task_id id : running_tasks) {
 			tasks[id].raise_signal = scheduled_task::sig_term;
@@ -306,6 +311,10 @@ bool try_wait() {
 }
 void wake(task_id id) {
 	detail::wake(id);
+}
+
+double get_cpu_time(task_id id) {
+	return detail::get_cpu_time(id);
 }
 
 void run() {
