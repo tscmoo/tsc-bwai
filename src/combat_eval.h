@@ -36,13 +36,14 @@ namespace combat_eval {
 			double score = 0;
 		};
 		std::array<team_t, 2> teams;
+		int total_frames = 0;
 
 		combatant&add_unit(unit_stats*st, int team) {
 			auto&vec = teams[team].units;
 			vec.emplace_back();
 			auto&c = vec.back();
 			c.st = st;
-			c.move = 32 * 8;
+			c.move = 32 * 2;
 			c.shields = st->shields;
 			c.hp = st->hp;
 			c.cooldown = 0;
@@ -50,6 +51,7 @@ namespace combat_eval {
 		}
 
 		void run() {
+			total_frames = 0;
 			for (auto&t : teams) {
 				//if (t.units.empty()) xcept("empty team");
 				std::sort(t.units.begin(), t.units.end(), [&](const combatant&a, const combatant&b) {
@@ -64,6 +66,7 @@ namespace combat_eval {
 				}
 			}
 			while (true) {
+				++total_frames;
 				int target_count = 0;
 				for (int i = 0; i < 2; ++i) {
 					team_t&my_team = teams[i];
@@ -77,13 +80,17 @@ namespace combat_eval {
 						combatant*target = c.target;
 						if (!target || target->hp <= 0) {
 							target = nullptr;
-							for (auto&ec : enemy_team.units) {
-								if (ec.st->type->is_flyer && !c.st->air_weapon) continue;
-								if (!ec.st->type->is_flyer && !c.st->ground_weapon) continue;
-								if (ec.st->type->is_building) continue;
-								if (ec.hp > 0) {
-									target = &ec;
-									break;
+							for (int i = 0; i < 2 && !target; ++i) {
+								for (auto&ec : enemy_team.units) {
+									if (ec.st->type->is_flyer && !c.st->air_weapon) continue;
+									if (!ec.st->type->is_flyer && !c.st->ground_weapon) continue;
+									if (i == 0) {
+										if (!ec.st->air_weapon && !ec.st->ground_weapon) continue;
+									}
+									if (ec.hp > 0) {
+										target = &ec;
+										break;
+									}
 								}
 							}
 							c.target = target;
@@ -91,7 +98,7 @@ namespace combat_eval {
 						if (c.cooldown) --c.cooldown;
 						if (target) {
 							weapon_stats*w = target->st->type->is_flyer ? c.st->air_weapon : c.st->ground_weapon;
-							if (c.move > w->max_range) {
+							if (c.move + target->move > w->max_range) {
 								if (c.st->max_speed > 0) {
 									++target_count;
 									c.move -= c.st->max_speed;
@@ -100,7 +107,7 @@ namespace combat_eval {
 							} else {
 								++target_count;
 								if (c.cooldown == 0) {
-									if (target->move > c.move) target->move = c.move;
+									//if (target->move > c.move) target->move = c.move;
 									double damage = w->damage;
 									if (target->shields <= 0) damage *= get_damage_type_modifier(w->damage_type, target->st->type->size);
 									damage -= target->st->armor;

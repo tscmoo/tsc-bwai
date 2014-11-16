@@ -11,19 +11,20 @@ struct defence_spot {
 a_vector<defence_spot> defence_spots;
 
 tsc::dynamic_bitset my_base;
+tsc::dynamic_bitset op_base;
 
-void update_my_base() {
-	my_base.reset();
+void update_base(tsc::dynamic_bitset&base, const a_vector<unit*>&buildings) {
+	base.reset();
 
 	tsc::dynamic_bitset visited(grid::build_grid_width*grid::build_grid_height);
 	a_deque<std::tuple<grid::build_square*, xy>> open;
-	for (unit*u : my_buildings) {
+	for (unit*u : buildings) {
 		for (auto*v : u->building->build_squares_occupied) {
 			xy pos = v->pos;
 			open.emplace_back(&grid::get_build_square(pos), pos);
 			size_t index = grid::build_square_index(pos);
 			visited.set(index);
-			my_base.set(index);
+			base.set(index);
 		}
 	}
 	while (!open.empty()) {
@@ -36,12 +37,12 @@ void update_my_base() {
 			grid::build_square*nbs = bs->get_neighbor(n);
 			if (!nbs) return;
 			if (!nbs->entirely_walkable) return;
-			if (diag_distance(nbs->pos - origin) >= 32 * 6) return;
+			if (diag_distance(nbs->pos - origin) >= 32 * 12) return;
 			size_t index = grid::build_square_index(*nbs);
 			if (visited.test(index)) return;
 			visited.set(index);
-			my_base.set(index);
-			
+			base.set(index);
+
 			open.emplace_back(nbs, origin);
 		};
 		add(0);
@@ -51,9 +52,14 @@ void update_my_base() {
 	}
 }
 
-void generate_defence_spots() {
+void update_my_base() {
+	update_base(my_base, my_buildings);
+}
+void update_op_base() {
+	update_base(op_base, enemy_buildings);
+}
 
-	update_my_base();
+void generate_defence_spots() {
 
 	a_multimap<grid::build_square*, std::tuple<unit_type*, double>> hits;
 
@@ -91,6 +97,7 @@ void generate_defence_spots() {
 
 	for (unit*u : enemy_units) {
 		if (u->building) continue;
+		if (u->gone) continue;
 		spread_from(u->pos, u->type);
 	}
 	if (hits.empty()) {
@@ -203,6 +210,7 @@ void update_combat_units() {
 		if (!c.u) c.u = u;
 		live_combat_units.push_back(&c);
 	}
+	idle_combat_units.clear();
 	for (auto*cu : live_combat_units) {
 		if (cu->action == combat_unit::action_idle) idle_combat_units.push_back(cu);
 	}
@@ -230,52 +238,119 @@ void defence() {
 
 }
 
-void offence() {
-	static a_vector<combat_unit*> available_units;
-	available_units.clear();
-	for (auto*cu : live_combat_units) {
-		bool okay = false;
-		if (cu->action == combat_unit::action_idle) okay = true;
-		if (cu->action == combat_unit::action_offence) okay = true;
-		if (!okay) continue;
-		available_units.push_back(cu);
-	}
-	static int last_eval = 0;
-	if (current_frame - last_eval >= 15 * 5 && !available_units.empty()) {
-		last_eval = current_frame;
+struct group_t {
+	double value;
+	a_vector<unit*> enemies;
+	a_vector<combat_unit*> allies;
+};
+a_vector<group_t> groups;
 
-// 		combat_eval::eval eval;
-// 		for (auto*cu : available_units) eval.add_unit(cu->u->stats, 0);
-// 		for (unit*e : enemy_units) {
-// 			if (e->gone) continue;
-// 			if (e->building || e->type->is_worker) continue;
-// 			eval.add_unit(e->stats, 1);
-// 		}
-// 		eval.run();
-// 		bool attack = eval.teams[0].damage_dealt >= eval.teams[1].damage_dealt*1.5;
-		bool attack = buildpred::attack_now;
-		if (attack) {
-			log("ATTACK RAWR!\n");
-			unit*base = my_units.front();
-			unit*ne = get_best_score(enemy_units, [&](unit*e) {
-				if (e->gone) return std::numeric_limits<double>::infinity();
-				return unit_pathing_distance(unit_types::scv, base->pos, e->pos);
-			}, std::numeric_limits<double>::infinity());
-			if (ne) {
-				for (auto*cu : available_units) {
-					if (current_frame - cu->last_fight <= 40) continue;
-					cu->action = combat_unit::action_offence;
-					cu->subaction = combat_unit::subaction_move;
-					cu->target_pos = ne->pos;
+void update_groups() {
+
+	groups.clear();
+
+	for (unit*e : enemy_units) {
+		//if (e->building) continue;
+		if (e->type->is_worker) continue;
+		if (e->invincible) continue;
+		if (e->gone) continue;
+		if (!e->stats->ground_weapon && !e->stats->air_weapon && !e->type->is_resource_depot) continue;
+		if (!buildpred::attack_now && op_base.test(grid::build_square_index(e->pos))) continue;
+		group_t*g = nullptr;
+		for (auto&v : groups) {
+			for (unit*ne : v.enemies) {
+				double d = units_distance(e, ne);
+				bool is_near = false;
+				if (d <= e->stats->sight_range) is_near = true;
+				if (d <= ne->stats->sight_range) is_near = true;
+				if (d <= 32 * 6) is_near = true;
+				if (!is_near) continue;
+				g = &v;
+				break;
+			}
+			if (g) break;
+		}
+		if (!g) {
+			groups.emplace_back();
+			g = &groups.back();
+		}
+		g->enemies.push_back(e);
+	}
+	for (auto&g : groups) {
+		double value = 0.0;
+		for (unit*e : g.enemies) {
+			value += e->minerals_value;
+			value += e->gas_value * 2;
+			if (my_base.test(grid::build_square_index(e->pos))) value *= 4;
+		}
+		g.value = value;
+	}
+	std::sort(groups.begin(), groups.end(), [&](const group_t&a, const group_t&b) {
+		return a.value > b.value;
+	});
+
+	a_unordered_set<combat_unit*> available_units;
+	for (auto*c : live_combat_units) {
+		available_units.insert(c);
+	}
+
+	size_t group_idx = 0;
+	for (auto&g : groups) {
+		while (true) {
+			std::tuple<bool, double> best_score;
+			combat_unit*best_unit = nullptr;
+			for (auto*c : available_units) {
+				combat_eval::eval eval;
+				auto addu = [&](unit*u, int team) {
+					auto&c = eval.add_unit(u->stats, team);
+					c.shields = u->shields;
+					c.hp = u->hp;
+					c.cooldown = u->weapon_cooldown;
+				};
+				for (auto*a : g.allies) addu(a->u, 0);
+				for (unit*e : g.enemies) addu(e, 1);
+				addu(c->u, 0);
+				eval.run();
+				bool done = eval.teams[0].end_supply >= eval.teams[0].start_supply / 2 + 4;
+				double val = eval.teams[0].score - eval.teams[1].score;
+				auto score = std::make_tuple(done, val);
+				if (!best_unit || score > best_score) {
+					best_score = score;
+					best_unit = c;
 				}
 			}
-		} else {
-			for (auto*cu : available_units) {
-				if (current_frame - cu->last_fight <= 40) continue;
-				if (cu->action==combat_unit::action_offence) cu->action = combat_unit::action_idle;
-			}
+			//if (!best_unit) log("failed to find unit for group %d\n", group_idx);
+			if (!best_unit) break;
+			//log("add %s to group %d with score %d %g\n", best_unit->u->type->name, group_idx, std::get<0>(best_score), std::get<1>(best_score));
+			g.allies.push_back(best_unit);
+			available_units.erase(best_unit);
+			if (std::get<0>(best_score)) break;
+		}
+		++group_idx;
+	}
+
+	if (!groups.empty()) {
+		for (auto*c : available_units) {
+			groups.front().allies.push_back(c);
+		}
+	} else {
+		for (auto*c : available_units) {
+			c->action = combat_unit::action_idle;
 		}
 	}
+	available_units.clear();
+
+	for (auto&g : groups) {
+		xy pos = g.enemies.front()->pos;
+		for (auto*cu : g.allies) {
+			cu->goal_pos = pos;
+			cu->action = combat_unit::action_offence;
+			if (current_frame - cu->last_fight <= 40) continue;
+			cu->subaction = combat_unit::subaction_move;
+			cu->target_pos = pos;
+		}
+	}
+	
 }
 
 void do_attack(combat_unit*a, const a_vector<unit*>&enemies) {
@@ -412,6 +487,19 @@ void fight() {
 			};
 			std::function<void(combat_unit*)> add_ally = [&](combat_unit*cu) {
 				if (!allies.insert(cu).second) return;
+				/*std::function<void(unit*)> add_enemy = [&](unit*e) {
+					if (!enemies.insert(e).second) return;
+					for (auto*cu : live_combat_units) {
+						double d = units_distance(cu->u, e);
+						if (d <= 32 * 20) add_ally(cu);
+					}
+				};
+				unit*u = cu->u;
+				for (unit*e : enemy_units) {
+					if (e->gone) continue;
+					double d = units_distance(e, cu->u);
+					if (d <= 32 * 20) add_enemy(e);
+				}*/
 				std::function<void(unit*)> add_enemy = [&](unit*e) {
 					if (!enemies.insert(e).second) return;
 					for (auto*cu : live_combat_units) {
@@ -420,8 +508,11 @@ void fight() {
 					}
 					for (unit*e2 : enemy_units) {
 						if (e2->gone) continue;
-						if (!in_range(e, e2) && !in_range(e2, e)) continue;
-						add_enemy(e2);
+						double d = units_distance(e2, e);
+						weapon_stats*w2 = cu->u->type->is_flyer ? e->stats->air_weapon : e->stats->ground_weapon;
+						if (w2 && d <= w2->max_range*1.5) {
+							add_enemy(e2);
+						}
 					}
 				};
 				unit*u = cu->u;
@@ -432,6 +523,22 @@ void fight() {
 				}
 			};
 			add_ally(cu);
+			/*for (auto&g : groups) {
+				bool found = false;
+				for (auto*c : g.allies) {
+					if (c == cu) {
+						found = true;
+						break;
+					}
+				}
+				if (found) {
+					for (auto*c : g.allies) {
+						if (diag_distance(c->u->pos - cu->u->pos) > 32 * 20) continue;
+						add_ally(c);
+					}
+					break;
+				}
+			}*/
 
 			nearby_enemies.clear();
 			nearby_combat_units.clear();
@@ -467,7 +574,7 @@ void fight() {
 				//log("add %s to team %d\n", u->type->name, team);
 				auto&c = eval.add_unit(u->stats, team);
 				c.move = get_best_score(make_transform_filter(team ? nearby_allies : nearby_enemies, [&](unit*e) {
-					return diag_distance(e->pos - u->pos);
+					return units_distance(e, u);
 				}), identity<double>());
 				c.shields = u->shields;
 				c.hp = u->hp;
@@ -494,15 +601,23 @@ void fight() {
 
 			//bool fight = eval.teams[0].damage_dealt > eval.teams[1].damage_dealt*0.75;
 			double fact = 1.0;
-			if (current_frame - cu->last_fight <= 15) fact = 0.5;
-			bool fight = eval.teams[0].end_supply > eval.teams[1].end_supply * fact;
+			if (current_frame - cu->last_fight <= 40) fact = 0.5;
+			//bool fight = eval.teams[0].end_supply > eval.teams[1].end_supply * fact;
+			double my_killed = eval.teams[1].start_supply - eval.teams[1].end_supply;
+			double op_killed = eval.teams[0].start_supply - eval.teams[0].end_supply;
+			bool fight = my_killed > op_killed*fact;
+			fight |= eval.teams[0].end_supply > eval.teams[1].end_supply * fact;
 			if (fight) log("fight!\n");
 			else log("run!\n");
 
 
 			bool ignore = false;
 			if (eval.teams[1].damage_dealt < eval.teams[0].damage_dealt / 10) {
-				//if (diag_distance(cu->u->pos - cu->goal_pos) >= 32 * 15) ignore = true;
+				if (diag_distance(cu->u->pos - cu->goal_pos) >= 32 * 15) {
+					if (eval.total_frames > 15 * 30) {
+						//ignore = true;
+					}
+				}
 			}
 
 			if (!ignore) {
@@ -513,6 +628,11 @@ void fight() {
 					} else {
 						do_run(a, nearby_enemies);
 					}
+					multitasking::yield_point();
+				}
+			} else {
+				for (auto*a : nearby_combat_units) {
+					a->last_fight = current_frame;
 				}
 			}
 
@@ -554,7 +674,16 @@ void execute() {
 
 void combat_task() {
 
+	int last_update_bases = 0;
+
 	while (true) {
+
+		if (current_frame - last_update_bases >= 30) {
+			last_update_bases = current_frame;
+
+			update_my_base();
+			update_op_base();
+		}
 
 		update_combat_units();
 
@@ -562,13 +691,21 @@ void combat_task() {
 
 		defence();
 
-		offence();
-
 		execute();
 
 		multitasking::sleep(1);
 	}
 
+}
+
+void update_combat_groups_task() {
+	while (true) {
+
+		multitasking::sleep(20);
+
+		update_groups();
+
+	}
 }
 
 void render() {
@@ -596,14 +733,26 @@ void render() {
 		game->drawBoxMap(pos.x, pos.y, pos.x + 32, pos.y + 32, BWAPI::Colors::Red);
 	}
 
+	for (auto&g : groups) {
+		xy pos = g.enemies.front()->pos;
+		for (unit*e : g.enemies) {
+			game->drawLineMap(e->pos.x, e->pos.y, pos.x, pos.y, BWAPI::Colors::Red);
+		}
+		for (auto*cu : g.allies) {
+			game->drawLineMap(cu->u->pos.x, cu->u->pos.y, pos.x, pos.y, BWAPI::Colors::Green);
+		}
+	}
+
 }
 
 void init() {
 
 	my_base.resize(grid::build_grid_width*grid::build_grid_height);
+	op_base.resize(grid::build_grid_width*grid::build_grid_height);
 
 	multitasking::spawn(generate_defence_spots_task, "generate defence spots");
 	multitasking::spawn(combat_task, "combat");
+	multitasking::spawn(update_combat_groups_task, "update combat groups");
 
 	render::add(render);
 
