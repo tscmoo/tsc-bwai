@@ -410,7 +410,12 @@ void update_unit_type(unit*u) {
 	if (u->last_type_change_owner && u->owner != u->last_type_change_owner && u->type!=unit_types::vespene_geyser) {
 		u->minerals_value = 0;
 		u->gas_value = 0;
-	} else update_unit_value(u, u->type == unit_types::vespene_geyser ? nullptr : u->type, ut);
+	} else {
+		if (ut == unit_types::vespene_geyser) {
+			u->minerals_value = 0;
+			u->gas_value = 0;
+		} else update_unit_value(u, u->type == unit_types::vespene_geyser ? nullptr : u->type, ut);
+	}
 	if (u->type) unit_type_changes_queue.emplace_back(u, u->type);
 	u->type = ut;
 	if (ut->is_building) {
