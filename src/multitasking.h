@@ -258,7 +258,7 @@ namespace detail {
 	}
 
 	double get_cpu_time(task_id id) {
-		if (current_task && get_task_id(current_task) == id) return time() - current_task->last_schedule_time;
+		if (current_task && get_task_id(current_task) == id) return tasks[id].cpu_time + (time() - current_task->last_schedule_time);
 		return tasks[id].cpu_time;
 	}
 
