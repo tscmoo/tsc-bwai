@@ -363,5 +363,8 @@ typename cont_T::iterator find_and_erase(cont_T&cont, val_T&&val) {
 
 template<typename cont_T, typename pred_T>
 bool test_pred(cont_T&cont, pred_T&&pred) {
-	return get_best_score_value(cont, pred, no_value_t(), true);
+	for (auto&v : cont) {
+		if (pred(v)) return true;
+	}
+	return false;
 }
