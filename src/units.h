@@ -36,6 +36,8 @@ struct unit_type {
 	int size;
 	bool is_two_units_in_one_egg;
 	double width;
+	int space_required;
+	int space_provided;
 };
 
 struct weapon_stats {
@@ -107,7 +109,8 @@ a_vector<unit*>&enemy_units = units::unit_containers[10];
 a_vector<unit*>&visible_enemy_units = units::unit_containers[11];
 a_vector<unit*>&enemy_buildings = units::unit_containers[12];
 
-a_unordered_map<unit_type*,a_vector<unit*>> my_units_of_type;
+a_unordered_map<unit_type*, a_vector<unit*>> my_units_of_type;
+a_unordered_map<unit_type*, a_vector<unit*>> my_completed_units_of_type;
 
 struct unit_controller;
 struct unit {
@@ -123,7 +126,7 @@ struct unit {
 	xy pos;
 	bool gone;
 	double speed, hspeed, vspeed;
-	int resources;
+	int resources, initial_resources;
 	BWAPI::Order game_order;
 	bool is_carrying_minerals_or_gas;
 	bool is_being_constructed;
@@ -152,6 +155,15 @@ struct unit {
 	double gas_value;
 	player_t*last_type_change_owner;
 
+	bool force_combat_unit;
+	int last_attacking;
+	int last_attacked;
+	int prev_weapon_cooldown;
+
+	a_vector<unit*> loaded_units;
+	bool is_loaded;
+	unit*loaded_into;
+
 	std::array<size_t,std::extent<decltype(units::unit_containers)>::value> container_indexes;
 };
 
@@ -169,7 +181,7 @@ namespace unit_types {
 	unit_type_pointer spell_scanner_sweep;
 	unit_type_pointer scv, marine, vulture, siege_tank_tank_mode, siege_tank_siege_mode, goliath;
 	unit_type_pointer medic, ghost;
-	unit_type_pointer wraith, battlecruiser;
+	unit_type_pointer wraith, battlecruiser, dropship;
 	unit_type_pointer nexus, pylon, gateway, photon_cannon, robotics_facility;
 	unit_type_pointer probe;
 	unit_type_pointer hatchery, lair, hive, creep_colony, sunken_colony, spore_colony, nydus_canal, spawning_pool, evolution_chamber;
@@ -210,6 +222,7 @@ namespace unit_types {
 
 		get(wraith, BWAPI::UnitTypes::Terran_Wraith);
 		get(battlecruiser, BWAPI::UnitTypes::Terran_Battlecruiser);
+		get(dropship, BWAPI::UnitTypes::Terran_Dropship);
 
 		get(nexus, BWAPI::UnitTypes::Protoss_Nexus);
 		get(pylon, BWAPI::UnitTypes::Protoss_Pylon);
@@ -269,8 +282,10 @@ void update_unit_container(unit*u,a_vector<unit*>&cont,bool contain) {
 a_deque<unit> unit_container;
 a_deque<unit_building> unit_building_container;
 
+unit_stats*get_unit_stats(unit_type*type, player_t*player);
 void update_unit_owner(unit*u) {
 	u->owner = players::get_player(u->game_unit->getPlayer());
+	if (u->type) u->stats = get_unit_stats(u->type, u->owner);
 }
 
 a_deque<unit_type> unit_type_container;
@@ -330,6 +345,8 @@ unit_type*new_unit_type(BWAPI::UnitType game_unit_type,unit_type*ut) {
 	if (game_unit_type.size().getID() == BWAPI::UnitSizeTypes::Large) ut->size = unit_type::size_large;
 	ut->is_two_units_in_one_egg = game_unit_type.isTwoUnitsInOneEgg();
 	ut->width = std::max(ut->dimensions[0] + 1 + ut->dimensions[2], ut->dimensions[1] + 1 + ut->dimensions[3]);
+	ut->space_required = game_unit_type.spaceRequired();
+	ut->space_provided = game_unit_type.spaceProvided();
 	return ut;
 }
 unit_type*get_unit_type(unit_type*&rv,BWAPI::UnitType game_unit_type) {
@@ -418,6 +435,7 @@ void update_unit_type(unit*u) {
 	}
 	if (u->type) unit_type_changes_queue.emplace_back(u, u->type);
 	u->type = ut;
+	u->stats = get_unit_stats(u->type, u->owner);
 	if (ut->is_building) {
 		if (!u->building) {
 			unit_building_container.emplace_back();
@@ -531,6 +549,7 @@ void update_unit_stuff(unit*u) {
 	u->vspeed = u->game_unit->getVelocityY();
 	u->speed = xy_typed<double>(u->hspeed,u->vspeed).length();
 	u->resources = u->game_unit->getResources();
+	u->initial_resources = u->game_unit->getInitialResources();
 	u->game_order = u->game_unit->getOrder();
 	u->is_carrying_minerals_or_gas = u->game_unit->isCarryingMinerals() || u->game_unit->isCarryingGas();
 	u->is_being_constructed = u->game_unit->isBeingConstructed();
@@ -555,6 +574,7 @@ void update_unit_stuff(unit*u) {
 	u->energy = u->game_unit->getEnergy();
 	u->shields = u->game_unit->getShields();
 	u->hp = u->game_unit->getHitPoints();
+	u->prev_weapon_cooldown = u->weapon_cooldown;
 	u->weapon_cooldown = std::max(u->game_unit->getGroundWeaponCooldown(), u->game_unit->getAirWeaponCooldown());
 
 	auto targetunit = [&](BWAPI_Unit gu) -> unit* {
@@ -566,12 +586,23 @@ void update_unit_stuff(unit*u) {
 	u->target = targetunit(u->game_unit->getTarget());
 	u->order_target = targetunit(u->game_unit->getOrderTarget());
 
+	if (u->game_unit->isAttacking()) u->last_attacking = current_frame;
+	if (u->weapon_cooldown > u->prev_weapon_cooldown) u->last_attacked = current_frame;
+
+	u->loaded_units.clear();
+	for (auto&gu : u->game_unit->getLoadedUnits()) {
+		u->loaded_units.push_back(get_unit(gu));
+	}
+	u->is_loaded = u->game_unit->isLoaded();
+	u->loaded_into = u->game_unit->getTransport() ? get_unit(u->game_unit->getTransport()) : nullptr;
+	if (u->loaded_into) u->pos = u->loaded_into->pos;
+
 	unit_building*b = u->building;
 	if (b) {
 		b->is_lifted = u->game_unit->isLifted();
 		bwapi_pos tile_pos = u->game_unit->getTilePosition();
 		if ((size_t)tile_pos.x >= (size_t)grid::build_grid_width || (size_t)tile_pos.y >= (size_t)grid::build_grid_height) xcept("unit %s has tile pos outside map", u->type->name);
-		if ((size_t)tile_pos.x + u->type->tile_width >= (size_t)grid::build_grid_width || (size_t)tile_pos.y + u->type->tile_height >= (size_t)grid::build_grid_height) xcept("unit %s has tile pos outside map", u->type->name);
+		if ((size_t)tile_pos.x + u->type->tile_width > (size_t)grid::build_grid_width || (size_t)tile_pos.y + u->type->tile_height > (size_t)grid::build_grid_height) xcept("unit %s has tile pos outside map", u->type->name);
 		b->build_pos.x = tile_pos.x*32;
 		b->build_pos.y = tile_pos.y*32;
 		if (b->last_registered_pos == xy()) b->last_registered_pos = b->build_pos;
@@ -598,6 +629,11 @@ unit*new_unit(BWAPI_Unit game_unit) {
 	u->last_seen = current_frame;
 	u->gone = false;
 
+	u->force_combat_unit = false;
+	u->last_attacking = 0;
+	u->last_attacked = 0;
+	u->prev_weapon_cooldown = 0;
+
 	u->container_indexes.fill(npos);
 
 	u->minerals_value = 0;
@@ -605,7 +641,6 @@ unit*new_unit(BWAPI_Unit game_unit) {
 
 	update_unit_owner(u);
 	update_unit_type(u);
-	u->stats = get_unit_stats(u->type,u->owner);
 
 	u->visible = game_unit->isVisible();
 	update_unit_stuff(u);
@@ -752,6 +787,36 @@ void update_units_task() {
 
 	a_vector<unit*> created_units, morphed_units, destroyed_units;
 
+	auto update_groups = [](unit*u) {
+		update_unit_container(u, all_units_ever, true);
+		update_unit_container(u, live_units, !u->dead);
+		update_unit_container(u, visible_units, u->visible);
+		update_unit_container(u, invisible_units, !u->dead && !u->visible);
+		update_unit_container(u, visible_buildings, u->visible && u->building);
+		update_unit_container(u, resource_units, !u->dead && !u->gone && (u->type->is_minerals || u->type->is_gas));
+
+		update_unit_container(u, my_units, u->visible && u->owner == players::my_player);
+		update_unit_container(u, my_workers, u->visible && u->owner == players::my_player && u->type->is_worker && u->is_completed && !u->is_morphing);
+		update_unit_container(u, my_buildings, u->visible && u->owner == players::my_player && u->building);
+		update_unit_container(u, my_resource_depots, u->visible && u->owner == players::my_player && u->type->is_resource_depot);
+
+		update_unit_container(u, enemy_units, !u->dead && u->owner->is_enemy);
+		update_unit_container(u, visible_enemy_units, u->visible && u->owner->is_enemy);
+		update_unit_container(u, enemy_buildings, !u->dead && !u->gone && u->building && u->owner->is_enemy);
+
+		my_units_of_type.clear();
+		for (unit*u : my_units) {
+			my_units_of_type[u->type].push_back(u);
+		}
+		my_completed_units_of_type.clear();
+		for (unit*u : my_units) {
+			if (!u->is_completed) continue;
+			my_completed_units_of_type[u->type].push_back(u);
+		}
+
+		if (u->owner == players::my_player && !u->controller) get_unit_controller(u);
+	};
+
 	while (true) {
 
 		grid::update_build_grid();
@@ -807,28 +872,7 @@ void update_units_task() {
 			}
 			//log("event %d - %s visible ? %d\n", e.t, u->type->name, u->visible);
 
-			update_unit_container(u,all_units_ever,true);
-			update_unit_container(u,live_units,!u->dead);
-			update_unit_container(u,visible_units,u->visible);
-			update_unit_container(u,invisible_units,!u->dead && !u->visible);
-			update_unit_container(u,visible_buildings,u->visible && u->building);
-			update_unit_container(u,resource_units,!u->dead && !u->gone && (u->type->is_minerals || u->type->is_gas));
-
-			update_unit_container(u,my_units,u->visible && u->owner==players::my_player);
-			//update_unit_container(u,my_workers,u->visible && u->owner==my_player && u->type->is_worker && u->is_completed && !u->is_morphing);
-			update_unit_container(u,my_buildings,u->visible && u->owner==players::my_player && u->building);
-			update_unit_container(u,my_resource_depots,u->visible && u->owner==players::my_player && u->type->is_resource_depot);
-
-			update_unit_container(u, enemy_units, !u->dead && u->owner->is_enemy);
-			update_unit_container(u, visible_enemy_units, u->visible && u->owner->is_enemy);
-			update_unit_container(u, enemy_buildings, !u->dead && !u->gone && u->building && u->owner->is_enemy);
-
-			my_units_of_type.clear();
-			for (unit*u : my_units) {
-				my_units_of_type[u->type].push_back(u);
-			}
-
-			if (u->owner==players::my_player && !u->controller) get_unit_controller(u);
+			update_groups(u);
 		}
 
 // 		if (current_frame - last_refresh >= 90) {
@@ -840,17 +884,21 @@ void update_units_task() {
 
 		for (unit*u : visible_units) {
 			u->last_seen = current_frame;
+			bool prev_is_completed = u->is_completed;
 			update_unit_stuff(u);
+
+			if (u->is_completed != prev_is_completed) update_groups(u);
 
 			if (u->gone) {
 				log("%s is no longer gone\n",u->type->name);
 				u->gone = false;
-				events.emplace_back(event_t::t_refresh, u->game_unit);
+				//events.emplace_back(event_t::t_refresh, u->game_unit);
+				update_groups(u);
 			}
 		}
 
 		for (unit*u : all_units_ever) {
-			update_unit_container(u,my_workers,u->visible && u->owner==players::my_player && u->type->is_worker && u->is_completed && !u->is_morphing);
+			//update_unit_container(u,my_workers,u->visible && u->owner==players::my_player && u->type->is_worker && u->is_completed && !u->is_morphing);
 
 			if (u->game_unit->getID() < 0) {
 				xcept("unit %p has invalid id %d\n", u->game_unit->getID());
