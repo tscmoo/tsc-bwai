@@ -60,11 +60,26 @@ void move(unit_controller*c) {
 		//if (pos == xy()) log(" !! move: get_pos_in_square for %s failed\n", u->type->name);
 		if (pos != xy())  move_to = pos;
 	}
+
+	if (diag_distance(u->pos-move_to)<=8) move_to = c->go_to;
 	
 	//if (u->game_order != BWAPI::Orders::Move || u->game_unit->getOrderTargetPosition() != BWAPI::Position(move_to.x, move_to.y)) {
 	if (c->last_move_to_pos != move_to || current_frame >= c->last_move_to + 30) {
 		c->last_move_to = current_frame;
 		c->last_move_to_pos = move_to;
+		//if (u->game_unit->isSieged()) u->game_unit->unsiege();
+		//else u->game_unit->move(BWAPI::Position(move_to.x, move_to.y));
+
+		if (u->type->is_flyer) {
+			xy relpos = move_to - u->pos;
+			double a = atan2(relpos.y, relpos.x);
+			double r = relpos.length();
+			relpos.x = (int)(cos(a)*(r + 15 * 8));
+			relpos.y = (int)(sin(a)*(r + 15 * 8));
+			if ((size_t)(u->pos.x + relpos.x) < (size_t)grid::map_width && (size_t)(u->pos.y + relpos.y) < (size_t)grid::map_height) {
+				move_to = u->pos + relpos;
+			}
+		}
 		u->game_unit->move(BWAPI::Position(move_to.x, move_to.y));
 
 		c->noorder_until = current_frame + rng(8);

@@ -72,6 +72,7 @@ pathing_map&get_pathing_map(unit_type*ut) {
 	all_pathing_maps.emplace_back();
 	r = &all_pathing_maps.back();
 	r->dimensions = ut->dimensions;
+	if (ut->is_flyer) xcept("get_pathing_map for a flyer");
 	r->walkable.resize(walkmap_width * walkmap_height);
 	r->nearest_path_node.resize(nearest_path_node_width*nearest_path_node_height);
 	return *r;
@@ -351,6 +352,16 @@ xy get_nearest_node_pos(unit*u) {
 	return n->pos;
 }
 
+bool unit_can_reach(unit*u, xy from, xy to) {
+	if (u->type->is_flyer) return true;
+	auto&map = square_pathing::get_pathing_map(u->type);
+	path_node*a = square_pathing::get_nearest_path_node(map, from);
+	path_node*b = square_pathing::get_nearest_path_node(map, to);
+	if (!a) return !b;
+	if (!b) return !a;
+	return a->root_index==b->root_index;
+}
+
 struct closed_t {
 	closed_t*prev;
 	path_node*node;
@@ -447,7 +458,7 @@ a_deque<path_node*> find_path(pathing_map&map, xy from, xy to) {
 
 template<typename pred_T, typename est_dist_T, typename goal_T>
 a_deque<xy> find_square_path(pathing_map&map, xy from, pred_T&&pred, est_dist_T&est_dist, goal_T&&goal) {
-	tsc::high_resolution_timer ht;
+	//tsc::high_resolution_timer ht;
 	a_deque<xy> r;
 	struct closed_t {
 		closed_t*prev;
@@ -515,6 +526,34 @@ a_deque<xy> find_square_path(pathing_map&map, xy from, pred_T&&pred, est_dist_T&
 	//log("find square path found path with %d nodes in %d iterations (%fs)\n", r.size(), iterations, ht.elapsed());
 
 	return r;
+}
+
+// Brood war is too picky about what can be the final destination for a path
+xy get_go_to_along_path(unit*u, const a_deque<xy>&path) {
+	if (path.empty()) return u->pos;
+	double dis = 0.0;
+	xy lpos = path.front();
+	for (xy pos : path) {
+		dis += diag_distance(pos - lpos);
+		if (dis >= 32 * 4) {
+			auto&dims = u->type->dimensions;
+			auto test = [&](xy npos) {
+				if (!can_fit_at(npos, dims)) return false;
+				return grid::get_build_square(npos).entirely_walkable;
+			};
+			if (test(pos)) return pos;
+			xy apos = pos / 32 * 32;
+			apos += xy(16, 16);
+			if (test(apos)) return apos;
+			if (test(apos + xy(32,0))) return apos + xy(32,0);
+			if (test(apos + xy(0, 32))) return apos + xy(32, 32);
+			if (test(apos + xy(-32, 0))) return apos + xy(-32, 0);
+			if (test(apos + xy(0, -32))) return apos + xy(0, -32);
+		}
+		lpos = pos;
+		//if (frames_to_reach(u, diag_distance(pos - u->pos)) >= 30) return pos;
+	}
+	return path.back();
 }
 
 size_t force_field_size = 32;
@@ -593,7 +632,7 @@ xy get_move_to(unit*u, xy goal, int priority) {
 		if (std::get<0>(final_ff) >= current_frame) {
 			final_ff = std::make_tuple(current_frame, priority, angle, u);
 		}
-		return escape_path.back();
+		return get_go_to_along_path(u, escape_path);
 	}
 	if (next_node != to_node) {
 		for (xy pos : square_path) {
@@ -601,22 +640,7 @@ xy get_move_to(unit*u, xy goal, int priority) {
 			ff = std::make_tuple(current_frame, priority, angle, nullptr);
 		}
 	} else return goal;
-	double dis = 0.0;
-	xy lpos = u->pos;
-	for (xy pos : square_path) {
-		dis += diag_distance(pos - lpos);
-		if (dis >= 32 * 4) {
-			auto&dims = u->type->dimensions;
-			if (!can_fit_at(pos, dims)) continue;
-			if (!can_fit_at(pos + xy(7, 0), dims)) continue;
-			if (!can_fit_at(pos + xy(0, 7), dims)) continue;
-			if (!can_fit_at(pos + xy(7, 7), dims)) continue;
-			return pos + xy(4, 4);
-		}
-		lpos = pos;
-		//if (frames_to_reach(u, diag_distance(pos - u->pos)) >= 30) return pos;
-	}
-	return square_path.back();
+	return get_go_to_along_path(u, square_path);
 }
 
 void square_pathing_update_maps_task() {

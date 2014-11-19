@@ -186,6 +186,7 @@ double units_distance(xy a_pos,unit_type*at,xy b_pos,unit_type*bt) {
 
 template<int dummy=0>
 double units_pathing_distance(unit*a,unit*b) {
+	if (a->type->is_flyer) return units_difference(a->pos, a->type->dimensions, b->pos, b->type->dimensions).length();
 	auto&map = square_pathing::get_pathing_map(a->type);
 	double d = square_pathing::get_distance(map, a->pos, b->pos);
 	if (d > 32 * 4) return d;
@@ -194,6 +195,7 @@ double units_pathing_distance(unit*a,unit*b) {
 
 template<int dummy=0>
 double units_pathing_distance(unit_type*ut,unit*a,unit*b) {
+	if (ut->is_flyer) return units_difference(a->pos, a->type->dimensions, b->pos, b->type->dimensions).length();
 	auto&map = square_pathing::get_pathing_map(ut);
 	double d = square_pathing::get_distance(map, a->pos, b->pos);
 	if (d > 32 * 4) return d;
@@ -202,6 +204,7 @@ double units_pathing_distance(unit_type*ut,unit*a,unit*b) {
 
 template<int=0>
 double unit_pathing_distance(unit_type*ut,xy from,xy to) {
+	if (ut->is_flyer) return (to - from).length();
 	auto&map = square_pathing::get_pathing_map(ut);
 	return square_pathing::get_distance(map, from, to);
 	//return (from-to).length();
@@ -358,3 +361,7 @@ typename cont_T::iterator find_and_erase(cont_T&cont, val_T&&val) {
 	return cont.erase(std::find(cont.begin(), cont.end(), std::forward<val_T>(val)));
 }
 
+template<typename cont_T, typename pred_T>
+bool test_pred(cont_T&cont, pred_T&&pred) {
+	return get_best_score_value(cont, pred, no_value_t(), true);
+}
