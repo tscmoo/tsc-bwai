@@ -53,12 +53,12 @@ void update_upgrades(player_t&p) {
 void update_players_task() {
 
 	while (true) {
-		multitasking::sleep(15);
 
 		for (auto&v : player_container) {
 			update_upgrades(v);
 		}
 
+		multitasking::sleep(15);
 	}
 
 }
