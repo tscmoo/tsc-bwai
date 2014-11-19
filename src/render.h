@@ -2,10 +2,24 @@
 namespace render {
 ;
 
-a_vector<std::function<void()>> render_funcs;
-void add(std::function<void()> f) {
+typedef void* render_func_handle;
+a_deque<std::function<void()>> render_funcs;
+render_func_handle add(std::function<void()> f) {
 	render_funcs.push_back(std::move(f));
+	return &render_funcs.back();
 }
+void rm(render_func_handle h) {
+	for (auto i = render_funcs.begin(); i != render_funcs.end(); ++i) {
+		if (&*i == h) {
+			render_funcs.erase(i);
+			return;
+		}
+	}
+}
+
+//#include "render_text.h"
+
+
 
 a_map<xy,int> text_stack_count;
 a_map<std::pair<int,int>,int> text_screen_stack_count;
@@ -20,6 +34,7 @@ void draw_stacked_text(xy pos,const char*text) {
 void draw_screen_stacked_text(int x,int y,const char*text) {
 	y += text_screen_stack_count[std::make_pair(x,y)]++*10;
 	game->drawTextScreen(x,y,"\x11%s",text);
+	//render_text::render_text(x, y, text, BWAPI::Colors::White);
 };
 
 void render_task_list() {
