@@ -2,15 +2,17 @@
 namespace render {
 ;
 
-typedef void* render_func_handle;
-a_deque<std::function<void()>> render_funcs;
+typedef int render_func_handle;
+a_vector<std::tuple<std::function<void()>, int>> render_funcs;
 render_func_handle add(std::function<void()> f) {
-	render_funcs.push_back(std::move(f));
-	return &render_funcs.back();
+	static int next_handle = 0;
+	int h = ++next_handle;;
+	render_funcs.emplace_back(std::move(f), h);
+	return h;
 }
 void rm(render_func_handle h) {
 	for (auto i = render_funcs.begin(); i != render_funcs.end(); ++i) {
-		if (&*i == h) {
+		if (std::get<1>(*i) == h) {
 			render_funcs.erase(i);
 			return;
 		}
@@ -120,7 +122,7 @@ void render() {
 
 	render_task_list();
 
-	for (auto&f : render_funcs) f();
+	for (auto&v : render_funcs) std::get<0>(v)();
 
 // 	BWAPI::Position mpos = game->getScreenPosition() + game->getMousePosition();
 // 	xy pos(mpos.x, mpos.y);
