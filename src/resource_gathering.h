@@ -563,7 +563,7 @@ void render() {
 // 	}
 	for (auto&r : live_resources) {
 		for (double v : r.income_rate) {
-			render::draw_stacked_text(r.u->pos + xy(0,0),format("%g",v));
+			//render::draw_stacked_text(r.u->pos + xy(0,0),format("%g",v));
 		}
 	}
 
