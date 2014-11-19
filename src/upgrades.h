@@ -14,10 +14,14 @@ struct upgrade_type {
 };
 namespace upgrades {
 	upgrade_type*get_upgrade_type(BWAPI::UpgradeType game_upgrade_type, int level = 1);
+	upgrade_type*get_upgrade_type(BWAPI::TechType game_tech_type);
 }
 namespace upgrade_types {
 	void get(upgrade_type*&r, BWAPI::UpgradeType game_upgrade_type, int level = 1) {
 		r = upgrades::get_upgrade_type(game_upgrade_type, level);
+	}
+	void get(upgrade_type*&r, BWAPI::TechType game_tech_type) {
+		r = upgrades::get_upgrade_type(game_tech_type);
 	}
 	typedef upgrade_type* upgrade_type_pointer;
 	upgrade_type_pointer terran_infantry_weapons_1, terran_infantry_weapons_2, terran_infantry_weapons_3;
@@ -28,6 +32,7 @@ namespace upgrade_types {
 	upgrade_type_pointer terran_ship_plating_1, terran_ship_plating_2, terran_ship_plating_3;
 
 	upgrade_type_pointer ion_thrusters;
+	upgrade_type_pointer siege_mode;
 
 	void init() {
 		get(terran_infantry_weapons_1, BWAPI::UpgradeTypes::Terran_Infantry_Weapons, 1);
@@ -52,6 +57,7 @@ namespace upgrade_types {
 		get(terran_ship_plating_3, BWAPI::UpgradeTypes::Terran_Ship_Plating, 3);
 
 		get(ion_thrusters, BWAPI::UpgradeTypes::Ion_Thrusters);
+		get(siege_mode, BWAPI::TechTypes::Tank_Siege_Mode);
 		
 	}
 }
@@ -87,6 +93,27 @@ upgrade_type*get_upgrade_type(BWAPI::UpgradeType game_upgrade_type, int level) {
 	r->level = level;
 	r->prev = level == 1 ? nullptr : get_upgrade_type(game_upgrade_type, level - 1);
 	for (auto&v : game_upgrade_type.whatUses()) {
+		r->what_uses.push_back(units::get_unit_type(v));
+	}
+	return r;
+
+}
+upgrade_type*get_upgrade_type(BWAPI::TechType game_tech_type) {
+	upgrade_type*&r = tech_type_map[game_tech_type];
+	if (r) return r;
+	upgrade_type_container.emplace_back();
+	r = &upgrade_type_container.back();
+	r->game_tech_type = game_tech_type;
+
+	r->minerals_cost = game_tech_type.mineralPrice();
+	r->gas_cost = game_tech_type.gasPrice();
+	r->builder_type = units::get_unit_type(game_tech_type.whatResearches());
+	r->build_time = game_tech_type.researchTime();
+	if (r->builder_type) r->required_units.push_back(r->builder_type);
+	r->name = game_tech_type.getName().c_str();
+	r->level = 1;
+	r->prev = nullptr;
+	for (auto&v : game_tech_type.whatUses()) {
 		r->what_uses.push_back(units::get_unit_type(v));
 	}
 	return r;
