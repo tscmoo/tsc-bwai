@@ -492,12 +492,42 @@ bool build_has_not_creep(grid::build_square&bs, unit_type*ut) {
 	return true;
 }
 bool build_full_check(grid::build_square&bs, unit_type*ut) {
-	//bool okay = build_spot_finder::is_buildable_at(ut, bs);
 	bool okay = build_spot_finder::can_build_at(ut, bs);
 	if (!ut->requires_creep && okay) okay &= build_has_not_creep(bs, ut);
 	if (ut->requires_creep && okay) okay &= build_has_creep(bs, ut);
 	if (ut->requires_pylon && okay) okay &= build_has_pylon(bs, ut);
 	return okay;
+}
+
+bool build_is_valid(grid::build_square&bs, unit_type*ut) {
+	bool okay = build_spot_finder::is_buildable_at(ut, bs);
+	if (!ut->requires_creep && okay) okay &= build_has_not_creep(bs, ut);
+	if (ut->requires_creep && okay) okay &= build_has_creep(bs, ut);
+	if (ut->requires_pylon && okay) okay &= build_has_pylon(bs, ut);
+	return okay;
+}
+
+bool set_build_pos(build_task*t, xy pos) {
+	auto&b = *t;
+	if (b.build_pos != xy()) {
+		grid::unreserve_build_squares(b.build_pos, b.type->unit);
+	}
+	bool okay = build_is_valid(grid::get_build_square(pos), t->type->unit);
+	if (!okay) {
+		if (b.build_pos != xy()) grid::reserve_build_squares(b.build_pos, b.type->unit);
+		return false;
+	}
+	b.build_pos = pos;
+	grid::reserve_build_squares(b.build_pos, b.type->unit);
+	return true;
+}
+
+void unset_build_pos(build_task*t) {
+	auto&b = *t;
+	if (b.build_pos != xy()) {
+		grid::unreserve_build_squares(b.build_pos, b.type->unit);
+	}
+	b.build_pos = xy();
 }
 
 void execute_build(build_task&b) {
