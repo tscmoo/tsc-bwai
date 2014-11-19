@@ -2,31 +2,29 @@
 namespace scouting {
 ;
 
-unit*scout_unit;
+struct scouter {
+	unit*scout_unit = nullptr;
 
-refcounted_ptr<resource_spots::spot> dst_s;
-int dst_s_seen;
-bool scout_resources = false;
-xy scout_location;
-int last_scout;
+	refcounted_ptr<resource_spots::spot> dst_s;
+	int dst_s_seen = 0;
+	bool scout_resources = false;
+	xy scout_location;
 
-a_vector<xy> starting_locations;
+	void scout();
+};
 
-void scout() {
+a_unordered_map<resource_spots::spot*, int> last_scouted;
 
+void scouter::scout() {
+
+// 	if (scout_unit){
+// 		if (scout_unit->controller->action != unit_controller::action_scout) scout_unit = nullptr;
+// 		else if (scout_unit->dead) scout_unit = nullptr;
+// 	}
 	if (scout_unit){
-		if (scout_unit->controller->action != unit_controller::action_scout) scout_unit = nullptr;
-		else if (scout_unit->dead) scout_unit = nullptr;
+		if (scout_unit->dead) scout_unit = nullptr;
 	}
 
-	if (!scout_unit && (last_scout == 0 || current_frame - last_scout >= 15 * 60 * 3)) {
-		if (my_workers.size() < 10) return;
-		scout_unit = get_best_score(my_workers, [&](unit*u) {
-			if (u->controller->action != unit_controller::action_gather) return std::numeric_limits<double>::infinity();
-			return 0.0;
-		}, std::numeric_limits<double>::infinity());
-		if (scout_unit) last_scout = current_frame;
-	}
 	if (!scout_unit) return;
 
 	if (!dst_s) {
@@ -37,10 +35,11 @@ void scout() {
 					return unit_pathing_distance(scout_unit->type, u->pos, s->cc_build_pos);
 				});
 			} else {
-				d = get_best_score_value(starting_locations, [&](xy pos) {
+				d = get_best_score_value(start_locations, [&](xy pos) {
 					return unit_pathing_distance(scout_unit->type, pos, s->cc_build_pos);
 				});
 			}
+			if (current_frame - last_scouted[s] <= 15 * 4) d += 4000;
 			auto&bs = grid::get_build_square(s->cc_build_pos);
 			int age = current_frame - bs.last_seen;
 			//d /= std::max(age, 1);
@@ -55,6 +54,8 @@ void scout() {
 	}
 
 	if (!dst_s) return;
+
+	last_scouted[&*dst_s] = current_frame;
 
 	if (dst_s_seen!=-1) {
 		scout_unit->controller->action = unit_controller::action_scout;
@@ -121,6 +122,40 @@ void scan() {
 	}
 }
 
+a_vector<scouter> all_scouters;
+
+void add_scouter(unit*u) {
+	scouter sc;
+	sc.scout_unit = u;
+	all_scouters.push_back(sc);
+}
+
+int last_scout = 0;
+
+void process_scouters() {
+
+	if (all_scouters.empty()) {
+		if (last_scout == 0 || current_frame - last_scout >= 15 * 60 * 3) {
+			if (my_workers.size() < 10) return;
+			unit*scout_unit = get_best_score(my_workers, [&](unit*u) {
+				if (u->controller->action != unit_controller::action_gather) return std::numeric_limits<double>::infinity();
+				return 0.0;
+			}, std::numeric_limits<double>::infinity());
+			if (scout_unit) last_scout = current_frame;
+			add_scouter(scout_unit);
+		}
+	}
+
+	for (auto i = all_scouters.begin(); i != all_scouters.end();) {
+		if (i->scout_unit == nullptr) i = all_scouters.erase(i);
+		else {
+			i->scout();
+			++i;
+		}
+	}
+
+}
+
 void scouting_task() {
 
 	int last_scan = 0;
@@ -129,7 +164,7 @@ void scouting_task() {
 
 		multitasking::sleep(4);
 
-		scout();
+		process_scouters();
 
 		if (current_used_supply[race_terran] >= 60) {
 			if (!my_units_of_type[unit_types::cc].empty()) {
@@ -140,7 +175,9 @@ void scouting_task() {
 						if (cc->addon) continue;
 						//if (cc->game_unit->canBuildAddon(unit_types::comsat_station->game_unit_type)) {
 						if (true) {
-							build::add_build_sum(0, unit_types::comsat_station, 1);
+							if (my_units_of_type[unit_types::refinery].empty()) {
+								build::add_build_sum(0, unit_types::refinery, 1);
+							} else build::add_build_sum(0, unit_types::comsat_station, 1);
 							break;
 						}
 					}
@@ -158,18 +195,15 @@ void scouting_task() {
 
 void render() {
 
-	if (scout_unit) {
-		if (dst_s) game->drawLineMap(scout_unit->pos.x, scout_unit->pos.y, dst_s->pos.x, dst_s->pos.y, BWAPI::Colors::Blue);
+	for (auto&v : all_scouters) {
+		if (v.scout_unit) {
+			if (v.dst_s) game->drawLineMap(v.scout_unit->pos.x, v.scout_unit->pos.y, v.dst_s->pos.x, v.dst_s->pos.y, BWAPI::Colors::Blue);
+		}
 	}
 
 }
 
 void init() {
-
-	for (auto&v : game->getStartLocations()) {
-		bwapi_pos p = v;
-		starting_locations.emplace_back(p.x * 32, p.y * 32);
-	}
 
 	multitasking::spawn(scouting_task, "scouting");
 
