@@ -2,7 +2,7 @@
 namespace scouting {
 ;
 
-struct scouter {
+struct scout {
 	unit*scout_unit = nullptr;
 
 	refcounted_ptr<resource_spots::spot> dst_s;
@@ -10,12 +10,12 @@ struct scouter {
 	bool scout_resources = false;
 	xy scout_location;
 
-	void scout();
+	void process();
 };
 
 a_unordered_map<resource_spots::spot*, int> last_scouted;
 
-void scouter::scout() {
+void scout::process() {
 
 // 	if (scout_unit){
 // 		if (scout_unit->controller->action != unit_controller::action_scout) scout_unit = nullptr;
@@ -122,19 +122,19 @@ void scan() {
 	}
 }
 
-a_vector<scouter> all_scouters;
+a_vector<scout> all_scouts;
 
-void add_scouter(unit*u) {
-	scouter sc;
+void add_scout(unit*u) {
+	scout sc;
 	sc.scout_unit = u;
-	all_scouters.push_back(sc);
+	all_scouts.push_back(sc);
 }
 
 int last_scout = 0;
 
-void process_scouters() {
+void process_scouts() {
 
-	if (all_scouters.empty()) {
+	if (all_scouts.empty()) {
 		if (last_scout == 0 || current_frame - last_scout >= 15 * 60 * 3) {
 			if (my_workers.size() < 10) return;
 			unit*scout_unit = get_best_score(my_workers, [&](unit*u) {
@@ -142,14 +142,14 @@ void process_scouters() {
 				return 0.0;
 			}, std::numeric_limits<double>::infinity());
 			if (scout_unit) last_scout = current_frame;
-			add_scouter(scout_unit);
+			add_scout(scout_unit);
 		}
 	}
 
-	for (auto i = all_scouters.begin(); i != all_scouters.end();) {
-		if (i->scout_unit == nullptr) i = all_scouters.erase(i);
+	for (auto i = all_scouts.begin(); i != all_scouts.end();) {
+		if (i->scout_unit == nullptr) i = all_scouts.erase(i);
 		else {
-			i->scout();
+			i->process();
 			++i;
 		}
 	}
@@ -164,7 +164,7 @@ void scouting_task() {
 
 		multitasking::sleep(4);
 
-		process_scouters();
+		process_scouts();
 
 		if (current_used_supply[race_terran] >= 60) {
 			if (!my_units_of_type[unit_types::cc].empty()) {
@@ -195,7 +195,7 @@ void scouting_task() {
 
 void render() {
 
-	for (auto&v : all_scouters) {
+	for (auto&v : all_scouts) {
 		if (v.scout_unit) {
 			if (v.dst_s) game->drawLineMap(v.scout_unit->pos.x, v.scout_unit->pos.y, v.dst_s->pos.x, v.dst_s->pos.y, BWAPI::Colors::Blue);
 		}
