@@ -425,6 +425,7 @@ double get_distance(pathing_map&map, xy from_pos, xy to_pos) {
 	double r = std::numeric_limits<double>::infinity();
 	if (!from || !to) return r;
 	if (from->root_index != to->root_index) return r;
+	if (from == to) return diag_distance(to_pos - from_pos);
 
 	find_path(map, from, to, from_pos, to_pos, [&](open_t&cur) {
 		r = cur.distance;
@@ -502,25 +503,31 @@ a_deque<xy> find_square_path(pathing_map&map, xy from, pred_T&&pred, est_dist_T&
 
 		auto add = [&](int n) {
 			xy npos = cur.pos;
-			if (n == 0) npos.x += 8;
-			if (n == 1) npos.y += 8;
-			if (n == 2) npos.x -= 8;
-			if (n == 3) npos.y -= 8;
-			if ((size_t)npos.x >= (size_t)grid::map_width || (size_t)npos.y >= (size_t)grid::map_height) return;
+			if (n & 1) npos.x += 8;
+			if (n & 2) npos.y += 8;
+			if (n & 4) npos.x -= 8;
+			if (n & 8) npos.y -= 8;
+			if ((size_t)npos.x >= (size_t)grid::map_width || (size_t)npos.y >= (size_t)grid::map_height) return false;
 			size_t index = walk_pos_index(npos);
-			if (visited.test(index)) return;
+			if (visited.test(index)) return false;
 			visited.set(index);
-			if (!map.walkable.test(index)) return;
-			if (!pred(cur.pos, npos)) return;
+			if (!map.walkable.test(index)) return false;
+			if (!pred(cur.pos, npos)) return false;
 
-			double distance = cur.distance + (cur.n == -1 || cur.n % 2 == n % 2 ? 8 : 11.313708498984760390413509793678);
+			//double distance = cur.distance + (cur.n == -1 || cur.n % 2 == n % 2 ? 8 : 11.313708498984760390413509793678);
+			double distance = cur.distance + diag_distance(npos - cur.pos);
 			double est_distance = distance + est_dist(cur.pos, npos);
 			open.push({ &closed_node, npos, distance, est_distance, n });
+			return true;
 		};
-		add(0);
-		add(1);
-		add(2);
-		add(3);
+		bool r = add(1);
+		bool d = add(2);
+		bool l = add(4);
+		bool u = add(8);
+		if (r || d) add(1 | 2);
+		if (d || l) add(2 | 4);
+		if (l || u) add(4 | 8);
+		if (u || r) add(8 | 1);
 	}
 
 	//log("find square path found path with %d nodes in %d iterations (%fs)\n", r.size(), iterations, ht.elapsed());
