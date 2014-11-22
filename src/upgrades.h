@@ -33,6 +33,9 @@ namespace upgrade_types {
 
 	upgrade_type_pointer ion_thrusters;
 	upgrade_type_pointer siege_mode;
+	upgrade_type_pointer u_238_shells, stim_packs;
+	upgrade_type_pointer healing;
+	upgrade_type_pointer ocular_implants, moebius_reactor, lockdown, personal_cloaking;
 
 	void init() {
 		get(terran_infantry_weapons_1, BWAPI::UpgradeTypes::Terran_Infantry_Weapons, 1);
@@ -58,6 +61,13 @@ namespace upgrade_types {
 
 		get(ion_thrusters, BWAPI::UpgradeTypes::Ion_Thrusters);
 		get(siege_mode, BWAPI::TechTypes::Tank_Siege_Mode);
+		get(u_238_shells, BWAPI::UpgradeTypes::U_238_Shells);
+		get(stim_packs, BWAPI::TechTypes::Stim_Packs);
+		get(healing, BWAPI::TechTypes::Healing);
+		get(ocular_implants, BWAPI::UpgradeTypes::Ocular_Implants);
+		get(moebius_reactor, BWAPI::UpgradeTypes::Moebius_Reactor);
+		get(lockdown, BWAPI::TechTypes::Lockdown);
+		get(personal_cloaking, BWAPI::TechTypes::Personnel_Cloaking);
 		
 	}
 }
