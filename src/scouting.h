@@ -45,6 +45,14 @@ void scout::process() {
 			//d /= std::max(age, 1);
 			d -= age * 2;
 			d += unit_pathing_distance(scout_unit, s->cc_build_pos) / 10000;
+			for (auto*n : square_pathing::find_path(square_pathing::get_pathing_map(scout_unit->type), scout_unit->pos, s->pos)) {
+				for (unit*e : enemy_units) {
+					weapon_stats*w = scout_unit->is_flying ? e->stats->air_weapon : e->stats->ground_weapon;
+					if (!w) continue;
+					double d = diag_distance(n->pos - e->pos);
+					if (d <= w->max_range * 2) d += 100;
+				}
+			}
 			return d;
 		}, std::numeric_limits<double>::infinity());
 		if (dst_s) {
@@ -96,7 +104,7 @@ void scan() {
 		}
 		for (auto&v : st.bases) {
 			values[v.s->pos] += 20;
-			if (!v.verified) values[v.s->cc_build_pos] += 200;
+			if (!v.verified) values[v.s->cc_build_pos] += 2000;
 		}
 	}
 	auto*scan_st = units::get_unit_stats(unit_types::spell_scanner_sweep, players::my_player);
@@ -166,7 +174,7 @@ void scouting_task() {
 
 		process_scouts();
 
-		if (current_used_supply[race_terran] >= 60) {
+		if (current_used_supply[race_terran] >= 60 || !my_completed_units_of_type[unit_types::academy].empty()) {
 			if (!my_units_of_type[unit_types::cc].empty()) {
 				if (my_units_of_type[unit_types::academy].empty()) {
 					build::add_build_sum(0, unit_types::academy, 1);

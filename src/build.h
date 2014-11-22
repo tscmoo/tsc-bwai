@@ -535,8 +535,16 @@ void execute_build(build_task&b) {
 	if (b.built_unit && b.type->unit && b.type->unit->is_building) {
 		log("b.built_unit is %p, build_pos is %d %d\n",b.built_unit,b.build_pos.x,b.build_pos.y);
 		if (b.build_pos==xy() && !b.type->unit->is_refinery && !b.type->unit->is_addon) {
-			b.build_pos = b.built_unit->building->build_pos;
-			grid::reserve_build_squares(b.build_pos,b.type->unit);
+			bool ok = true;
+			for (int y = 0; y < b.type->unit->tile_height && ok; ++y) {
+				for (int x = 0; x < b.type->unit->tile_width && ok; ++x) {
+					if (grid::get_build_square(b.built_unit->building->build_pos + xy(x * 32, y * 32)).reserved.first) ok = false;
+				}
+			}
+			if (ok) {
+				b.build_pos = b.built_unit->building->build_pos;
+				grid::reserve_build_squares(b.build_pos, b.type->unit);
+			}
 		}
 	}
 	auto pred_pylon = [&](grid::build_square&bs) {
@@ -889,6 +897,11 @@ void execute_build(build_task&b) {
 						if (b.type->unit->is_addon && u->type == unit_types::cc) {
 							//if (!u->game_unit->canBuildAddon(b.type->unit->game_unit_type)) return std::numeric_limits<double>::infinity();
 						}
+						if (!b.type->unit->is_addon) {
+							if (u->building && u->building->is_lifted) return std::numeric_limits<double>::infinity();
+							if (u->building && current_frame - u->building->building_addon_frame <= 15) return std::numeric_limits<double>::infinity();
+						}
+						if (u->controller->noorder_until > current_frame) return std::numeric_limits<double>::infinity();
 						return (double)u->remaining_whatever_time;
 					},std::numeric_limits<double>::infinity());
 				}
@@ -896,26 +909,6 @@ void execute_build(build_task&b) {
 			if (builder && !b.built_unit) {
 				if (b.type->unit->is_addon && builder->addon) builder = nullptr;
 			}
-			//if (b.builder && builder!=b.builder) {
-			/*if (b.builder && !b.built_unit) {
-				if (b.type->unit && !b.type->unit->is_building) {
-					int idx = -1;
-					for (size_t i=0;i<b.builder->train_queue.size();++i) {
-						if (b.builder->train_queue[i]==b.type->unit) idx=i;
-					}
-					if (idx==-1) xcept("build_task %s - builder changed, but no such unit in train queue!",b.type->name);
-					if (b.builder->controller->noorder_until<current_frame && b.builder->game_unit->cancelTrain(idx)) {
-					//if (b.builder->controller->noorder_until<current_frame && b.builder->game_unit->cancelTrain()) {
-						log("cancel idx %d okay\n",idx);
-						b.builder->controller->noorder_until = current_frame + 4;
-						builder = nullptr;
-					} else {
-						log("cancel idx %d failed\n",idx);
-						builder = b.builder;
-					}
-				} else xcept("unreachable");
-			}*/
-			//if (builder && !b.built_unit && !b.builder) {
 			if (builder && !b.built_unit) {
 				if (b.type->unit && !b.type->unit->is_building) {
 					bool wait = false;

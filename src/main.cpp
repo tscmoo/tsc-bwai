@@ -159,6 +159,10 @@ struct bwapi_pos {
 	int x, y;
 	bwapi_pos(BWAPI::Position pos) : bwapi_pos((bwapi_pos&)pos) {}
 	bwapi_pos(BWAPI::TilePosition pos) : bwapi_pos((bwapi_pos&)pos) {}
+	template<typename T=xy>
+	operator T() const {
+		return T(x, y);
+	}
 };
 
 template<bool b = is_bwapi_4, typename std::enable_if<b>::type* = 0>
@@ -196,14 +200,18 @@ struct upgrade_type;
 struct unit;
 struct unit_stats;
 struct unit_type;
-template<typename> struct xy_typed;
-typedef xy_typed<int> xy;
-namespace square_pathing {
-	void invalidate_area(xy from, xy to);
-}
+
 
 #include "ranges.h"
 #include "common.h"
+
+namespace square_pathing {
+	void invalidate_area(xy from, xy to);
+}
+a_vector<xy> start_locations;
+xy my_start_location;
+
+
 #include "multitasking.h"
 #include "multitasking_sync.h"
 #include "grid.h"
@@ -213,6 +221,7 @@ namespace square_pathing {
 #include "upgrades.h"
 #include "units.h"
 #include "square_pathing.h"
+#include "flyer_pathing.h"
 #include "unit_controls.h"
 #include "resource_gathering.h"
 #include "resource_spots.h"
@@ -225,8 +234,14 @@ namespace square_pathing {
 #include "combat.h"
 #include "scouting.h"
 #include "get_upgrades.h"
+#include "strategy.h"
 
 void init() {
+
+	for (auto&v : game->getStartLocations()) {
+		start_locations.emplace_back(((bwapi_pos)v).x * 32, ((bwapi_pos)v).y * 32);
+	}
+	my_start_location = xy(((bwapi_pos)game->self()->getStartLocation()).x * 32, ((bwapi_pos)game->self()->getStartLocation()).y * 32);
 
 	multitasking::init();
 	grid::init();
@@ -246,6 +261,7 @@ void init() {
 	combat::init();
 	scouting::init();
 	get_upgrades::init();
+	strategy::init();
 
 }
 

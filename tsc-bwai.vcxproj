@@ -87,9 +87,13 @@
     <ClInclude Include="src/stats.h" />
     <ClInclude Include="src/units.h" />
     <ClInclude Include="src/unit_controls.h" />
+    <ClInclude Include="src\flyer_pathing.h" />
     <ClInclude Include="src\get_upgrades.h" />
     <ClInclude Include="src\multitasking_sync.h" />
     <ClInclude Include="src\players.h" />
+    <ClInclude Include="src\strategy.h" />
+    <ClInclude Include="src\strat_proxy_rax.h" />
+    <ClInclude Include="src\strat_wraith.h" />
     <ClInclude Include="src\upgrades.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
