@@ -148,7 +148,9 @@ void process(resource_t&r) {
 			xy resource_pos = nearest_spot_in_square(depot->pos,resource_top_left,resource_bottom_right);
 			//render_lines[&r] = std::make_tuple(depot_pos,resource_pos);
 			//log("frames to reach is %d, distance is %g\n",frames_to_reach(nearest_gatherer->u->stats,0.0,(depot_pos - resource_pos).length()),(depot_pos - resource_pos).length());
-			round_trip_time = frames_to_reach(nearest_gatherer->u->stats,0.0,(depot_pos - resource_pos).length()) * 2;
+			double length = (depot_pos - resource_pos).length();
+			if (length >= 32 * 10) length = unit_pathing_distance(u->type, resource_pos, depot_pos);
+			round_trip_time = frames_to_reach(nearest_gatherer->u->stats,0.0,length) * 2;
 			round_trip_time += 15 + 4;
 			r.calculated_round_trip_time = round_trip_time;
 			//log("round trip time is %d\n",round_trip_time);
