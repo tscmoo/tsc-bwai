@@ -10,6 +10,9 @@ struct player_t {
 	int workers_seen;
 
 	a_unordered_set<upgrade_type*> upgrades;
+	bool has_upgrade(upgrade_type*t) {
+		return upgrades.find(t) != upgrades.end();
+	}
 };
 
 namespace players {
