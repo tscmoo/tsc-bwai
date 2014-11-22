@@ -38,6 +38,8 @@ struct unit_type {
 	double width;
 	int space_required;
 	int space_provided;
+	bool is_biological;
+	bool is_mechanical;
 };
 
 struct weapon_stats {
@@ -52,6 +54,9 @@ struct weapon_stats {
 	bool targets_ground;
 	enum { damage_type_none, damage_type_concussive, damage_type_normal, damage_type_explosive };
 	int damage_type;
+	enum { explosion_type_none, explosion_type_radial_splash };
+	int explosion_type;
+	double inner_splash_radius, median_splash_radius, outer_splash_radius;
 };
 
 struct unit_stats {
@@ -163,6 +168,8 @@ struct unit {
 	a_vector<unit*> loaded_units;
 	bool is_loaded;
 	unit*loaded_into;
+	int high_priority_until;
+	bool is_flying;
 
 	std::array<size_t,std::extent<decltype(units::unit_containers)>::value> container_indexes;
 };
@@ -347,6 +354,8 @@ unit_type*new_unit_type(BWAPI::UnitType game_unit_type,unit_type*ut) {
 	ut->width = std::max(ut->dimensions[0] + 1 + ut->dimensions[2], ut->dimensions[1] + 1 + ut->dimensions[3]);
 	ut->space_required = game_unit_type.spaceRequired();
 	ut->space_provided = game_unit_type.spaceProvided();
+	ut->is_biological = game_unit_type.isOrganic();
+	ut->is_mechanical = game_unit_type.isMechanical();
 	return ut;
 }
 unit_type*get_unit_type(unit_type*&rv,BWAPI::UnitType game_unit_type) {
@@ -465,7 +474,11 @@ void update_weapon_stats(weapon_stats*st) {
 	if (gw.damageType() == BWAPI::DamageTypes::Concussive) st->damage_type = weapon_stats::damage_type_concussive;
 	if (gw.damageType() == BWAPI::DamageTypes::Normal) st->damage_type = weapon_stats::damage_type_normal;
 	if (gw.damageType() == BWAPI::DamageTypes::Explosive) st->damage_type = weapon_stats::damage_type_explosive;
-
+	st->explosion_type = gw.explosionType();
+	if (gw.explosionType() == BWAPI::ExplosionTypes::Radial_Splash) st->explosion_type = weapon_stats::explosion_type_radial_splash;
+	st->inner_splash_radius = gw.innerSplashRadius();
+	st->median_splash_radius = gw.medianSplashRadius();
+	st->outer_splash_radius = gw.outerSplashRadius();
 }
 
 weapon_stats*get_weapon_stats(BWAPI::WeaponType type, player_t*player) {
@@ -596,6 +609,7 @@ void update_unit_stuff(unit*u) {
 	u->is_loaded = u->game_unit->isLoaded();
 	u->loaded_into = u->game_unit->getTransport() ? get_unit(u->game_unit->getTransport()) : nullptr;
 	if (u->loaded_into) u->pos = u->loaded_into->pos;
+	u->is_flying = u->type->is_flyer || u->game_unit->isLifted();
 
 	unit_building*b = u->building;
 	if (b) {
@@ -638,6 +652,7 @@ unit*new_unit(BWAPI_Unit game_unit) {
 
 	u->minerals_value = 0;
 	u->gas_value = 0;
+	u->high_priority_until = 0;
 
 	update_unit_owner(u);
 	update_unit_type(u);
