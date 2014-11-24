@@ -1,7 +1,7 @@
 
 struct unit_controller {
 	unit*u = nullptr;
-	enum { action_idle, action_move, action_gather, action_build, action_attack, action_scout, action_move_directly, action_use_ability };
+	enum { action_idle, action_move, action_gather, action_build, action_attack, action_scout, action_move_directly, action_use_ability, action_repair };
 	int action = action_idle;
 	xy go_to;
 	unit*target = nullptr;
@@ -19,6 +19,9 @@ struct unit_controller {
 	int noorder_until = 0;
 	int wait_until = 0;
 	int last_reached_go_to = 0;
+	int fail_build_count = 0;
+	xy move_away_from;
+	int move_away_until = 0;
 };
 
 namespace unit_controls {
@@ -68,6 +71,7 @@ void move(unit_controller*c) {
 	if (c->last_move_to_pos != move_to || current_frame >= c->last_move_to + 30) {
 		c->last_move_to = current_frame;
 		c->last_move_to_pos = move_to;
+		move_to += xy(-2, -2) + xy(rng(5), rng(5));
 		//if (u->game_unit->isSieged()) u->game_unit->unsiege();
 		//else u->game_unit->move(BWAPI::Position(move_to.x, move_to.y));
 
@@ -102,9 +106,23 @@ void move(unit_controller*c) {
 			} else u->game_unit->move(BWAPI::Position(move_to.x, move_to.y));
 		}
 
-		c->noorder_until = current_frame + rng(8);
+		c->noorder_until = current_frame + 4 + rng(4);
 	}
 
+}
+
+void move_away(unit_controller*c) {
+	auto path = square_pathing::find_square_path(square_pathing::get_pathing_map(c->u->type), c->u->pos, [&](xy pos, xy npos) {
+		return true;
+	}, [&](xy pos, xy npos) {
+		return 0.0;
+	}, [&](xy pos) {
+		return diag_distance(c->move_away_from - pos) >= 32 * 10;
+	});
+	auto move_to = square_pathing::get_go_to_along_path(c->u, path);
+	move_to += xy(-2, -2) + xy(rng(5), rng(5));
+	c->u->game_unit->move(BWAPI::Position(move_to.x, move_to.y));
+	c->noorder_until = current_frame + 4 + rng(4);
 }
 
 void process(a_vector<unit_controller*>&controllers) {
@@ -112,6 +130,7 @@ void process(a_vector<unit_controller*>&controllers) {
 	for (auto*c : controllers) {
 		bool can_move = c->u->game_unit->canIssueCommand(BWAPI::UnitCommand::move(c->u->game_unit,c->u->game_unit->getPosition()));
 		if (c->u->type->game_unit_type==BWAPI::UnitTypes::Zerg_Larva) can_move = false;
+		if (c->u->type == unit_types::spider_mine) can_move = false;
 		c->can_move = can_move;
 	}
 
@@ -120,21 +139,12 @@ void process(a_vector<unit_controller*>&controllers) {
 		unit*u = c->u;
 		if (u->building) continue;
 
-		if (current_frame<c->noorder_until) continue;
+		if (current_frame < c->noorder_until) continue;
 
-// 		if (c->u->type == unit_types::barracks) {
-// 			log("moo %d %d %d %d!\n", c->can_move, u->game_unit->canMove(), u->game_unit->isLifted(), u->type->game_unit_type.canMove());
-// 			c->noorder_until = current_frame + 8;
-// 			bool b = u->game_unit->move(BWAPI::Position(128, 128));
-// 			BWAPI::Error e = game->getLastError();
-// 			log("%d %d %s\n", b, e.getID(), e.getName());
-// 		}
-
-// 		if (c->action == unit_controller::action_idle) {
-// 			c->last_move = current_frame;
-// 			c->go_to = u->pos;
-// 			move(c);
-// 		}
+		if (current_frame < c->move_away_until) {
+			move_away(c);
+			continue;
+		}
 
 		if (c->action==unit_controller::action_move && c->can_move && current_frame-c->last_move>=move_resolution) {
 			c->last_move = current_frame;
@@ -151,7 +161,32 @@ void process(a_vector<unit_controller*>&controllers) {
 			if (c->ability == upgrade_types::spider_mines) {
 				u->game_unit->useTech(c->ability->game_tech_type, BWAPI::Position(u->pos.x, u->pos.y));
 				c->noorder_until = current_frame + 15;
+			} else if (c->ability == upgrade_types::nuclear_strike) {
+				u->game_unit->useTech(c->ability->game_tech_type, BWAPI::Position(c->target_pos.x, c->target_pos.y));
+				c->noorder_until = current_frame + 15;
+			} else if (c->ability == upgrade_types::personal_cloaking) {
+				u->game_unit->useTech(c->ability->game_tech_type);
+				c->noorder_until = current_frame + 15;
 			} else xcept("unknown ability %s", c->ability->name);
+// 			if (c->ability->game_tech_type.targetsUnit()) {
+// 				u->game_unit->useTech(c->ability->game_tech_type, c->target->game_unit);
+// 			} else if (c->ability->game_tech_type.targetsPosition()) {
+// 				u->game_unit->useTech(c->ability->game_tech_type, BWAPI::Position(u->pos.x, u->pos.y));
+// 			} else {
+// 				u->game_unit->useTech(c->ability->game_tech_type);
+// 			}
+		}
+
+		if (c->action == unit_controller::action_repair) {
+			if (units_pathing_distance(u, c->target) > 32 * 4) {
+				c->go_to = c->target->pos;
+				move(c);
+			} else {
+				if (u->game_order != BWAPI::Orders::Repair || u->order_target != c->target) {
+					u->game_unit->repair(c->target->game_unit);
+					c->noorder_until = current_frame + 4;
+				}
+			}
 		}
 
 		if (c->action==unit_controller::action_gather) {
@@ -220,7 +255,30 @@ void process(a_vector<unit_controller*>&controllers) {
 					}// else log("building, lalala\n");
 				} else if (is_inside && current_frame+latency_frames>=c->wait_until) {
 					//log("build!\n");
-					bwapi_call_build(u->game_unit, c->target_type->game_unit_type, BWAPI::TilePosition(build_pos.x / 32, build_pos.y / 32));
+					if (!bwapi_call_build(u->game_unit, c->target_type->game_unit_type, BWAPI::TilePosition(build_pos.x / 32, build_pos.y / 32))) {
+						for (unit*nu : my_units) {
+							if (nu->is_flying) continue;
+							if (nu == u) continue;
+							xy upper_left = nu->pos - xy(nu->type->dimension_left(), nu->type->dimension_up());
+							xy bottom_right = nu->pos + xy(nu->type->dimension_right(), nu->type->dimension_down());
+							int x1 = build_pos.x;
+							int y1 = build_pos.y;
+							int x2 = build_pos.x + c->target_type->tile_width * 32;
+							int y2 = build_pos.y + c->target_type->tile_height * 32;
+							if (bottom_right.x < x1) continue;
+							if (bottom_right.y < y1) continue;
+							if (upper_left.x > x2) continue;
+							if (upper_left.y > y2) continue;
+							if (!nu->controller->can_move) {
+								u->game_unit->attack(nu->game_unit);
+								c->noorder_until = current_frame + 15;
+								break;
+							}
+							nu->controller->move_away_from = xy((x1 + x2) / 2, (y1 + y2) / 2);
+							nu->controller->move_away_until = current_frame + 15 * 2;
+						}
+						++c->fail_build_count;
+					} else c->fail_build_count = 0;
 					c->noorder_until = current_frame + 7;
 				} else {
 					//log("move to %d %d!\n",build_pos.x,build_pos.y);
@@ -323,6 +381,7 @@ void render() {
 		if (c->action == unit_controller::action_scout) s = "scout";
 		if (c->action == unit_controller::action_move_directly) s = "move directly";
 		if (c->action == unit_controller::action_use_ability) s = "use ability";
+		if (c->action == unit_controller::action_repair) s = "repair";
 
 		game->drawTextMap(u->pos.x-8,u->pos.y+8,"%s",s.c_str());
 		
