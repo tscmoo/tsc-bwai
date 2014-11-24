@@ -91,11 +91,31 @@ void scan() {
 	int scans_available = 0;
 	for (unit*u : my_units_of_type[unit_types::comsat_station]) {
 		if (u->energy < scan_energy_cost) continue;
-		++scans_available;
+		scans_available += (int)(u->energy / scan_energy_cost);
 	}
 	if (!scans_available) return;
 
 	a_map<xy, double> values;
+
+	for (unit*e : enemy_units) {
+		if (e->gone) continue;
+		if (!e->cloaked || e->detected) continue;
+		int in_range_count = 0;
+		for (unit*u : my_units) {
+			if (u->type->is_non_usable) continue;
+			weapon_stats*w = e->is_flying ? u->stats->air_weapon : u->stats->ground_weapon;
+			if (!w) continue;
+			if (diag_distance(e->pos - u->pos) <= w->max_range) ++in_range_count;
+		}
+		if (in_range_count >= 3) values[e->pos] += 1000;
+	}
+	if (scans_available > 2) {
+		for (auto&s : resource_spots::spots) {
+			int t = (current_frame - grid::get_build_square(s.pos).last_seen) - 15 * 60 * 10;
+			if (t < 0) continue;
+			values[s.pos] += t;
+		}
+	}
 
 	for (auto&v : buildpred::opponent_states) {
 		auto&st = std::get<1>(v);
@@ -104,7 +124,7 @@ void scan() {
 		}
 		for (auto&v : st.bases) {
 			values[v.s->pos] += 20;
-			if (!v.verified) values[v.s->cc_build_pos] += 2000;
+			if (!v.verified) values[v.s->cc_build_pos] += 10000;
 		}
 	}
 	auto*scan_st = units::get_unit_stats(unit_types::spell_scanner_sweep, players::my_player);
@@ -120,7 +140,7 @@ void scan() {
 			best_pos = v.first;
 		}
 	}
-	if (best_score >= 3000.0) {
+	if ((best_score >= 3000.0 && scans_available > 2) || best_score >= 10000.0) {
 		unit*u = get_best_score(my_units_of_type[unit_types::comsat_station], [&](unit*u) {
 			return -u->energy;
 		});
@@ -139,16 +159,25 @@ void add_scout(unit*u) {
 }
 
 int last_scout = 0;
+int last_vulture_scout = 0;
 
 void process_scouts() {
 
 	if (all_scouts.empty()) {
 		if (last_scout == 0 || current_frame - last_scout >= 15 * 60 * 3 || current_used_total_supply >= 100) {
 			if (my_workers.size() < 10) return;
-			unit*scout_unit = get_best_score(my_workers, [&](unit*u) {
-				if (u->controller->action != unit_controller::action_gather) return std::numeric_limits<double>::infinity();
-				return 0.0;
-			}, std::numeric_limits<double>::infinity());
+			unit*scout_unit = nullptr;
+			if (my_completed_units_of_type[unit_types::vulture].size() >= 15 && current_frame - last_vulture_scout >= 15 * 60 * 2) {
+				last_vulture_scout = current_frame;
+				scout_unit = get_best_score(my_completed_units_of_type[unit_types::vulture], [&](unit*u) {
+					return u->last_attacked;
+				}, std::numeric_limits<double>::infinity());
+			} else {
+				scout_unit = get_best_score(my_workers, [&](unit*u) {
+					if (u->controller->action != unit_controller::action_gather) return std::numeric_limits<double>::infinity();
+					return 0.0;
+				}, std::numeric_limits<double>::infinity());
+			}
 			if (scout_unit) last_scout = current_frame;
 			add_scout(scout_unit);
 		}
@@ -174,19 +203,35 @@ void scouting_task() {
 
 		process_scouts();
 
-		if (current_used_supply[race_terran] >= 60 || !my_completed_units_of_type[unit_types::academy].empty()) {
+		if (current_used_total_supply >= 60 || !my_completed_units_of_type[unit_types::academy].empty()) {
 			if (!my_units_of_type[unit_types::cc].empty()) {
 				if (my_units_of_type[unit_types::academy].empty()) {
 					build::add_build_sum(0, unit_types::academy, 1);
 				} else {
-					for (unit*cc : my_units_of_type[unit_types::cc]) {
-						if (cc->addon) continue;
-						//if (cc->game_unit->canBuildAddon(unit_types::comsat_station->game_unit_type)) {
-						if (true) {
-							if (my_units_of_type[unit_types::refinery].empty()) {
-								build::add_build_sum(0, unit_types::refinery, 1);
-							} else build::add_build_sum(0, unit_types::comsat_station, 1);
+					bool is_building_nuclear_silo = false;
+					for (auto&t : build::build_tasks) {
+						if (t.type->unit == unit_types::nuclear_silo) {
+							is_building_nuclear_silo = true;
 							break;
+						}
+					}
+					if (!is_building_nuclear_silo) {
+						for (unit*cc : my_units_of_type[unit_types::cc]) {
+							if (cc->addon) continue;
+							//if (cc->game_unit->canBuildAddon(unit_types::comsat_station->game_unit_type)) {
+							if (true) {
+								if (my_units_of_type[unit_types::refinery].empty()) {
+									build::add_build_sum(0, unit_types::refinery, 1);
+								} else build::add_build_sum(0, unit_types::comsat_station, 1);
+								break;
+							}
+						}
+					} else {
+						for (auto&t : build::build_tasks) {
+							if (t.type->unit == unit_types::comsat_station) {
+								build::cancel_build_task(&t);
+								break;
+							}
 						}
 					}
 				}
