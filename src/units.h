@@ -40,6 +40,8 @@ struct unit_type {
 	int space_provided;
 	bool is_biological;
 	bool is_mechanical;
+	bool is_hovering;
+	bool is_non_usable;
 };
 
 struct weapon_stats {
@@ -170,6 +172,8 @@ struct unit {
 	unit*loaded_into;
 	int high_priority_until;
 	bool is_flying;
+	int spider_mine_count;
+	bool has_nuke;
 
 	std::array<size_t,std::extent<decltype(units::unit_containers)>::value> container_indexes;
 };
@@ -188,9 +192,11 @@ namespace unit_types {
 	unit_type_pointer spell_scanner_sweep;
 	unit_type_pointer scv, marine, vulture, siege_tank_tank_mode, siege_tank_siege_mode, goliath;
 	unit_type_pointer medic, ghost;
-	unit_type_pointer wraith, battlecruiser, dropship;
+	unit_type_pointer wraith, battlecruiser, dropship, science_vessel;
+	unit_type_pointer spider_mine, nuclear_missile;
 	unit_type_pointer nexus, pylon, gateway, photon_cannon, robotics_facility;
 	unit_type_pointer probe;
+	unit_type_pointer archon, dark_archon;
 	unit_type_pointer hatchery, lair, hive, creep_colony, sunken_colony, spore_colony, nydus_canal, spawning_pool, evolution_chamber;
 	unit_type_pointer drone, overlord, zergling, larva;
 	unit_type_pointer vespene_geyser;
@@ -230,6 +236,10 @@ namespace unit_types {
 		get(wraith, BWAPI::UnitTypes::Terran_Wraith);
 		get(battlecruiser, BWAPI::UnitTypes::Terran_Battlecruiser);
 		get(dropship, BWAPI::UnitTypes::Terran_Dropship);
+		get(science_vessel, BWAPI::UnitTypes::Terran_Science_Vessel);
+
+		get(spider_mine, BWAPI::UnitTypes::Terran_Vulture_Spider_Mine);
+		get(nuclear_missile, BWAPI::UnitTypes::Terran_Nuclear_Missile);
 
 		get(nexus, BWAPI::UnitTypes::Protoss_Nexus);
 		get(pylon, BWAPI::UnitTypes::Protoss_Pylon);
@@ -238,6 +248,8 @@ namespace unit_types {
 		get(robotics_facility, BWAPI::UnitTypes::Protoss_Robotics_Facility);
 
 		get(probe, BWAPI::UnitTypes::Protoss_Probe);
+		get(archon, BWAPI::UnitTypes::Protoss_Archon);
+		get(dark_archon, BWAPI::UnitTypes::Protoss_Dark_Archon);
 
 		get(hatchery, BWAPI::UnitTypes::Zerg_Hatchery);
 		get(lair, BWAPI::UnitTypes::Zerg_Lair);
@@ -335,7 +347,7 @@ unit_type*new_unit_type(BWAPI::UnitType game_unit_type,unit_type*ut) {
 		unit_type*t = get_unit_type(v.first);
 		t->required_for.push_back(ut);
 		ut->required_units.push_back(t);
-		if (v.second!=1) xcept("%s requires %d %s\n",ut->name,v.second,t->name);
+		//if (v.second!=1) xcept("%s requires %d %s\n",ut->name,v.second,t->name);
 	}
 	ut->produces_land_units = false;
 	for (auto&v : unit_types::units_that_produce_land_units) {
@@ -356,6 +368,8 @@ unit_type*new_unit_type(BWAPI::UnitType game_unit_type,unit_type*ut) {
 	ut->space_provided = game_unit_type.spaceProvided();
 	ut->is_biological = game_unit_type.isOrganic();
 	ut->is_mechanical = game_unit_type.isMechanical();
+	ut->is_hovering = ut->is_worker || ut == unit_types::vulture || ut == unit_types::archon || ut == unit_types::dark_archon;
+	ut->is_non_usable = ut == unit_types::spider_mine || ut == unit_types::nuclear_missile;
 	return ut;
 }
 unit_type*get_unit_type(unit_type*&rv,BWAPI::UnitType game_unit_type) {
@@ -610,6 +624,8 @@ void update_unit_stuff(unit*u) {
 	u->loaded_into = u->game_unit->getTransport() ? get_unit(u->game_unit->getTransport()) : nullptr;
 	if (u->loaded_into) u->pos = u->loaded_into->pos;
 	u->is_flying = u->type->is_flyer || u->game_unit->isLifted();
+	u->spider_mine_count = u->game_unit->getSpiderMineCount();
+	u->has_nuke = u->game_unit->hasNuke();
 
 	unit_building*b = u->building;
 	if (b) {

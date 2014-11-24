@@ -21,6 +21,8 @@ void stats_task() {
 		current_used_supply[race_zerg] = (double)p->supplyUsed(BWAPI::Races::Zerg) / 2.0;
 		current_max_supply[race_zerg] = (double)p->supplyTotal(BWAPI::Races::Zerg) / 2.0;
 
+		current_used_total_supply = current_used_supply[race_terran] + current_used_supply[race_protoss] + current_used_supply[race_zerg];
+
 		static const int resource_per_frame_average_size = 15*30;
 
 		auto calculate_average = [&](double&dst,a_deque<int>&hist,int current) {

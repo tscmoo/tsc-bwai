@@ -189,6 +189,7 @@ int latency_frames;
 
 double current_minerals, current_gas;
 std::array<double,3> current_used_supply, current_max_supply;
+double current_used_total_supply;
 
 double current_minerals_per_frame, current_gas_per_frame;
 double predicted_minerals_per_frame, predicted_gas_per_frame;

@@ -902,6 +902,7 @@ void execute_build(build_task&b) {
 							if (u->building && current_frame - u->building->building_addon_frame <= 15) return std::numeric_limits<double>::infinity();
 						}
 						if (u->controller->noorder_until > current_frame) return std::numeric_limits<double>::infinity();
+						if (b.type->unit == unit_types::nuclear_missile && u->has_nuke) return std::numeric_limits<double>::infinity();
 						return (double)u->remaining_whatever_time;
 					},std::numeric_limits<double>::infinity());
 				}

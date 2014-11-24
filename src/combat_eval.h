@@ -14,6 +14,7 @@ namespace combat_eval {
 		bool force_target;
 		int stim_pack_timer = 0;
 		int heal_frame = 0;
+		int spider_mine_count = 0;
 	};
 
 	double get_damage_type_modifier(int damage_type, int target_size) {
@@ -41,15 +42,22 @@ namespace combat_eval {
 			double damage_taken = 0;
 			double score = 0;
 			bool has_stim = false;
+			bool has_spider_mines = false;
+			weapon_stats*spider_mine_weapon;
+			int bunker_count = 0;
 		};
 		std::array<team_t, 2> teams;
 		int total_frames = 0;
 		int max_frames = 0;
 
 		eval() {
+			max_frames = 15 * 60;
 			teams[0].has_stim = players::my_player->has_upgrade(upgrade_types::stim_packs);
 			teams[1].has_stim = players::opponent_player->has_upgrade(upgrade_types::stim_packs);
-			max_frames = 15 * 60;
+			teams[0].has_spider_mines = players::my_player->has_upgrade(upgrade_types::spider_mines);
+			teams[1].has_spider_mines = players::opponent_player->has_upgrade(upgrade_types::spider_mines);
+			teams[0].spider_mine_weapon = units::get_weapon_stats(BWAPI::WeaponTypes::Spider_Mines, players::my_player);
+			teams[1].spider_mine_weapon = units::get_weapon_stats(BWAPI::WeaponTypes::Spider_Mines, players::opponent_player);
 		}
 
 		combatant&add_unit(unit_stats*st, int team) {
@@ -57,7 +65,7 @@ namespace combat_eval {
 			vec.emplace_back();
 			auto&c = vec.back();
 			c.st = st;
-			c.move = 32 * 12;
+			c.move = 32 * 8;
 			c.energy = st->energy;
 			c.shields = st->shields;
 			c.hp = st->hp;
@@ -93,6 +101,7 @@ namespace combat_eval {
 				for (auto&v : t.units) {
 					if (v.hp <= 0) continue;
 					t.start_supply += v.st->type->required_supply;
+					if (v.st->type == unit_types::bunker) ++t.bunker_count;
 				}
 			}
 			while (true) {
@@ -105,6 +114,7 @@ namespace combat_eval {
 					double max_width = 32 * 4;
 					double acc_width = 0.0;
 					for (auto&c : my_team.units) {
+						if (c.st->type == unit_types::spider_mine) continue;
 						if (c.hp <= 0) continue;
 						//if (acc_width >= max_width) continue;
 						if (c.energy < c.st->energy) c.energy += 8.0 / 256;
@@ -142,6 +152,8 @@ namespace combat_eval {
 									if (i == 0) {
 										if (!ec.st->air_weapon && !ec.st->ground_weapon) continue;
 										if (c.force_target && ec.st->type->is_flyer) continue;
+										weapon_stats*ew = c.st->type->is_flyer ? ec.st->air_weapon : ec.st->ground_weapon;
+										if (!ew) continue;
 									}
 									if (!c.force_target) {
 										weapon_stats*w = ec.st->type->is_flyer ? c.st->air_weapon : c.st->ground_weapon;
@@ -150,6 +162,7 @@ namespace combat_eval {
 										//if (ec.move < w->min_range) continue;
 									}
 									if (ec.loaded_until > total_frames) continue;
+									if (enemy_team.bunker_count && ec.st->type == unit_types::marine) continue;
 									if (ec.hp > 0) {
 										target = &ec;
 										break;
@@ -179,13 +192,14 @@ namespace combat_eval {
 							} else {
 								++target_count;
 								if (c.cooldown == 0) {
+									int hits = w == c.st->ground_weapon ? c.st->ground_weapon_hits : c.st->air_weapon_hits;
 									//if (target->move > c.move) target->move = c.move;
 									auto attack = [&](combatant*target, double damage_mult) {
 										double damage = w->damage;
 										if (target->shields <= 0) damage *= get_damage_type_modifier(w->damage_type, target->st->type->size);
 										damage -= target->st->armor;
 										if (damage <= 0) damage = 1.0;
-										damage *= w == c.st->ground_weapon ? c.st->ground_weapon_hits : c.st->air_weapon_hits;
+										damage *= hits;
 										damage *= damage_mult;
 										if (target->shields > 0) {
 											target->shields -= damage;
@@ -202,11 +216,11 @@ namespace combat_eval {
 										enemy_team.damage_taken += damage_dealt;
 										int cooldown = w->cooldown;
 										if (c.st->type == unit_types::marine) {
-											if (my_team.has_stim && c.stim_pack_timer == 0 && c.hp>10) {
-												c.stim_pack_timer = 220;
-												c.hp -= 10;
-												my_team.damage_taken += 10;
-											}
+// 											if (my_team.has_stim && c.stim_pack_timer == 0 && c.hp>10) {
+// 												c.stim_pack_timer = 220;
+// 												c.hp -= 10;
+// 												my_team.damage_taken += 10;
+// 											}
 										}
 										if (c.stim_pack_timer) cooldown /= 2;
 										c.cooldown = cooldown;
@@ -215,9 +229,15 @@ namespace combat_eval {
 											double value = target->st->type->total_minerals_cost + target->st->type->total_gas_cost * 2;
 											my_team.score += value;
 											if (target->st->type->is_worker) my_team.score += value;
+											if (target->st->type == unit_types::bunker) --enemy_team.bunker_count;
 										}
 									};
-									attack(target, 1.0);
+									if (c.spider_mine_count && my_team.has_spider_mines && !target->st->type->is_hovering && !target->st->type->is_flyer && !target->st->type->is_building) {
+										w = my_team.spider_mine_weapon;
+										hits = 1;
+										attack(target, 0.5);
+										--c.spider_mine_count;
+									} else attack(target, 1.0);
 									if (c.st->type == unit_types::siege_tank_siege_mode) {
 										combatant*ntarget = target + 1;
 										if (ntarget < enemy_team.units.data() + enemy_team.units.size()) {
@@ -225,7 +245,7 @@ namespace combat_eval {
 											//if (w && c.move + ntarget->move<w->max_range && c.move + ntarget->move>w->min_range) {
 											if (nw==w && c.move + ntarget->move<w->max_range) {
 											//if (nw == w && ntarget->move<w->max_range) {
-												attack(ntarget, 0.5);
+												//attack(ntarget, 0.5);
 											}
 										}
 									}

@@ -162,12 +162,20 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep) {
 	unit_type*addon_required = nullptr;
 	if (build) {
 		for (unit_type*prereq : build->required_units) {
-			if (prereq->is_addon && prereq->builder_type == build->builder_type) {
+			if (prereq->is_addon && prereq->builder_type == build->builder_type && !build->builder_type->is_addon) {
 				addon_required = prereq;
 				continue;
 			}
 			if (st.units[prereq].empty()) {
 				bool found = false;
+				if (prereq->is_addon && !st.units[prereq->builder_type].empty()) {
+					for (auto&v : st.units[prereq->builder_type]) {
+						if (v.has_addon) {
+							found = true;
+							break;
+						}
+					}
+				}
 				for (auto&v : st.production) {
 					if (v.second == prereq) {
 						found = true;
@@ -242,33 +250,32 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep) {
 				}
 			}
 			if (!has_enough_gas) {
-				bool found = false;
-				for (auto&v : st.bases) {
-					for (auto&r : v.s->resources) {
-						if (!r.u->type->is_gas) continue;
-						if (!st.resource_info.emplace(std::piecewise_construct, std::make_tuple(&r), std::make_tuple(&r)).second) continue;
-						found = true;
-						break;
+				unit_type*refinery = unit_types::refinery;
+				if (st.minerals >= refinery->minerals_cost) {
+					bool found = false;
+					for (auto&v : st.bases) {
+						for (auto&r : v.s->resources) {
+							if (!r.u->type->is_gas) continue;
+							if (!st.resource_info.emplace(std::piecewise_construct, std::make_tuple(&r), std::make_tuple(&r)).second) continue;
+							found = true;
+							break;
+						}
+						if (found) break;
 					}
-					if (found) break;
+					//if (found && !nodep) {
+					if (found) {
+						//return unit_types::refinery;
+						add_built(refinery, false);
+						dont_free_workers = false;
+						//log("refinery built\n");
+						for (int i = 0; i < 3; ++i) free_worker(st, true);
+						transfer_workers(false);
+						transfer_workers(true);
+						// 					if (no_refinery_depots) return failed;
+						return nullptr;
+						continue;
+					}
 				}
-				//if (found && !nodep) {
-				if (found) {
-					//return unit_types::refinery;
-					add_built(unit_types::refinery, false);
- 					dont_free_workers = false;
- 					//log("refinery built\n");
- 					for (int i = 0; i < 3; ++i) free_worker(st, true);
- 					transfer_workers(false);
- 					transfer_workers(true);
-// 					if (no_refinery_depots) return failed;
- 					return nullptr;
-					continue;
-				}/* else if (gas_income == 0) {
-					for (int i = 0; i < 3; ++i) free_worker(st, true);
-					if (transfer_workers(false) == 0) return failed;
-					transfer_workers(true);
-				}*/
 			}
 			if (build->required_supply) {
 				//if (st.used_supply[build->race] + build->required_supply>400) return failed;
@@ -288,7 +295,7 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep) {
 				for (st_unit&u : st.units[build->builder_type]) {
 					if (!addon_required || u.has_addon) builder_exists = true;
 					if (u.busy_until <= st.frame) {
-						if (addon_required && !u.has_addon) builder_without_addon = &u;
+						if (addon_required && !u.has_addon && false) builder_without_addon = &u;
 						else {
 							builder = &u;
 							break;
@@ -298,12 +305,14 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep) {
 				if (!builder) {
 					bool found = false;
 					if (builder_without_addon) {
-						for (auto&v : st.production) {
-							if (v.second == addon_required) {
-								found = true;
-								break;
-							}
-						}
+						add_built(addon_required, false);
+						builder_without_addon->has_addon = true;
+// 						for (auto&v : st.production) {
+// 							if (v.second == addon_required) {
+// 								found = true;
+// 								break;
+// 							}
+// 						}
 					}
 					for (auto&v : st.production) {
 						if (v.second == build->builder_type) {
@@ -328,6 +337,7 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep) {
 					}
 				} else {
 					builder->busy_until = st.frame + build->build_time;
+					if (build == unit_types::nuclear_missile) builder->busy_until = st.frame + 15 * 60 * 30;
 					st.production.emplace(st.frame + build->build_time, build);
 					st.produced.emplace(st.frame, std::make_tuple(build, nullptr));
 					st.minerals -= build->minerals_cost;
@@ -519,6 +529,7 @@ static const auto depbuild_until = [](state&st, const state&prev_st, unit_type*u
 	unit_type*t = ut;
 	while (true) {
 		t = advance(st, t, end_frame, false);
+		//log("advance returned %p (%s)\n", t, t == nullptr ? "null" : t == failed ? "failed" : t == timeout ? "timeout" : t->name);
 		if (t) {
 			st = prev_st;
 			if (t == failed) return false;
@@ -1081,6 +1092,12 @@ a_vector<state> run_opponent_builds(int end_frame) {
 	for (auto&v : opponent_states) {
 		variant&var = std::get<0>(v);
 		auto&st = std::get<1>(v);
+// 		auto st = std::get<1>(v);
+// 		for (auto&v : st.units) {
+// 			if (v.first->is_building || v.first->is_worker) continue;
+// 			size_t live = umi_live_count[v.first];
+// 			while (v.second.size() > live) rm_unit(st, v.first);
+// 		}
 		a_vector<state> all_states;
 		all_states.push_back(st);
 		run(all_states, rules_from_variant(all_states.back(), var, end_frame), false);
@@ -1302,6 +1319,7 @@ state get_my_current_state() {
 		if (u->type->is_addon) continue;
 		auto&st_u = add_unit(initial_state, u->type);
 		if (u->addon) st_u.has_addon = true;
+		if (u->has_nuke) st_u.busy_until = current_frame + 15 * 60 * 30;
 		if (!u->is_completed && u->type->provided_supply) {
 			initial_state.max_supply[u->type->race] += u->type->provided_supply;
 		}
@@ -1318,6 +1336,52 @@ state get_my_current_state() {
 		auto*s = get_best_score_p(resource_spots::spots, [&](resource_spots::spot*s) {
 			return get_best_score(make_transform_filter(my_resource_depots, [&](unit*u) {
 				return unit_pathing_distance(unit_types::scv, u->pos, s->cc_build_pos);
+			}), identity<double>());
+		});
+		if (s) add_base(initial_state, *s).verified = true;
+	}
+	return initial_state;
+}
+state get_op_current_state() {
+	state initial_state;
+	initial_state.frame = current_frame;
+	initial_state.minerals = 0;
+	initial_state.gas = 0;
+	initial_state.used_supply = { 0, 0, 0 };
+	initial_state.max_supply = { 0, 0, 0 };
+
+	for (auto&s : resource_spots::spots) {
+		for (unit*u : enemy_units) {
+			if (!u->type->is_resource_depot) continue;
+			if (diag_distance(u->building->build_pos - s.cc_build_pos) <= 32 * 4) {
+				add_base(initial_state, s).verified = true;
+				break;
+			}
+		}
+	}
+	for (unit*u : enemy_units) {
+		if (u->type->provided_supply) initial_state.max_supply[u->type->race] += u->type->provided_supply;
+		if (u->type->required_supply) initial_state.used_supply[u->type->race] += u->type->required_supply;
+		//if (!u->is_completed) continue;
+		if (u->type->is_addon) continue;
+		auto&st_u = add_unit(initial_state, u->type);
+		if (u->addon) st_u.has_addon = true;
+		if (!u->is_completed && u->type->provided_supply) {
+			initial_state.max_supply[u->type->race] += u->type->provided_supply;
+		}
+		if (u->type->is_gas) {
+			for (auto&r : resource_spots::live_resources) {
+				if (r.u == u) {
+					initial_state.resource_info.emplace(&r, &r);
+					break;
+				}
+			}
+		}
+	}
+	if (initial_state.bases.empty()) {
+		auto*s = get_best_score_p(resource_spots::spots, [&](resource_spots::spot*s) {
+			return get_best_score(make_transform_filter(my_resource_depots, [&](unit*u) {
+				return -unit_pathing_distance(unit_types::scv, u->pos, s->cc_build_pos);
 			}), identity<double>());
 		});
 		if (s) add_base(initial_state, *s).verified = true;

@@ -1,13 +1,14 @@
 
 struct unit_controller {
 	unit*u = nullptr;
-	enum { action_idle, action_move, action_gather, action_build, action_attack, action_scout, action_move_directly };
+	enum { action_idle, action_move, action_gather, action_build, action_attack, action_scout, action_move_directly, action_use_ability };
 	int action = action_idle;
 	xy go_to;
 	unit*target = nullptr;
 	unit*depot = nullptr;
 	xy target_pos;
 	unit_type*target_type = nullptr;
+	upgrade_type*ability = nullptr;
 	void*flag = nullptr;
 
 	bool can_move = false;
@@ -80,12 +81,21 @@ void move(unit_controller*c) {
 				move_to = u->pos + relpos;
 			}
 		}
+		if (u->type == unit_types::siege_tank_siege_mode) {
+			if ((u->pos - move_to).length() <= 32 * 6) move_to = u->pos;
+		}
 		if ((u->pos - move_to).length() <= 16) {
-			if (u->game_order != BWAPI::Orders::HoldPosition) {
-				u->game_unit->holdPosition();
+			if (u->type == unit_types::siege_tank_tank_mode) {
+				u->game_unit->siege();
+			} else {
+				if (u->game_order != BWAPI::Orders::HoldPosition) {
+					u->game_unit->holdPosition();
+				}
 			}
 		} else {
-			if (u->type == unit_types::medic) {
+			if (u->game_unit->isSieged()) {
+				if (current_frame - u->last_attacked >= 90) u->game_unit->unsiege();
+			} else if (u->type == unit_types::medic) {
 				if (u->game_order != BWAPI::Orders::MedicHeal1 && u->game_order != BWAPI::Orders::MedicHeal2) {
 					u->game_unit->useTech(upgrade_types::healing->game_tech_type, BWAPI::Position(move_to.x, move_to.y));
 				}
@@ -134,6 +144,14 @@ void process(a_vector<unit_controller*>&controllers) {
 			c->last_move = current_frame;
 			c->u->game_unit->move(BWAPI::Position(c->go_to.x, c->go_to.y));
 			c->noorder_until = current_frame + rng(8);
+		}
+
+		if (c->action == unit_controller::action_use_ability) {
+			c->noorder_until = current_frame + rng(8);
+			if (c->ability == upgrade_types::spider_mines) {
+				u->game_unit->useTech(c->ability->game_tech_type, BWAPI::Position(u->pos.x, u->pos.y));
+				c->noorder_until = current_frame + 15;
+			} else xcept("unknown ability %s", c->ability->name);
 		}
 
 		if (c->action==unit_controller::action_gather) {
@@ -222,7 +240,7 @@ void process(a_vector<unit_controller*>&controllers) {
 			}
 		}
 
-		if (c->action == unit_controller::action_attack) {
+		if (c->action == unit_controller::action_attack && c->target) {
 
 			if (u->order_target != c->target || u->game_order != BWAPI::Orders::AttackUnit) {
 				if (c->target == nullptr) xcept("attack null unit");
@@ -230,7 +248,8 @@ void process(a_vector<unit_controller*>&controllers) {
 				weapon_stats*ew = u->is_flying ? c->target->stats->air_weapon : c->target->stats->ground_weapon;
 				if (w) {
 					double d = units_distance(u, c->target);
-					if (d <= w->max_range + 32 || (ew && d <= ew->max_range + 32)) {
+					//if (d <= w->max_range + 32 || (ew && d <= ew->max_range + 32)) {
+					if (d <= w->max_range + 32) {
 						if (u->type == unit_types::marine && u->owner->has_upgrade(upgrade_types::stim_packs)) {
 							if (u->game_unit->getStimTimer() <= latency_frames) {
 								u->game_unit->useTech(upgrade_types::stim_packs->game_tech_type);
@@ -303,6 +322,7 @@ void render() {
 		if (c->action == unit_controller::action_attack) s = "attack";
 		if (c->action == unit_controller::action_scout) s = "scout";
 		if (c->action == unit_controller::action_move_directly) s = "move directly";
+		if (c->action == unit_controller::action_use_ability) s = "use ability";
 
 		game->drawTextMap(u->pos.x-8,u->pos.y+8,"%s",s.c_str());
 		

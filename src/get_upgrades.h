@@ -25,6 +25,7 @@ void get_upgrades() {
 			for (unit_type*req : ut->required_units) add(req);
 		};
 		for (unit_type*req : upg.required_units) add(req);
+		if (&upg == upgrade_types::spider_mines) val = 1.0;
 		if (sum >= val*1.5) {
 			bool already_upgrading = false;
 			for (build::build_task&b : build::build_tasks) {

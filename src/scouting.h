@@ -120,7 +120,7 @@ void scan() {
 			best_pos = v.first;
 		}
 	}
-	if (best_score >= 500.0) {
+	if (best_score >= 3000.0) {
 		unit*u = get_best_score(my_units_of_type[unit_types::comsat_station], [&](unit*u) {
 			return -u->energy;
 		});
@@ -143,7 +143,7 @@ int last_scout = 0;
 void process_scouts() {
 
 	if (all_scouts.empty()) {
-		if (last_scout == 0 || current_frame - last_scout >= 15 * 60 * 3) {
+		if (last_scout == 0 || current_frame - last_scout >= 15 * 60 * 3 || current_used_total_supply >= 100) {
 			if (my_workers.size() < 10) return;
 			unit*scout_unit = get_best_score(my_workers, [&](unit*u) {
 				if (u->controller->action != unit_controller::action_gather) return std::numeric_limits<double>::infinity();

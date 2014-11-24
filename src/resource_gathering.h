@@ -238,6 +238,7 @@ void process(resource_t&r) {
 				if (current_frame<no_mineral_gas_transfer_until) continue;
 				if (g.no_mineral_gas_transfer) continue;
 			}
+			if (r.gatherers.size() >= 4) continue;
 			double inc = 0;
 			if (g.resource && g.resource->income_rate.size()>=g.resource->gatherers.size()) inc = g.resource->income_rate[g.resource->gatherers.size()-1];
 			if (inc>0) {

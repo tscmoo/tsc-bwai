@@ -725,25 +725,25 @@ void render() {
 // 		}
 // 	}
 
-	{
-		for (auto&v : test.path_nodes) {
-
-			game->drawCircleMap(v.pos.x + 4, v.pos.y + 4, 16, BWAPI::Colors::Yellow);
-
-			for (auto*n : v.neighbors) {
-				game->drawLineMap(v.pos.x + 4, v.pos.y + 4, n->pos.x + 4, n->pos.y + 4, BWAPI::Colors::Yellow);
-			}
-
-		}
-	}
-
-	{
-		bwapi_pos mouse_pos = game->getScreenPosition() + game->getMousePosition();
-		if ((size_t)mouse_pos.x < (size_t)grid::map_width && (size_t)mouse_pos.y < (size_t)grid::map_height) {
-			path_node*nn = test.nearest_path_node[nearest_path_node_index(xy(mouse_pos.x, mouse_pos.y))];
-			if (nn) game->drawLineMap(mouse_pos.x, mouse_pos.y, nn->pos.x, nn->pos.y, BWAPI::Colors::Green);
-		}
-	}
+// 	{
+// 		for (auto&v : test.path_nodes) {
+// 
+// 			game->drawCircleMap(v.pos.x + 4, v.pos.y + 4, 16, BWAPI::Colors::Yellow);
+// 
+// 			for (auto*n : v.neighbors) {
+// 				game->drawLineMap(v.pos.x + 4, v.pos.y + 4, n->pos.x + 4, n->pos.y + 4, BWAPI::Colors::Yellow);
+// 			}
+// 
+// 		}
+// 	}
+// 
+// 	{
+// 		bwapi_pos mouse_pos = game->getScreenPosition() + game->getMousePosition();
+// 		if ((size_t)mouse_pos.x < (size_t)grid::map_width && (size_t)mouse_pos.y < (size_t)grid::map_height) {
+// 			path_node*nn = test.nearest_path_node[nearest_path_node_index(xy(mouse_pos.x, mouse_pos.y))];
+// 			if (nn) game->drawLineMap(mouse_pos.x, mouse_pos.y, nn->pos.x, nn->pos.y, BWAPI::Colors::Green);
+// 		}
+// 	}
 
 // 	{
 // 		xy start_pos;
@@ -773,17 +773,17 @@ void render() {
 			}
 		}
 
-	{
-		bwapi_pos mouse_pos = game->getScreenPosition() + game->getMousePosition();
-		if ((size_t)mouse_pos.x < (size_t)grid::map_width && (size_t)mouse_pos.y < (size_t)grid::map_height) {
-			xy to;
-			for (unit*u : my_units) {
-				if (u->type->is_resource_depot) to = u->pos;
-			}
-			game->drawLineMap(mouse_pos.x, mouse_pos.y, to.x, to.y, BWAPI::Colors::White);
-			game->drawTextMouse(0, -12, "%f", get_distance(test, xy(mouse_pos.x, mouse_pos.y), to));
-		}
-	}
+// 	{
+// 		bwapi_pos mouse_pos = game->getScreenPosition() + game->getMousePosition();
+// 		if ((size_t)mouse_pos.x < (size_t)grid::map_width && (size_t)mouse_pos.y < (size_t)grid::map_height) {
+// 			xy to;
+// 			for (unit*u : my_units) {
+// 				if (u->type->is_resource_depot) to = u->pos;
+// 			}
+// 			game->drawLineMap(mouse_pos.x, mouse_pos.y, to.x, to.y, BWAPI::Colors::White);
+// 			game->drawTextMouse(0, -12, "%f", get_distance(test, xy(mouse_pos.x, mouse_pos.y), to));
+// 		}
+// 	}
 	
 }
 
