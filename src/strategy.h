@@ -71,6 +71,8 @@ buildpred::state eval_expand(const std::function<bool(buildpred::state&)>&func) 
 		//int nf = (current_frame + 15 * 60 * 6);
 		//nf -= nf % (15 * 60 * 4);
 		int nf = current_frame + 15 * 60 * 4;
+		int op_nf = nf - 15 * 60 * 2;
+		if (current_frame >= 15 * 60 * 20) op_nf = nf - 15 * 60 * 4;
 		rules.end_frame = nf;
 		rules.func = func;
 
@@ -80,7 +82,7 @@ buildpred::state eval_expand(const std::function<bool(buildpred::state&)>&func) 
 		auto&my_st = all_states.back();
 
 		double score = std::numeric_limits<double>::infinity();
-		for (auto&op_st : run_opponent_builds(nf - 15 * 60 * 2)) {
+		for (auto&op_st : run_opponent_builds(op_nf)) {
 			combat_eval::eval eval;
 			eval.max_frames = 15 * 30;
 			for (auto&v : my_st.units) {
@@ -217,6 +219,7 @@ void execute_best_with_expand(const list_T&list) {
 
 #include "strat_proxy_rax.h"
 #include "strat_wraith.h"
+#include "strat_vulture.h"
 
 template<typename T>
 struct render_helper {
@@ -254,7 +257,8 @@ std::function<void()> wrap() {
 
 a_map<a_string, std::function<void()>> strat_map = {
 	{ "proxy rax", wrap<proxy_rax>() },
-	{ "wraith", wrap<wraith>() }
+	{ "wraith", wrap<wraith>() },
+	{ "vulture", wrap<strat_vulture>() }
 };
 
 bool run_strat(const char*name) {
@@ -269,248 +273,14 @@ bool run_strat(const char*name) {
 void strategy_task() {
 
 	multitasking::sleep(1);
-	/*
-	while (true) {
-		using namespace buildpred;
-		auto test = [&](state&st) {
-			return nodelay(st, unit_types::battlecruiser, [&](state&st) {
-				unit_type*t = unit_types::starport;
-				for (auto&v : st.units[t]) {
-					if (!v.has_addon) {
-						t = unit_types::control_tower;
-						break;
-					}
-				}
-				return nodelay(st, t, [&](state&st) {
-					return depbuild(st, state(st), unit_types::vulture);
-				});
-			});
-		};
-// 		auto test = [&](state&st) {
-// 			return nodelay(st, unit_types::vulture, [&](state&st) {
-// 				return nodelay(st, unit_types::factory, [&](state&st) {
-// 					return depbuild(st, state(st), unit_types::vulture);
-// 				});
-// 			});
-// 		};
-		auto&st = get_my_current_state();
-		auto&my_st = st;
-		log("-- my initial state --- frame %d  min %g gas %g supply %g/%g bases %d\n", my_st.frame, my_st.minerals, my_st.gas, my_st.used_supply[my_st.race], my_st.max_supply[my_st.race], my_st.bases.size());
-		for (auto&v : my_st.units) {
-			if (!v.first || !v.second.size()) continue;
-			log(" %dx%s", v.second.size(), short_type_name(v.first));
-		}
-		log("depbuild bc returned %d\n", depbuild(st, state(st), unit_types::battlecruiser));
-// 		auto test = [&](state&st) {
-// 			return nodelay(st, unit_types::scv, [](state&st) {
-// 				return depbuild(st, state(st), unit_types::battlecruiser);
-// 			});
-// 		};
-		std::array<std::function<bool(state&)>, 1> arr;
-		arr[0] = test;
-		execute_best_with_expand(arr);
 
-		multitasking::sleep(1);
-	}*/
 
 	//run_strat("proxy rax");
 	//run_strat("wraith");
+	run_strat("vulture");
 	while (true) {
 
 		using namespace buildpred;
-		buildpred::attack_now = current_used_supply[race_terran] >= 80;
-
-		auto build_goliath_vulture = [&](state&st) {
-			return nodelay(st, unit_types::scv, [&](state&st) {
-				auto backbone = [&](state&st) {
-					auto marines = [&](state&st) {
-						return nodelay(st, unit_types::goliath, [](state&st) {
-							return nodelay(st, unit_types::factory, [](state&st) {
-								return nodelay(st, unit_types::vulture, [](state&st) {
-									return depbuild(st, state(st), unit_types::marine);
-								});
-							});
-						});
-					};
-					return marines(st);
-				};
-				int droppable_units = count_units_plus_production(st, unit_types::goliath) + count_units_plus_production(st, unit_types::vulture);
-				if (droppable_units >= 8) {
-					if (count_units_plus_production(st, unit_types::dropship) < droppable_units / 10) {
-						return nodelay(st, unit_types::dropship, backbone);
-					}
-				}
-				return backbone(st);
-			});
-		};
-		auto build_wraith_siege_tank = [&](state&st) {
-			return nodelay(st, unit_types::scv, [&](state&st) {
-				if (count_units_plus_production(st, unit_types::siege_tank_tank_mode) < count_units_plus_production(st, unit_types::wraith) * 2) {
-					return nodelay(st, unit_types::siege_tank_tank_mode, [](state&st) {
-						for (auto&v : st.units[unit_types::factory]) {
-							if (!v.has_addon) return depbuild(st, state(st), unit_types::machine_shop);
-						}
-						return nodelay(st, unit_types::factory, [](state&st) {
-							return nodelay(st, unit_types::marine, [](state&st) {
-								return depbuild(st, state(st), unit_types::barracks);
-							});
-						});
-					});
-				}
-				return nodelay(st, unit_types::wraith, [](state&st) {
-					return nodelay(st, unit_types::starport, [](state&st) {
-						return nodelay(st, unit_types::marine, [](state&st) {
-							return depbuild(st, state(st), unit_types::barracks);
-						});
-					});
-				});
-			});
-		};
-		int desired_medics_n = my_units_of_type[unit_types::marine].size() / 10;
-		auto build_marines = [&](state&st) {
-			return nodelay(st, unit_types::scv, [&](state&st) {
-				auto backbone = [&](state&st) {
-					auto marines = [&](state&st) {
-						return nodelay(st, unit_types::marine, [](state&st) {
-							return nodelay(st, unit_types::barracks, [](state&st) {
-								return depbuild(st, state(st), unit_types::ghost);
-							});
-						});
-					};
-					if (count_units_plus_production(st, unit_types::medic) < desired_medics_n) {
-						return nodelay(st, unit_types::medic, marines);
-					}
-					return marines(st);
-				};
-				int marines_count = count_units_plus_production(st, unit_types::marine);
-				int droppable_units = marines_count;
-				if (droppable_units >= 8) {
-					if (count_units_plus_production(st, unit_types::dropship) < droppable_units / 10) {
-						return nodelay(st, unit_types::dropship, backbone);
-					}
-				}
-				if (marines_count >= 30 && count_units_plus_production(st, unit_types::ghost) < marines_count / 4) {
-					return nodelay(st, unit_types::ghost, backbone);
-				}
-				return backbone(st);
-			});
-		};
-		auto build_siege_tank = [&](state&st) {
-			return nodelay(st, unit_types::scv, [&](state&st) {
-				auto backbone = [&](state&st) {
-					bool found = false;
-					for (auto&v : st.units[unit_types::factory]) {
-						if (!v.has_addon) found = true;
-					}
-					if (!found && st.units[unit_types::factory].size() > 1) return depbuild(st, state(st), unit_types::factory);
-					return nodelay(st, unit_types::siege_tank_tank_mode, [](state&st) {
-						for (auto&v : st.units[unit_types::factory]) {
-							if (!v.has_addon) return depbuild(st, state(st), unit_types::machine_shop);
-						}
-						return nodelay(st, unit_types::factory, [](state&st) {
-							return depbuild(st, state(st), unit_types::vulture);
-						});
-					});
-				};
-				int droppable_units = count_units_plus_production(st, unit_types::goliath) + count_units_plus_production(st, unit_types::vulture);
-				if (droppable_units >= 8) {
-					if (count_units_plus_production(st, unit_types::dropship) < droppable_units / 10) {
-						return nodelay(st, unit_types::dropship, backbone);
-					}
-				}
-				return backbone(st);
-			});
-		};
-		auto build_wraith_goliath = [&](state&st) {
-			return nodelay(st, unit_types::scv, [&](state&st) {
-				if (count_units_plus_production(st, unit_types::goliath) < count_units_plus_production(st, unit_types::wraith) * 2) {
-					return nodelay(st, unit_types::goliath, [](state&st) {
-						return nodelay(st, unit_types::factory, [](state&st) {
-							return nodelay(st, unit_types::marine, [](state&st) {
-								return depbuild(st, state(st), unit_types::barracks);
-							});
-						});
-					});
-				}
-				return nodelay(st, unit_types::wraith, [](state&st) {
-					return nodelay(st, unit_types::starport, [](state&st) {
-						return nodelay(st, unit_types::marine, [](state&st) {
-							return depbuild(st, state(st), unit_types::barracks);
-						});
-					});
-				});
-			});
-		};
-		auto build_vulture = [&](state&st) {
-			return nodelay(st, unit_types::scv, [&](state&st) {
-				auto backbone = [&](state&st) {
-					return nodelay(st, unit_types::vulture, [](state&st) {
-						return depbuild(st, state(st), unit_types::factory);
-					});
-				};
-				int droppable_units = count_units_plus_production(st, unit_types::goliath) + count_units_plus_production(st, unit_types::vulture);
-				if (count_units_plus_production(st, unit_types::dropship) < droppable_units / 12) {
-					return nodelay(st, unit_types::dropship, backbone);
-				}
-				int vulture_count = count_units_plus_production(st, unit_types::vulture);
-				if (vulture_count >= 20) {
-					int ghost_count = count_units_plus_production(st, unit_types::ghost);
-					if (ghost_count < vulture_count / 7) {
-						return nodelay(st, unit_types::ghost, [&](state&st) {
-							return nodelay(st, unit_types::barracks, backbone);
-						});
-					}
-					int wraith_count = count_units_plus_production(st, unit_types::wraith);
-					if (wraith_count < vulture_count / 14) {
-						return nodelay(st, unit_types::wraith, backbone);
-					}
-					int goliath_count = count_units_plus_production(st, unit_types::goliath);
-					if (goliath_count < vulture_count / 9) {
-						return nodelay(st, unit_types::goliath, backbone);
-					}
-					int science_vessel_count = count_units_plus_production(st, unit_types::science_vessel);
-					if (science_vessel_count < vulture_count / 17) {
-						return nodelay(st, unit_types::science_vessel, backbone);
-					}
-				}
-				return backbone(st);
-				
-			});
-		};
-
-		auto test = [&](state&st) {
-			return depbuild(st, state(st), unit_types::nuclear_missile);
-		};
-
-		execute_build_eval_expand(build_vulture);
-		//if (get_my_current_state().bases.size() <= get_op_current_state().bases.size()) execute_build_eval_expand(build_wraith_goliath);
-		//else execute_build(build_wraith_goliath);
-
-// 		execute_build(expand, [&](state&st) {
-// 			return nodelay(st, unit_types::scv, [](state&st) {
-// 				if (st.minerals >= 300 || count_units_plus_production(st, unit_types::vulture) < 2) {
-// 					return nodelay(st, unit_types::vulture, [](state&st) {
-// 						return depbuild(st, state(st), unit_types::factory);
-// 					});
-// 				}
-// 				auto backbone = [](state&st) {
-// 					return nodelay(st, unit_types::goliath, [](state&st) {
-// 						return nodelay(st, unit_types::factory, [](state&st) {
-// 							return nodelay(st, unit_types::vulture, [](state&st) {
-// 								return depbuild(st, state(st), unit_types::marine);
-// 							});
-// 						});
-// 					});
-// 				};
-// 				int droppable_units = count_units_plus_production(st, unit_types::vulture) + count_units_plus_production(st, unit_types::goliath);
-// 				if (droppable_units >= 4) {
-// 					if (count_units_plus_production(st, unit_types::dropship) < droppable_units / 6) {
-// 						return nodelay(st, unit_types::dropship, backbone);
-// 					}
-// 				}
-// 				return backbone(st);
-// 			});
-// 		});
 
 		multitasking::sleep(15 * 10);
 	}

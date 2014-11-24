@@ -158,16 +158,23 @@ void process(a_vector<unit_controller*>&controllers) {
 
 		if (c->action == unit_controller::action_use_ability) {
 			c->noorder_until = current_frame + rng(8);
+			bool used = false;
 			if (c->ability == upgrade_types::spider_mines) {
-				u->game_unit->useTech(c->ability->game_tech_type, BWAPI::Position(u->pos.x, u->pos.y));
+				used = u->game_unit->useTech(c->ability->game_tech_type, BWAPI::Position(u->pos.x, u->pos.y));
 				c->noorder_until = current_frame + 15;
 			} else if (c->ability == upgrade_types::nuclear_strike) {
-				u->game_unit->useTech(c->ability->game_tech_type, BWAPI::Position(c->target_pos.x, c->target_pos.y));
+				used = u->game_unit->useTech(c->ability->game_tech_type, BWAPI::Position(c->target_pos.x, c->target_pos.y));
 				c->noorder_until = current_frame + 15;
 			} else if (c->ability == upgrade_types::personal_cloaking) {
-				u->game_unit->useTech(c->ability->game_tech_type);
+				used = u->game_unit->useTech(c->ability->game_tech_type);
+				c->noorder_until = current_frame + 15;
+			} else if (c->ability == upgrade_types::defensive_matrix) {
+				used = u->game_unit->useTech(c->ability->game_tech_type, c->target->game_unit);
 				c->noorder_until = current_frame + 15;
 			} else xcept("unknown ability %s", c->ability->name);
+			if (used) {
+				c->action = unit_controller::action_idle;
+			}
 // 			if (c->ability->game_tech_type.targetsUnit()) {
 // 				u->game_unit->useTech(c->ability->game_tech_type, c->target->game_unit);
 // 			} else if (c->ability->game_tech_type.targetsPosition()) {
@@ -270,9 +277,10 @@ void process(a_vector<unit_controller*>&controllers) {
 							if (upper_left.x > x2) continue;
 							if (upper_left.y > y2) continue;
 							if (!nu->controller->can_move) {
-								u->game_unit->attack(nu->game_unit);
-								c->noorder_until = current_frame + 15;
-								break;
+								if (u->game_unit->attack(nu->game_unit)) {
+									c->noorder_until = current_frame + 15;
+									break;
+								}
 							}
 							nu->controller->move_away_from = xy((x1 + x2) / 2, (y1 + y2) / 2);
 							nu->controller->move_away_until = current_frame + 15 * 2;

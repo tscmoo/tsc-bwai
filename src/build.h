@@ -931,6 +931,7 @@ void execute_build(build_task&b) {
 					unit_building*building = builder->building;
 					if (building) {
 						building->building_addon_frame = current_frame;
+						//if (b.type->unit == unit_types::comsat_station && !building->is_lifted) {
 						if (builder->type == unit_types::cc && !building->is_lifted) {
 							if (builder->remaining_whatever_time <= latency_frames && builder->controller->noorder_until <= current_frame) {
 								if (current_frame + latency_frames >= b.build_frame) {
@@ -1147,6 +1148,7 @@ void execute_build_task() {
 				if (!found) {
 					u->game_unit->cancelConstruction();
 				}
+				if (!u->game_unit->getBuildUnit()) u->game_unit->cancelConstruction();
 			}
 		}
 

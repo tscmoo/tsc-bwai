@@ -93,6 +93,7 @@
     <ClInclude Include="src\players.h" />
     <ClInclude Include="src\strategy.h" />
     <ClInclude Include="src\strat_proxy_rax.h" />
+    <ClInclude Include="src\strat_vulture.h" />
     <ClInclude Include="src\strat_wraith.h" />
     <ClInclude Include="src\upgrades.h" />
   </ItemGroup>

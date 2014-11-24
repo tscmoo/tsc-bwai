@@ -35,8 +35,9 @@ namespace upgrade_types {
 	upgrade_type_pointer siege_mode;
 	upgrade_type_pointer u_238_shells, stim_packs;
 	upgrade_type_pointer healing;
-	upgrade_type_pointer ocular_implants, moebius_reactor, lockdown, personal_cloaking;
+	upgrade_type_pointer ocular_implants, moebius_reactor, lockdown, personal_cloaking, nuclear_strike;
 	upgrade_type_pointer spider_mines;
+	upgrade_type_pointer defensive_matrix, emp_shockwave, irradiate, titan_reactor;
 
 	void init() {
 		get(terran_infantry_weapons_1, BWAPI::UpgradeTypes::Terran_Infantry_Weapons, 1);
@@ -69,8 +70,13 @@ namespace upgrade_types {
 		get(moebius_reactor, BWAPI::UpgradeTypes::Moebius_Reactor);
 		get(lockdown, BWAPI::TechTypes::Lockdown);
 		get(personal_cloaking, BWAPI::TechTypes::Personnel_Cloaking);
+		get(nuclear_strike, BWAPI::TechTypes::Nuclear_Strike);
 		get(spider_mines, BWAPI::TechTypes::Spider_Mines);
-		
+
+		get(defensive_matrix, BWAPI::TechTypes::Defensive_Matrix);
+		get(emp_shockwave, BWAPI::TechTypes::EMP_Shockwave);
+		get(irradiate, BWAPI::TechTypes::Irradiate);
+		get(titan_reactor, BWAPI::UpgradeTypes::Titan_Reactor);
 	}
 }
 

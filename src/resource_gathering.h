@@ -362,10 +362,14 @@ void process(gatherer_t&g) {
 		g.resource = 0;
 	}
 	if (g.resource) {
-		u->controller->target = g.resource->u;
+		if (u->controller->action == unit_controller::action_gather) {
+			u->controller->target = g.resource->u;
+		}
 		if (!is_mining) u->controller->wait_until = g.resource->busy_until;
 	} else {
-		u->controller->target = 0;
+		if (u->controller->action == unit_controller::action_gather) {
+			u->controller->target = 0;
+		}
 		if (!u->is_carrying_minerals_or_gas) u->controller->depot = 0;
 	}
 

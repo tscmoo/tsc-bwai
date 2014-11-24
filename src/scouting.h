@@ -45,12 +45,15 @@ void scout::process() {
 			//d /= std::max(age, 1);
 			d -= age * 2;
 			d += unit_pathing_distance(scout_unit, s->cc_build_pos) / 10000;
-			for (auto*n : square_pathing::find_path(square_pathing::get_pathing_map(scout_unit->type), scout_unit->pos, s->pos)) {
-				for (unit*e : enemy_units) {
-					weapon_stats*w = scout_unit->is_flying ? e->stats->air_weapon : e->stats->ground_weapon;
-					if (!w) continue;
-					double d = diag_distance(n->pos - e->pos);
-					if (d <= w->max_range * 2) d += 100;
+			// todo: find safe path, pathing for flying, better stuff...
+			if (!scout_unit->is_flying) {
+				for (auto*n : square_pathing::find_path(square_pathing::get_pathing_map(scout_unit->type), scout_unit->pos, s->pos)) {
+					for (unit*e : enemy_units) {
+						weapon_stats*w = scout_unit->is_flying ? e->stats->air_weapon : e->stats->ground_weapon;
+						if (!w) continue;
+						double d = diag_distance(n->pos - e->pos);
+						if (d <= w->max_range * 2) d += 100;
+					}
 				}
 			}
 			return d;
@@ -65,7 +68,7 @@ void scout::process() {
 
 	last_scouted[&*dst_s] = current_frame;
 
-	if (dst_s_seen!=-1) {
+	if (dst_s_seen != -1) {
 		scout_unit->controller->action = unit_controller::action_scout;
 		scout_unit->controller->go_to = dst_s->cc_build_pos;
 		if (!scout_resources) {
@@ -107,13 +110,19 @@ void scan() {
 			if (!w) continue;
 			if (diag_distance(e->pos - u->pos) <= w->max_range) ++in_range_count;
 		}
-		if (in_range_count >= 3) values[e->pos] += 1000;
+		if (in_range_count >= 3) values[e->pos] += 10000;
 	}
 	if (scans_available > 2) {
 		for (auto&s : resource_spots::spots) {
 			int t = (current_frame - grid::get_build_square(s.pos).last_seen) - 15 * 60 * 10;
 			if (t < 0) continue;
 			values[s.pos] += t;
+		}
+	}
+	for (unit*u : my_workers) {
+		if (u->controller->action != unit_controller::action_build) continue;
+		if (u->controller->fail_build_count >= 10) {
+			values[u->pos] = 10000;
 		}
 	}
 
@@ -156,6 +165,11 @@ void add_scout(unit*u) {
 	scout sc;
 	sc.scout_unit = u;
 	all_scouts.push_back(sc);
+}
+void rm_scout(unit*u) {
+	for (auto&v : all_scouts) {
+		if (v.scout_unit == u) v.scout_unit = nullptr;
+	}
 }
 
 int last_scout = 0;

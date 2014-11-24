@@ -76,12 +76,18 @@ namespace combat_eval {
 		}
 		combatant&add_unit(unit*u, int team) {
 			auto&c = add_unit(u->stats, team);
+			set_unit_stuff(c, u);
+			return c;
+		}
+		void set_unit_stuff(combatant&c, unit*u) {
 			c.energy = u->energy;
 			c.shields = u->shields;
 			c.hp = u->hp;
 			c.cooldown = u->weapon_cooldown;
 			c.stim_pack_timer = u->game_unit->getStimTimer();
-			return c;
+			c.spider_mine_count = u->spider_mine_count;
+			if (u->lockdown_timer) c.cooldown += u->lockdown_timer;
+			if (u->defensive_matrix_hp) c.hp += u->defensive_matrix_hp;
 		}
 
 		void run() {
@@ -154,6 +160,7 @@ namespace combat_eval {
 										if (c.force_target && ec.st->type->is_flyer) continue;
 										weapon_stats*ew = c.st->type->is_flyer ? ec.st->air_weapon : ec.st->ground_weapon;
 										if (!ew) continue;
+										if (ec.cooldown >= 15 * 5) continue;
 									}
 									if (!c.force_target) {
 										weapon_stats*w = ec.st->type->is_flyer ? c.st->air_weapon : c.st->ground_weapon;
@@ -245,7 +252,7 @@ namespace combat_eval {
 											//if (w && c.move + ntarget->move<w->max_range && c.move + ntarget->move>w->min_range) {
 											if (nw==w && c.move + ntarget->move<w->max_range) {
 											//if (nw == w && ntarget->move<w->max_range) {
-												//attack(ntarget, 0.5);
+												attack(ntarget, 0.5);
 											}
 										}
 									}

@@ -128,7 +128,7 @@ struct ruleset {
 unit_type*failed = (unit_type*)1;
 unit_type*timeout = (unit_type*)2;
 
-unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep) {
+unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep, bool no_busywait) {
 
 	if (st.frame >= end_frame) return timeout;
 
@@ -292,13 +292,25 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep) {
 				st_unit*builder = nullptr;
 				st_unit*builder_without_addon = nullptr;
 				bool builder_exists = false;
-				for (st_unit&u : st.units[build->builder_type]) {
-					if (!addon_required || u.has_addon) builder_exists = true;
-					if (u.busy_until <= st.frame) {
-						if (addon_required && !u.has_addon && false) builder_without_addon = &u;
-						else {
-							builder = &u;
-							break;
+				if (build->builder_type->is_addon) {
+					for (st_unit&u : st.units[build->builder_type->builder_type]) {
+						if (u.has_addon) {
+							builder_exists = true;
+							if (u.busy_until <= st.frame) {
+								builder = &u;
+								break;
+							}
+						}
+					}
+				} else {
+					for (st_unit&u : st.units[build->builder_type]) {
+						if (!addon_required || u.has_addon) builder_exists = true;
+						if (u.busy_until <= st.frame) {
+							if (addon_required && !u.has_addon && false) builder_without_addon = &u;
+							else {
+								builder = &u;
+								break;
+							}
 						}
 					}
 				}
@@ -321,6 +333,7 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep) {
 						}
 					}
 					if (!found) {
+						if (no_busywait) return failed;
 						if (build->builder_type->is_worker) return failed;
 						if (!nodep) {
 // 							if (addon_required) return addon_required;
@@ -361,6 +374,7 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep) {
 			double inc = rate * w;
 			if (v.second.workers > w) inc += rate * r.last_worker_mult[st.race];
 			inc *= f;
+			if (v.second.last_seen_resources < inc) inc = v.second.last_seen_resources;
 			v.second.gathered += inc;
 			if (r.u->type->is_gas) gas_income += inc;
 			else min_income += inc;
@@ -400,11 +414,13 @@ void run(a_vector<state>&all_states, ruleset rules, bool is_for_me) {
 		return get_best_score(available_bases, [&](resource_spots::spot*s) {
 			double score = unit_pathing_distance(worker_type, s->cc_build_pos, initial_state.bases.front().s->cc_build_pos);
 			double res = 0;
-			double ned = get_best_score_value(is_for_me ? enemy_units : my_units, [&](unit*e) {
-				if (e->type->is_worker) return std::numeric_limits<double>::infinity();
-				return diag_distance(s->pos - e->pos);
-			});
-			score -= ned;
+			if (is_for_me) {
+				double ned = get_best_score_value(is_for_me ? enemy_units : my_units, [&](unit*e) {
+					if (e->type->is_worker) return std::numeric_limits<double>::infinity();
+					return diag_distance(s->pos - e->pos);
+				});
+				score -= ned;
+			}
 			bool has_gas = false;
 			for (auto&r : s->resources) {
 				res += r.u->resources;
@@ -432,7 +448,7 @@ void run(a_vector<state>&all_states, ruleset rules, bool is_for_me) {
 		int expand_frame = -1;
 		if ((int)st.bases.size() < rules.bases && next_base && workers >= 14) {
 			unit_type*t = unit_types::cc;
-			if (advance(st, t, rules.end_frame, true)) st = all_states.back();
+			if (advance(st, t, rules.end_frame, true, true)) st = all_states.back();
 			else {
 				auto s = next_base;
 				add_base(st, *s);
@@ -453,7 +469,7 @@ void run(a_vector<state>&all_states, ruleset rules, bool is_for_me) {
 	if (all_states.back().frame < rules.end_frame) {
 		auto st = all_states.back();
 		while (st.frame < rules.end_frame) {
-			advance(st, nullptr, rules.end_frame, false);
+			advance(st, nullptr, rules.end_frame, false, false);
 		}
 		all_states.push_back(std::move(st));
 	}
@@ -528,7 +544,7 @@ static const auto depbuild_until = [](state&st, const state&prev_st, unit_type*u
 	if (&st == &prev_st) xcept("&st == &prev_st");
 	unit_type*t = ut;
 	while (true) {
-		t = advance(st, t, end_frame, false);
+		t = advance(st, t, end_frame, false, false);
 		//log("advance returned %p (%s)\n", t, t == nullptr ? "null" : t == failed ? "failed" : t == timeout ? "timeout" : t->name);
 		if (t) {
 			st = prev_st;
@@ -540,37 +556,30 @@ static const auto depbuild_until = [](state&st, const state&prev_st, unit_type*u
 		return true;
 	}
 };
+static const int advance_frame_amount = 15 * 60 * 10;
 static const auto depbuild = [](state&st, const state&prev_st, unit_type*ut) {
-	return depbuild_until(st, prev_st, ut, st.frame + 15 * 60 * 10);
+	return depbuild_until(st, prev_st, ut, st.frame + advance_frame_amount);
 };
 static const auto depbuild_now = [](state&st, const state&prev_st, unit_type*ut) {
 	return depbuild_until(st, prev_st, ut, st.frame + 4);
 };
 static const auto build_now = [](state&st, unit_type*ut) {
-	return advance(st, ut, st.frame + 4, true) == nullptr;
+	return advance(st, ut, st.frame + 4, true, false) == nullptr;
 };
 static const auto build_nodep = [](state&st, unit_type*ut) {
-	return advance(st, ut, st.frame + 15 * 60 * 10, true) == nullptr;
+	return advance(st, ut, st.frame + advance_frame_amount, true, false) == nullptr;
 };
 static const auto could_build_instead = [](state&st, unit_type*ut) {
 	unit_type*lt = (--st.production.end())->second;
 	return (ut->minerals_cost == 0 || st.minerals + lt->minerals_cost >= ut->minerals_cost) && (ut->gas_cost == 0 || st.gas + lt->gas_cost >= ut->gas_cost);
 };
-static const auto nodelay_n = [](state&st, unit_type*ut, int n, const std::function<bool(state&)>&func) {
-	auto prev_st = st;
-	if (depbuild(st, prev_st, ut)) {
-		auto imm_st = st;
-		st = prev_st;
-		if (func(st)) {
-			auto del_st = st;
-			if (depbuild(st, del_st, ut)) {
-				if (st.frame <= imm_st.frame + n) {
-					st = std::move(del_st);
-					return true;
-				} else {
-					st = std::move(imm_st);
-					return true;
-				}
+static const auto nodelay_stage2 = [](state&st, state imm_st, unit_type*ut, int n, const std::function<bool(state&)>&func) {
+	if (func(st)) {
+		auto del_st = st;
+		if (depbuild(st, del_st, ut)) {
+			if (st.frame <= imm_st.frame + n) {
+				st = std::move(del_st);
+				return true;
 			} else {
 				st = std::move(imm_st);
 				return true;
@@ -580,6 +589,17 @@ static const auto nodelay_n = [](state&st, unit_type*ut, int n, const std::funct
 			return true;
 		}
 	} else {
+		st = std::move(imm_st);
+		return true;
+	}
+};
+static const auto nodelay_n = [](state&st, unit_type*ut, int n, const std::function<bool(state&)>&func) {
+	auto prev_st = st;
+	if (depbuild(st, prev_st, ut)) {
+		auto imm_st = st;
+		st = std::move(prev_st);
+		return nodelay_stage2(st, std::move(imm_st), ut, n, func);
+	} else {
 		st = std::move(prev_st);
 		return func(st);
 	}
@@ -587,6 +607,30 @@ static const auto nodelay_n = [](state&st, unit_type*ut, int n, const std::funct
 static const auto nodelay = [](state&st, unit_type*ut, const std::function<bool(state&)>&func) {
 	if (ut->is_worker && st.units[ut].size() >= 70) return func(st);
 	return nodelay_n(st, ut, 0, func);
+};
+
+static const auto maxprod = [](state&st, unit_type*ut, const std::function<bool(state&)>&func) {
+	auto prev_st = st;
+	unit_type*t = advance(st, ut, st.frame + advance_frame_amount, true, true);
+	if (!t) {
+		auto imm_st = st;
+		st = std::move(prev_st);
+		return nodelay_stage2(st, std::move(imm_st), ut, 0, func);
+	} else {
+		st = std::move(prev_st);
+		if (t != failed) return nodelay(st, ut, func);
+		return nodelay(st, ut->builder_type, func);
+	}
+};
+static const auto maxprod1 = [](state&st, unit_type*ut) {
+	auto prev_st = st;
+	unit_type*t = advance(st, ut, st.frame + advance_frame_amount, true, true);
+	if (!t) return true;
+	else {
+		st = std::move(prev_st);
+		if (t != failed) return depbuild(st, state(st), ut);
+		return depbuild(st, state(st), ut->builder_type);
+	}
 };
 
 int count_units_plus_production(state&st, unit_type*ut) {

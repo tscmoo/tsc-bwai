@@ -42,6 +42,7 @@ struct unit_type {
 	bool is_mechanical;
 	bool is_hovering;
 	bool is_non_usable;
+	bool is_detector;
 };
 
 struct weapon_stats {
@@ -174,6 +175,9 @@ struct unit {
 	bool is_flying;
 	int spider_mine_count;
 	bool has_nuke;
+	int lockdown_timer;
+	int defensive_matrix_timer;
+	double defensive_matrix_hp;
 
 	std::array<size_t,std::extent<decltype(units::unit_containers)>::value> container_indexes;
 };
@@ -370,6 +374,7 @@ unit_type*new_unit_type(BWAPI::UnitType game_unit_type,unit_type*ut) {
 	ut->is_mechanical = game_unit_type.isMechanical();
 	ut->is_hovering = ut->is_worker || ut == unit_types::vulture || ut == unit_types::archon || ut == unit_types::dark_archon;
 	ut->is_non_usable = ut == unit_types::spider_mine || ut == unit_types::nuclear_missile;
+	ut->is_detector = game_unit_type.isDetector();
 	return ut;
 }
 unit_type*get_unit_type(unit_type*&rv,BWAPI::UnitType game_unit_type) {
@@ -626,6 +631,12 @@ void update_unit_stuff(unit*u) {
 	u->is_flying = u->type->is_flyer || u->game_unit->isLifted();
 	u->spider_mine_count = u->game_unit->getSpiderMineCount();
 	u->has_nuke = u->game_unit->hasNuke();
+
+	// These timer functions seem to return a value in multiple of 8 frames
+	// (the timer is decremented every 8 frames)
+	u->lockdown_timer = u->game_unit->getLockdownTimer() * 8;
+	u->defensive_matrix_timer = u->game_unit->getDefenseMatrixTimer() * 8;
+	u->defensive_matrix_hp = u->game_unit->getDefenseMatrixPoints();
 
 	unit_building*b = u->building;
 	if (b) {

@@ -2,6 +2,10 @@
 
 namespace get_upgrades {
 ;
+a_unordered_map<upgrade_type*, double> upgrade_value_overrides;
+void set_upgrade_value(upgrade_type*upg, double value) {
+	upgrade_value_overrides[upg] = value;
+}
 
 void get_upgrades() {
 
@@ -25,7 +29,7 @@ void get_upgrades() {
 			for (unit_type*req : ut->required_units) add(req);
 		};
 		for (unit_type*req : upg.required_units) add(req);
-		if (&upg == upgrade_types::spider_mines) val = 1.0;
+		if (upgrade_value_overrides[&upg]) val = upgrade_value_overrides[&upg];
 		if (sum >= val*1.5) {
 			bool already_upgrading = false;
 			for (build::build_task&b : build::build_tasks) {
@@ -41,12 +45,13 @@ void get_upgrades() {
 					builder_found = true;
 					break;
 				}
+				double prio = val / 1000.0;
 				if (builder_found) {
-					build::add_build_sum(0, &upg, 1);
+					build::add_build_sum(prio, &upg, 1);
 					break;
 				} else {
 					if (sum >= val * 3) {
-						build::add_build_sum(0, upg.builder_type, 1);
+						build::add_build_sum(prio, upg.builder_type, 1);
 						break;
 					}
 				}

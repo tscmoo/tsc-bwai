@@ -204,8 +204,8 @@ void update_mineral_reserved_task() {
 		// quick hack to allow space for comsats
 		for (unit*u : my_resource_depots) {
 			if (u->type != unit_types::cc) continue;
-			for (int y = 1; y < 3; ++y) {
-				for (int x = 4; x < 6; ++x) {
+			for (int y = 1; y < 3+1; ++y) {
+				for (int x = 4; x < 6+1; ++x) {
 					get_build_square(u->building->build_pos + xy(x * 32, y * 32)).mineral_reserved = true;
 				}
 			}
