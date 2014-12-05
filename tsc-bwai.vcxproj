@@ -87,6 +87,7 @@
     <ClInclude Include="src/stats.h" />
     <ClInclude Include="src/units.h" />
     <ClInclude Include="src/unit_controls.h" />
+    <ClInclude Include="src\combat_tactics.h" />
     <ClInclude Include="src\flyer_pathing.h" />
     <ClInclude Include="src\get_upgrades.h" />
     <ClInclude Include="src\multitasking_sync.h" />
