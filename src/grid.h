@@ -9,7 +9,9 @@ struct walk_square {
 	// Not guaranteed to be immediately updated; every 4 ticks if scheduling allows.
 	// Only add-ons can extend outside their build squares (to the left), so there should be
 	// a maximum of 2 buildings in any given walk square.
-	tsc::static_vector<unit*, 2> buildings;
+	// ++ It seems some map features has buildings on top of each other? (minerals blocking paths on destination)
+	//tsc::static_vector<unit*, 2> buildings;
+	a_vector<unit*> buildings;
 };
 a_vector<walk_square> walk_grid;
 int walk_grid_width, walk_grid_height;
