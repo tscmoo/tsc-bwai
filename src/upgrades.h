@@ -37,6 +37,7 @@ namespace upgrade_types {
 	upgrade_type_pointer healing;
 	upgrade_type_pointer ocular_implants, moebius_reactor, lockdown, personal_cloaking, nuclear_strike;
 	upgrade_type_pointer spider_mines;
+	upgrade_type_pointer charon_boosters;
 	upgrade_type_pointer defensive_matrix, emp_shockwave, irradiate, titan_reactor;
 
 	void init() {
@@ -72,6 +73,7 @@ namespace upgrade_types {
 		get(personal_cloaking, BWAPI::TechTypes::Personnel_Cloaking);
 		get(nuclear_strike, BWAPI::TechTypes::Nuclear_Strike);
 		get(spider_mines, BWAPI::TechTypes::Spider_Mines);
+		get(charon_boosters, BWAPI::UpgradeTypes::Charon_Boosters);
 
 		get(defensive_matrix, BWAPI::TechTypes::Defensive_Matrix);
 		get(emp_shockwave, BWAPI::TechTypes::EMP_Shockwave);
