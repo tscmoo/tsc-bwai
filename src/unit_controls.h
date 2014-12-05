@@ -75,7 +75,7 @@ void move(unit_controller*c) {
 		//if (u->game_unit->isSieged()) u->game_unit->unsiege();
 		//else u->game_unit->move(BWAPI::Position(move_to.x, move_to.y));
 
-		if (u->type->is_flyer) {
+		if (u->type->is_flyer && false) {
 			xy relpos = move_to - u->pos;
 			double a = atan2(relpos.y, relpos.x);
 			double r = relpos.length();
@@ -88,7 +88,8 @@ void move(unit_controller*c) {
 		if (u->type == unit_types::siege_tank_siege_mode) {
 			if ((u->pos - move_to).length() <= 32 * 6) move_to = u->pos;
 		}
-		if ((u->pos - move_to).length() <= 16) {
+		//if ((u->pos - move_to).length() <= 16) {
+		if ((u->pos - c->go_to).length() <= 8) {
 			if (u->type == unit_types::siege_tank_tank_mode) {
 				u->game_unit->siege();
 			} else {
@@ -234,6 +235,9 @@ void process(a_vector<unit_controller*>&controllers) {
 // 			}
 
 		}
+		if (c->action != unit_controller::action_build) {
+			if (c->fail_build_count) c->fail_build_count = 0;
+		}
 		if (c->action==unit_controller::action_build) {
 
 			if (c->target_type->is_building) {
@@ -243,6 +247,7 @@ void process(a_vector<unit_controller*>&controllers) {
 				if (c->target_type->is_refinery) is_inside = u->pos>=build_pos-xy(32,32) && u->pos<(build_pos + xy(c->target_type->tile_width*32+32,c->target_type->tile_height*32+32));
 				//if (c->target_type->is_refinery) is_inside = units_distance(u->pos,u->type,xy(c->target_type->tile_width*16,c->target_type->tile_height*16),c->target_type)<=32;
 				if (c->target) {
+					c->fail_build_count = 0;
 					if (u->build_unit && u->build_unit!=c->target) {
 						//log("building wrong thing, halt!\n");
 						u->game_unit->haltConstruction();
@@ -262,8 +267,13 @@ void process(a_vector<unit_controller*>&controllers) {
 					}// else log("building, lalala\n");
 				} else if (is_inside && current_frame+latency_frames>=c->wait_until) {
 					//log("build!\n");
-					if (!bwapi_call_build(u->game_unit, c->target_type->game_unit_type, BWAPI::TilePosition(build_pos.x / 32, build_pos.y / 32))) {
+					bool enough_minerals = c->target_type->minerals_cost==0 || current_minerals>=c->target_type->minerals_cost;
+					bool enough_gas = c->target_type->gas_cost == 0 || current_gas >= c->target_type->gas_cost;
+					if (enough_minerals && enough_gas) {
+						bwapi_call_build(u->game_unit, c->target_type->game_unit_type, BWAPI::TilePosition(build_pos.x / 32, build_pos.y / 32));
+						bool something_in_the_way = false;
 						for (unit*nu : my_units) {
+							if (nu->building) continue;
 							if (nu->is_flying) continue;
 							if (nu == u) continue;
 							xy upper_left = nu->pos - xy(nu->type->dimension_left(), nu->type->dimension_up());
@@ -276,6 +286,7 @@ void process(a_vector<unit_controller*>&controllers) {
 							if (bottom_right.y < y1) continue;
 							if (upper_left.x > x2) continue;
 							if (upper_left.y > y2) continue;
+							something_in_the_way = true;
 							if (!nu->controller->can_move) {
 								if (u->game_unit->attack(nu->game_unit)) {
 									c->noorder_until = current_frame + 15;
@@ -285,8 +296,9 @@ void process(a_vector<unit_controller*>&controllers) {
 							nu->controller->move_away_from = xy((x1 + x2) / 2, (y1 + y2) / 2);
 							nu->controller->move_away_until = current_frame + 15 * 2;
 						}
-						++c->fail_build_count;
-					} else c->fail_build_count = 0;
+						if (!something_in_the_way) ++c->fail_build_count;
+						log("c->fail_build_count is now %d\n", c->fail_build_count);
+					}
 					c->noorder_until = current_frame + 7;
 				} else {
 					//log("move to %d %d!\n",build_pos.x,build_pos.y);
