@@ -88,15 +88,18 @@ void scout::process() {
 
 }
 
+xy scan_best_pos;
+double scan_best_score;
 void scan() {
 
 	double scan_energy_cost = bwapi_tech_type_energy_cost(BWAPI::TechTypes::Scanner_Sweep);
 	int scans_available = 0;
+	int comsats = 0;
 	for (unit*u : my_units_of_type[unit_types::comsat_station]) {
+		++comsats;
 		if (u->energy < scan_energy_cost) continue;
 		scans_available += (int)(u->energy / scan_energy_cost);
 	}
-	if (!scans_available) return;
 
 	a_map<xy, double> values;
 
@@ -110,7 +113,11 @@ void scan() {
 			if (!w) continue;
 			if (diag_distance(e->pos - u->pos) <= w->max_range) ++in_range_count;
 		}
-		if (in_range_count >= 3) values[e->pos] += 10000;
+		if (in_range_count >= 3) values[e->pos] += 100000;
+	}
+	for (unit*e : enemy_units) {
+		if (e->gone) continue;
+		if (current_frame < e->scan_me_until) values[e->pos] += 20000;
 	}
 	if (scans_available > 2) {
 		for (auto&s : resource_spots::spots) {
@@ -122,7 +129,35 @@ void scan() {
 	for (unit*u : my_workers) {
 		if (u->controller->action != unit_controller::action_build) continue;
 		if (u->controller->fail_build_count >= 10) {
-			values[u->pos] = 10000;
+			values[u->pos] += 10000;
+		}
+	}
+	if (buildpred::op_unverified_minerals_gathered>3000) {
+		for (unit*e : enemy_units) {
+			if (e->visible || e->gone) continue;
+			if (e->type->is_building) continue;
+			values[e->pos] += e->minerals_value + e->gas_value;
+		}
+	}
+	int follow_worker_count = 0;
+	for (unit*e : enemy_units) {
+		if (e->visible || e->gone) continue;
+		if (!e->type->is_worker) continue;
+		if (combat::op_base.test(grid::build_square_index(e->pos))) continue;
+		if (++follow_worker_count >= 4) break;
+		auto*s = get_best_score_p(resource_spots::spots, [&](resource_spots::spot*s) {
+			if (grid::is_visible(s->pos)) return std::numeric_limits<double>::infinity();
+			return unit_pathing_distance(e, s->pos);
+		}, std::numeric_limits<double>::infinity());
+		if (s) values[s->pos] += 3000;
+	}
+	for (size_t idx : combat::op_base) {
+		xy pos((idx % (size_t)grid::build_grid_width) * 32, (idx / (size_t)grid::build_grid_width) * 32);
+		int last_seen = grid::get_build_square(pos).last_seen;
+		int age = current_frame - last_seen;
+		if (age <= 15 * 60 * 4) continue;
+		if (build_spot_finder::is_buildable_at(unit_types::barracks, pos)) {
+			values[pos] += age / 200;
 		}
 	}
 
@@ -142,6 +177,7 @@ void scan() {
 	for (auto&v : values) {
 		double s = 0.0;
 		for (auto&v2 : values) {
+			if (grid::is_visible(v2.first)) continue;
 			if (&v2 == &v || (v.first - v2.first).length() <= scan_st->sight_range) s += v2.second;
 		}
 		if (s > best_score) {
@@ -149,7 +185,13 @@ void scan() {
 			best_pos = v.first;
 		}
 	}
-	if ((best_score >= 3000.0 && scans_available > 2) || best_score >= 10000.0) {
+	scan_best_pos = best_pos;
+	scan_best_score = best_score;
+	bool use_scan = false;
+	use_scan |= best_score >= 3000.0 && scans_available > comsats * 2;
+	use_scan |= best_score >= 6000.0 && scans_available > comsats;
+	use_scan |= best_score >= 10000.0 && scans_available > 0;
+	if (use_scan) {
 		unit*u = get_best_score(my_units_of_type[unit_types::comsat_station], [&](unit*u) {
 			return -u->energy;
 		});
@@ -267,6 +309,10 @@ void render() {
 			if (v.dst_s) game->drawLineMap(v.scout_unit->pos.x, v.scout_unit->pos.y, v.dst_s->pos.x, v.dst_s->pos.y, BWAPI::Colors::Blue);
 		}
 	}
+
+	auto*scan_st = units::get_unit_stats(unit_types::spell_scanner_sweep, players::my_player);
+	game->drawCircleMap(scan_best_pos.x, scan_best_pos.y, (int)scan_st->sight_range, BWAPI::Colors::Blue);
+	game->drawTextMap(scan_best_pos.x, scan_best_pos.y, "\x0e%g", scan_best_score);
 
 }
 
