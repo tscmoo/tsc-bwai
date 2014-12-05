@@ -178,6 +178,7 @@ struct unit {
 	int lockdown_timer;
 	int defensive_matrix_timer;
 	double defensive_matrix_hp;
+	int scan_me_until;
 
 	std::array<size_t,std::extent<decltype(units::unit_containers)>::value> container_indexes;
 };
@@ -196,7 +197,7 @@ namespace unit_types {
 	unit_type_pointer spell_scanner_sweep;
 	unit_type_pointer scv, marine, vulture, siege_tank_tank_mode, siege_tank_siege_mode, goliath;
 	unit_type_pointer medic, ghost;
-	unit_type_pointer wraith, battlecruiser, dropship, science_vessel;
+	unit_type_pointer wraith, battlecruiser, dropship, science_vessel, valkyrie;
 	unit_type_pointer spider_mine, nuclear_missile;
 	unit_type_pointer nexus, pylon, gateway, photon_cannon, robotics_facility;
 	unit_type_pointer probe;
@@ -241,6 +242,7 @@ namespace unit_types {
 		get(battlecruiser, BWAPI::UnitTypes::Terran_Battlecruiser);
 		get(dropship, BWAPI::UnitTypes::Terran_Dropship);
 		get(science_vessel, BWAPI::UnitTypes::Terran_Science_Vessel);
+		get(valkyrie, BWAPI::UnitTypes::Terran_Valkyrie);
 
 		get(spider_mine, BWAPI::UnitTypes::Terran_Vulture_Spider_Mine);
 		get(nuclear_missile, BWAPI::UnitTypes::Terran_Nuclear_Missile);
@@ -445,7 +447,7 @@ void update_unit_value(unit*u, unit_type*from, unit_type*to) {
 	}
 	u->owner->minerals_spent += (min - free_min) - u->minerals_value;
 	u->owner->gas_spent += gas - u->gas_value;
-	u->minerals_value += min;
+	u->minerals_value += (min - free_min);
 	u->gas_value += gas;
 }
 
@@ -680,6 +682,7 @@ unit*new_unit(BWAPI_Unit game_unit) {
 	u->minerals_value = 0;
 	u->gas_value = 0;
 	u->high_priority_until = 0;
+	u->scan_me_until = 0;
 
 	update_unit_owner(u);
 	update_unit_type(u);
