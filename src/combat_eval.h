@@ -65,13 +65,15 @@ namespace combat_eval {
 			vec.emplace_back();
 			auto&c = vec.back();
 			c.st = st;
-			c.move = 32 * 8;
+			c.move = 32 * 4;
+			c.move += st->ground_weapon ? st->ground_weapon->max_range : st->air_weapon ? st->air_weapon->max_range : 0;
 			c.energy = st->energy;
 			c.shields = st->shields;
 			c.hp = st->hp;
 			c.cooldown = 0;
 			c.loaded_until = 0;
 			c.force_target = false;
+			if (st->type == unit_types::vulture) c.spider_mine_count = 3;
 			return c;
 		}
 		combatant&add_unit(unit*u, int team) {
@@ -182,16 +184,19 @@ namespace combat_eval {
 						//if (c.st->type == unit_types::dropship) log("frame %d: %s: target is %p (force_target %d)\n", total_frames, c.st->type->name, target, c.force_target);
 						if (target) {
 							weapon_stats*w = target->st->type->is_flyer ? c.st->air_weapon : c.st->ground_weapon;
+							bool use_spider_mine = c.spider_mine_count && my_team.has_spider_mines && !target->st->type->is_hovering && !target->st->type->is_flyer && !target->st->type->is_building;
 							if (!w) {
 								if (c.st->max_speed > 0 && c.move > 0) {
 									++target_count;
 									c.move -= c.st->max_speed;
 									my_team.score += c.st->max_speed / 100.0;
 								}
-							} else if (c.move + target->move > w->max_range) {
+							} else if (c.move + target->move > (use_spider_mine ? 0 : w->max_range)) {
 							//} else if (c.move > w->max_range) {
 							//} else if (target->move > w->max_range) {
-								if (c.st->max_speed > 0) {
+								double speed = c.st->max_speed;
+								if (c.st->type == unit_types::siege_tank_siege_mode) speed = 2;
+								if (speed > 0) {
 									++target_count;
 									c.move -= c.st->max_speed;
 									my_team.score += c.st->max_speed / 100.0;
@@ -232,14 +237,13 @@ namespace combat_eval {
 										if (c.stim_pack_timer) cooldown /= 2;
 										c.cooldown = cooldown;
 										//my_team.score += damage_dealt;
-										if (target->hp < 0) {
-											double value = target->st->type->total_minerals_cost + target->st->type->total_gas_cost * 2;
+										if (target->hp <= 0) {
+											double value = target->st->type->total_minerals_cost + target->st->type->total_gas_cost;
 											my_team.score += value;
-											if (target->st->type->is_worker) my_team.score += value;
 											if (target->st->type == unit_types::bunker) --enemy_team.bunker_count;
 										}
 									};
-									if (c.spider_mine_count && my_team.has_spider_mines && !target->st->type->is_hovering && !target->st->type->is_flyer && !target->st->type->is_building) {
+									if (use_spider_mine) {
 										w = my_team.spider_mine_weapon;
 										hits = 1;
 										attack(target, 0.5);
@@ -247,13 +251,16 @@ namespace combat_eval {
 									} else attack(target, 1.0);
 									if (c.st->type == unit_types::siege_tank_siege_mode) {
 										combatant*ntarget = target + 1;
-										if (ntarget < enemy_team.units.data() + enemy_team.units.size()) {
-											weapon_stats*nw = ntarget->st->type->is_flyer ? c.st->air_weapon : c.st->ground_weapon;
-											//if (w && c.move + ntarget->move<w->max_range && c.move + ntarget->move>w->min_range) {
-											if (nw==w && c.move + ntarget->move<w->max_range) {
-											//if (nw == w && ntarget->move<w->max_range) {
-												attack(ntarget, 0.5);
+										for (int i = 0; i < 2; ++i) {
+											if (ntarget < enemy_team.units.data() + enemy_team.units.size()) {
+												weapon_stats*nw = ntarget->st->type->is_flyer ? c.st->air_weapon : c.st->ground_weapon;
+												//if (w && c.move + ntarget->move<w->max_range && c.move + ntarget->move>w->min_range) {
+												if (nw == w && c.move + ntarget->move < w->max_range) {
+													//if (nw == w && ntarget->move<w->max_range) {
+													attack(ntarget, 0.5);
+												}
 											}
+											++ntarget;
 										}
 									}
 								}
