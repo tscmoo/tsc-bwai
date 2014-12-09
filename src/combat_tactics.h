@@ -19,6 +19,11 @@ auto spotter_score = [&](combat_unit*c) {
 	return -c->u->stats->sight_range - (c->u->is_flying ? 32 * 4 : 0);
 };
 
+bool careful_siege = false;
+bool siege_requires_upgrade = true;
+
+a_vector<a_vector<xy>> render_circles;
+
 void run_siege_tactic(tactic_siege&t) {
 
 	size_t siege_tank_count = 0;
@@ -64,6 +69,7 @@ void run_siege_tactic(tactic_siege&t) {
 	}
 
 	t.spotter = get_best_score(t.allies, spotter_score);
+	if (t.spotter == t.allies.front()) t.spotter = nullptr;
 
 	auto get_danger = [&](combat_unit*cu) {
 		unit*net = get_best_score(t.enemies, [&](unit*e) {
@@ -84,14 +90,43 @@ void run_siege_tactic(tactic_siege&t) {
 		} else return std::make_tuple(xy(), 0.0);
 	};
 
+	a_map<xy, int> cover_count;
+	xy cover_pos = t.allies.front()->u->pos;
+	if (!defence_spots.empty()) cover_pos = defence_spots.front().pos;
+	//bool attack = t.allies.size() >= 10;
+	bool attack = true;
+
+	std::array<a_vector<xy>,3> circle;
+	find_nearby_entirely_walkable_tiles(cover_pos, [&](xy pos) {
+		double d = diag_distance(pos - cover_pos);
+		if (d <= 32 * 2) circle[0].push_back(pos);
+		else if (d <= 32 * 4) circle[1].push_back(pos);
+		else if (d <= 32 * 6) circle[2].push_back(pos);
+		return true;
+	}, 32 * 6);
+	for (auto&v : circle) {
+		if (v.empty()) v.push_back(cover_pos);
+		render_circles.push_back(v);
+	}
+
+	int tank_count = 0;
+	int sieged_tank_count = 0;
+	for (auto*c : t.allies) {
+		if (c->u->type == unit_types::siege_tank_tank_mode || c->u->type == unit_types::siege_tank_siege_mode) ++tank_count;
+		if (c->u->type == unit_types::siege_tank_siege_mode) ++sieged_tank_count;
+	}
+
 	a_unordered_map<unit*, int> target_count;
+	size_t c_idx = 0;
 	for (auto*c : t.allies) {
 		c->action = combat_unit::action_tactic;
 		c->subaction = combat_unit::subaction_move;
 		c->target_pos = t.targets.front()->pos;
+		if (!attack) c->target_pos = cover_pos;
 
 		if (c == t.spotter) continue;
-		unit*ne = get_best_score(t.enemies, [&](unit*e) {
+
+		unit*ne = get_best_score(t.enemies.empty() ? t.targets : t.enemies, [&](unit*e) {
 			weapon_stats*w = e->is_flying ? c->u->stats->air_weapon : c->u->stats->ground_weapon;
 			if (!w) return std::numeric_limits<double>::infinity();
 			return units_distance(e, c->u);
@@ -107,41 +142,100 @@ void run_siege_tactic(tactic_siege&t) {
 			double danger_range;
 			std::tie(danger_pos, danger_range) = get_danger(c);
 			double close_range = std::max(wr * 2, danger_range * 2);
-			if (d < close_range) {
-				a_deque<xy> path = find_path(c->u->type, c->u->pos, [&](xy pos, xy npos) {
-					if (diag_distance(ne->pos - npos) >= wr * 3) return false;
-					if (c->u->is_flying) return true;
-					return !spot_taken.test(grid::build_square_index(npos));
-				}, [&](xy pos, xy npos) {
-					return 0.0;
-				}, [&](xy pos) {
-					return units_distance(pos, c->u->type, ne->pos, ne->type) <= wr;
-				});
-				xy goal_pos = ne->pos;
-				if (!path.empty()) goal_pos = path.back();
-				if (!c->u->is_flying) spot_taken.set(grid::build_square_index(goal_pos));
-				c->target_pos = goal_pos;
-				if (d <= wr - margin) {
-					if (c->u->type == unit_types::siege_tank_tank_mode) {
-						if (current_frame >= c->u->controller->noorder_until) {
-							if (c->u->game_unit->siege()) {
-								c->u->controller->noorder_until = current_frame + 30;
+			xy goal_pos = c->target_pos;
+			bool dont_unsiege = false;
+			if (careful_siege && d > wr - margin) {
+				a_vector<xy>&my_circle = circle[c_idx * 3 / t.allies.size()];
+				int best_score;
+				xy best_pos;
+				size_t min_cover = std::min((size_t)4, my_circle.size() / 2);
+				if (c->u->type == unit_types::siege_tank_siege_mode) {
+					size_t this_cover_count = 0;
+					for (auto&v : my_circle) {
+						double d = diag_distance(v - c->u->pos);
+						if (d <= wr) ++this_cover_count;
+					}
+					if (this_cover_count >= min_cover) best_pos = c->u->pos;
+				}
+				if (best_pos == xy()) {
+					find_nearby_entirely_walkable_tiles(c->u->pos, [&](xy pos) {
+						//find_path(c->u->type, c->u->pos, [&](xy ppos, xy pos) {
+						if (!c->u->is_flying && spot_taken.test(grid::build_square_index(pos))) return false;
+						if (grid::get_build_square(pos).building) return false;
+						int score = 0;
+						size_t this_cover_count = 0;
+						for (auto&v : my_circle) {
+							double d = diag_distance(v - pos);
+							if (d <= wr) {
+								score += cover_count[v];
+								++this_cover_count;
 							}
 						}
-					}
-					do_attack(c, unit_allies, t.enemies);
-				}
-				if (d > wr) {
-					if (c->u->type == unit_types::siege_tank_siege_mode) {
-						if (current_frame >= c->u->controller->noorder_until) {
-							if (c->u->game_unit->unsiege()) {
-								c->u->controller->noorder_until = current_frame + 30;
+						if (this_cover_count >= min_cover) {
+							if (best_pos == xy() || score < best_score) {
+								best_score = score;
+								best_pos = pos;
 							}
+						}
+						return true;
+					});
+// 					}, [&](xy pos, xy npos) {
+// 						return 0.0;
+// 					}, [&](xy pos) {
+// 						return false;
+// 					});
+				}
+				if (diag_distance(c->u->pos - best_pos) <= 8) dont_unsiege = true;
+				if (best_pos != xy()) {
+					for (auto&v : my_circle) {
+						double d = diag_distance(v - best_pos);
+						if (d <= wr) ++cover_count[v];
+					}
+					goal_pos = best_pos;
+				} else {
+					if (c == t.allies.front()) goal_pos = cover_pos;
+					else goal_pos = t.allies.front()->u->pos;
+				}
+			} else {
+				if (d < close_range) {
+					a_deque<xy> path = find_path(c->u->type, c->u->pos, [&](xy pos, xy npos) {
+						if (diag_distance(ne->pos - npos) >= wr * 3) return false;
+						if (c->u->is_flying) return true;
+						return !spot_taken.test(grid::build_square_index(npos));
+					}, [&](xy pos, xy npos) {
+						return 0.0;
+					}, [&](xy pos) {
+						return units_distance(pos, c->u->type, ne->pos, ne->type) <= wr;
+					});
+					goal_pos = ne->pos;
+					if (!path.empty()) goal_pos = path.back();
+					if (!c->u->is_flying) spot_taken.set(grid::build_square_index(goal_pos));
+				}
+			}
+			if (d <= wr - margin) {
+				if (c->u->type == unit_types::siege_tank_tank_mode) {
+					if (current_frame >= c->u->controller->noorder_until) {
+						if (c->u->game_unit->siege()) {
+							c->u->controller->noorder_until = current_frame + 30;
+						}
+					}
+				}
+				do_attack(c, unit_allies, t.enemies);
+			}
+			if (d > wr && !dont_unsiege) {
+				if (c->u->type == unit_types::siege_tank_siege_mode) {
+					bool can_unsiege = !careful_siege || sieged_tank_count >= tank_count - tank_count / 4;
+					if (can_unsiege && current_frame >= c->u->controller->noorder_until) {
+						if (c->u->game_unit->unsiege()) {
+							--sieged_tank_count;
+							c->u->controller->noorder_until = current_frame + 30;
 						}
 					}
 				}
 			}
+			c->target_pos = goal_pos;
 		}
+		++c_idx;
 	}
 	unit*spot_target = nullptr;
 	int highest_count = 0;
@@ -195,7 +289,9 @@ void run_siege_tactic(tactic_siege&t) {
 
 void on_groups_updated() {
 
-	if (players::my_player->has_upgrade(upgrade_types::siege_mode)) {
+	return;
+
+	if (players::my_player->has_upgrade(upgrade_types::siege_mode) || !siege_requires_upgrade) {
 		for (auto&g : groups) {
 			a_vector<combat_unit*> tanks;
 			for (auto*c : g.allies) {
@@ -210,6 +306,7 @@ void on_groups_updated() {
 				bool add = e->type == unit_types::bunker;
 				add |= e->type == unit_types::missile_turret;
 				add |= e->type->is_building;
+				add |= e->type == unit_types::dragoon;
 				if (add) {
 					siege_targets.push_back(e);
 					siege_this = true;
@@ -255,6 +352,9 @@ void on_groups_updated() {
 								st->spotter = best_spotter;
 								break;
 							}
+						} else {
+							st->spotter = best_spotter;
+							break;
 						}
 					}
 				}
@@ -266,6 +366,8 @@ void on_groups_updated() {
 
 
 void run() {
+
+	return;
 
 	for (auto i = siege_tactics.begin(); i != siege_tactics.end();) {
 		if (i->allies.empty() || i->targets.empty()) {
@@ -288,6 +390,8 @@ void run() {
 		}
 	}
 
+	render_circles.clear();
+
 	for (auto&t : siege_tactics) {
 		run_siege_tactic(t);
 	}
@@ -308,6 +412,15 @@ void render() {
 			game->drawLineMap(e->pos.x, e->pos.y, pos.x, pos.y, c);
 		}
 	}
+
+// 	size_t idx = 0;
+// 	std::array<BWAPI::Color, 3> colors = { BWAPI::Colors::Red, BWAPI::Colors::Orange, BWAPI::Colors::Yellow };
+// 	for (auto&v : render_circles) {
+// 		BWAPI::Color c = colors[idx++ % 3];
+// 		for (xy pos : v) {
+// 			game->drawBoxMap(pos.x, pos.y, pos.x + 32, pos.y + 32, c);
+// 		}
+// 	}
 
 }
 
