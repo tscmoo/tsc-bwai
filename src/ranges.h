@@ -103,3 +103,28 @@ transform_filter<T,filter_F> make_transform_filter(T&cont,filter_F&&filter) {
 	return transform_filter<T,filter_F>(cont,std::forward<filter_F>(filter));
 }
 
+
+template<typename iter_T>
+struct iterators_range {
+	iter_T begin_it;
+	iter_T end_it;
+	iterators_range(iter_T begin_it, iter_T end_it) : begin_it(begin_it), end_it(end_it) {}
+
+	typedef iter_T iterator;
+
+	typedef typename iter_T::value_type value_type;
+
+	iterator begin() {
+		return begin_it;
+	}
+	iterator end() {
+		return end_it;
+	}
+
+};
+
+
+template<typename iter_T>
+iterators_range<iter_T> make_iterators_range(iter_T begin, iter_T end) {
+	return iterators_range<iter_T>(begin, end);
+}
