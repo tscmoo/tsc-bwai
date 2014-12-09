@@ -23,6 +23,7 @@ struct build_task: refcounted {
 	unit*builder;
 	int last_look_for_builder;
 	xy build_pos;
+	xy build_near;
 	xy land_pos;
 	int last_find_build_pos;
 	int build_frame;
@@ -491,8 +492,8 @@ bool build_has_not_creep(grid::build_square&bs, unit_type*ut) {
 	}
 	return true;
 }
-bool build_full_check(grid::build_square&bs, unit_type*ut) {
-	bool okay = build_spot_finder::can_build_at(ut, bs);
+bool build_full_check(grid::build_square&bs, unit_type*ut, bool allow_large_path_around = false) {
+	bool okay = build_spot_finder::can_build_at(ut, bs, allow_large_path_around);
 	if (!ut->requires_creep && okay) okay &= build_has_not_creep(bs, ut);
 	if (ut->requires_creep && okay) okay &= build_has_creep(bs, ut);
 	if (ut->requires_pylon && okay) okay &= build_has_pylon(bs, ut);
@@ -597,7 +598,7 @@ void execute_build(build_task&b) {
 				}
 			}
 			std::array<xy,1> starts;
-			starts[0] = default_build_pos;
+			starts[0] = b.build_near == xy() ? default_build_pos : b.build_near;
 			xy pos;
 			if (b.type->unit->requires_pylon) {
 				/*pos = build_spot_finder::find(starts,b.type->unit,[&](grid::build_square&bs) {
@@ -891,19 +892,21 @@ void execute_build(build_task&b) {
 				//if ((!builder || current_frame-b.last_look_for_builder>=15*8) && current_frame-b.last_look_for_builder>=15*2) {
 				if ((!builder || current_frame - b.last_look_for_builder >= 15 * 2) && current_frame - b.last_look_for_builder >= 15 * 2) {
 					b.last_look_for_builder = current_frame;
-					builder = get_best_score(my_units_of_type[b.type->unit->builder_type],[&](unit*u) {
-						if (requires_addon && (!u->addon || u->addon->type != requires_addon)) return std::numeric_limits<double>::infinity();
+					builder = get_best_score(my_completed_units_of_type[b.type->unit->builder_type],[&](unit*u) {
+						if (requires_addon && (!u->addon || u->addon->type != requires_addon || !u->addon->is_completed)) return std::numeric_limits<double>::infinity();
 						if (b.type->unit->is_addon && u->addon) return std::numeric_limits<double>::infinity();
 						if (b.type->unit->is_addon && u->type == unit_types::cc) {
 							//if (!u->game_unit->canBuildAddon(b.type->unit->game_unit_type)) return std::numeric_limits<double>::infinity();
 						}
+						double cost = 0.0;
 						if (!b.type->unit->is_addon) {
-							if (u->building && u->building->is_lifted) return std::numeric_limits<double>::infinity();
+							if (u->building && u->building->is_lifted) cost = 15 * 5;
 							if (u->building && current_frame - u->building->building_addon_frame <= 15) return std::numeric_limits<double>::infinity();
+							if (u->building && grid::get_build_square(u->building->build_pos).reserved.first) return std::numeric_limits<double>::infinity();
 						}
 						if (u->controller->noorder_until > current_frame) return std::numeric_limits<double>::infinity();
 						if (b.type->unit == unit_types::nuclear_missile && u->has_nuke) return std::numeric_limits<double>::infinity();
-						return (double)u->remaining_whatever_time;
+						return (double)u->remaining_whatever_time + cost;
 					},std::numeric_limits<double>::infinity());
 				}
 			}
@@ -940,20 +943,21 @@ void execute_build(build_task&b) {
 								}
 							}
 						} else {
-							if ((building->is_lifted || !building->build_squares_occupied.empty()) && current_frame - builder->creation_frame >= 8) {
+							if ((building->is_lifted || !building->build_squares_occupied.empty())) {
 								for (auto*bs_p : building->build_squares_occupied) {
 									bs_p->building = nullptr;
 								}
 								const xy addon_rel_pos(builder->type->tile_width * 32, (builder->type->tile_height - b.type->unit->tile_height) * 32);
 								auto pred = [&](grid::build_square&bs) {
-									if (!build_full_check(bs, builder->type)) return false;
+									if (!build_full_check(bs, builder->type, true)) return false;
 									grid::reserve_build_squares(bs.pos, builder->type);
 									auto&addon_bs = grid::get_build_square(bs.pos + addon_rel_pos);
-									bool r = build_full_check(addon_bs, b.type->unit);
+									bool r = build_full_check(addon_bs, b.type->unit, true);
 									grid::unreserve_build_squares(bs.pos, builder->type);
 									return r;
 								};
 								xy pos = b.land_pos;
+								if (pos == xy()) pos = building->build_pos;
 								if (pos == xy() || !pred(grid::get_build_square(pos))) {
 									if (pred(grid::get_build_square(building->build_pos))) pos = building->build_pos;
 									else {
@@ -1149,6 +1153,22 @@ void execute_build_task() {
 					u->game_unit->cancelConstruction();
 				}
 				if (!u->game_unit->getBuildUnit()) u->game_unit->cancelConstruction();
+			}
+		}
+
+		for (unit*u : my_workers) {
+			if (u->controller->action == unit_controller::action_build) {
+				bool found = false;
+				for (build_task&b : build_tasks) {
+					if (b.builder == u) {
+						found = true;
+						break;
+					}
+				}
+				if (!found) {
+					u->controller->action = unit_controller::action_idle;
+					u->controller->flag = nullptr;
+				}
 			}
 		}
 

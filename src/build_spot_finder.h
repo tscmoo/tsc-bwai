@@ -13,7 +13,7 @@ xy get_pos(unit*u) {
 }
 
 template<typename at_T>
-bool has_path_around(unit_type*ut,const at_T&at) {
+bool has_path_around(unit_type*ut, const at_T&at, bool use_large_diff = false) {
 	xy start_pos = get_pos(at);
 
 	a_deque<std::tuple<xy,xy,int,int>> open;
@@ -27,6 +27,10 @@ bool has_path_around(unit_type*ut,const at_T&at) {
 	if (ut==unit_types::creep_colony) {
 		allowed_diff_x = 32*12;
 		allowed_diff_y = 32*12;
+	}
+	if (use_large_diff) {
+		allowed_diff_x *= 2;
+		allowed_diff_y *= 2;
 	}
 
 	bool okay = true;
@@ -112,8 +116,8 @@ bool is_buildable_at(unit_type*ut,const at_T&at) {
 	return true;
 }
 template<typename at_T>
-bool can_build_at(unit_type*ut,const at_T&at) {
-	return is_buildable_at(ut,at) && has_path_around(ut,at);
+bool can_build_at(unit_type*ut, const at_T&at, bool allow_large_path_around = false) {
+	return is_buildable_at(ut, at) && has_path_around(ut, at, allow_large_path_around);
 }
 
 template<typename start_cont_T,typename pred_T>
