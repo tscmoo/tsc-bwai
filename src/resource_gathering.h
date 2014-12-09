@@ -6,6 +6,7 @@ namespace resource_gathering {
 static const int max_predicted_frames = 15*120;
 a_map<int,int> predicted_mineral_delivery, predicted_gas_delivery;
 double minerals_to_gas_weight = 1.0;
+double max_gas = 0.0;
 
 struct gatherer_t;
 struct resource_t {
@@ -224,6 +225,8 @@ void process(resource_t&r) {
 	if (r.income_rate.size()>r.gatherers.size()) next_income = r.income_rate[r.gatherers.size()];
 
 	if (my_workers.size() >= 15 && current_gas < 400) minerals_to_gas_weight = 0.25;
+	if (my_workers.size() >= 30 && current_gas < 1000) minerals_to_gas_weight = 0.25;
+	if (max_gas && current_gas >= max_gas) minerals_to_gas_weight = 100.0;
 
 	if (next_income>0 && (current_frame-r.last_find_transfer>=30 || current_frame<30)) {
 		r.last_find_transfer = current_frame;
