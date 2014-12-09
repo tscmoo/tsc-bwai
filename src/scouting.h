@@ -174,10 +174,21 @@ void scan() {
 	auto*scan_st = units::get_unit_stats(unit_types::spell_scanner_sweep, players::my_player);
 	double best_score = 0.0;
 	xy best_pos;
+	a_vector<unit*> detectors;
+	for (unit*u : my_units) {
+		if (u->type->is_detector) detectors.push_back(u);
+	}
 	for (auto&v : values) {
 		double s = 0.0;
 		for (auto&v2 : values) {
-			if (grid::is_visible(v2.first)) continue;
+			bool is_revealed = false;
+			for (unit*u : detectors) {
+				if ((u->pos - v2.first).length() <= u->stats->sight_range) {
+					is_revealed = true;
+					break;
+				}
+			}
+			if (is_revealed) continue;
 			if (&v2 == &v || (v.first - v2.first).length() <= scan_st->sight_range) s += v2.second;
 		}
 		if (s > best_score) {
