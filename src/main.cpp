@@ -232,6 +232,7 @@ xy my_start_location;
 #include "build.h"
 #include "combat_eval.h"
 #include "buildpred.h"
+#include "wall_in.h"
 #include "combat.h"
 #include "scouting.h"
 #include "get_upgrades.h"
@@ -262,6 +263,7 @@ void init() {
 	combat::init();
 	scouting::init();
 	get_upgrades::init();
+	wall_in::init();
 	strategy::init();
 
 }
