@@ -43,6 +43,7 @@ struct unit_type {
 	bool is_hovering;
 	bool is_non_usable;
 	bool is_detector;
+	bool is_liftable;
 };
 
 struct weapon_stats {
@@ -193,7 +194,7 @@ namespace unit_types {
 	typedef unit_type*unit_type_pointer;
 	unit_type_pointer unknown;
 	unit_type_pointer cc, supply_depot, barracks, factory, science_facility, nuclear_silo, bunker, refinery, machine_shop;
-	unit_type_pointer missile_turret, academy, comsat_station, starport, control_tower;
+	unit_type_pointer missile_turret, academy, comsat_station, starport, control_tower, engineering_bay;
 	unit_type_pointer spell_scanner_sweep;
 	unit_type_pointer scv, marine, vulture, siege_tank_tank_mode, siege_tank_siege_mode, goliath;
 	unit_type_pointer medic, ghost;
@@ -201,7 +202,9 @@ namespace unit_types {
 	unit_type_pointer spider_mine, nuclear_missile;
 	unit_type_pointer nexus, pylon, gateway, photon_cannon, robotics_facility;
 	unit_type_pointer probe;
+	unit_type_pointer zealot, dragoon;
 	unit_type_pointer archon, dark_archon;
+	unit_type_pointer observer, shuttle, scout, carrier, interceptor, arbiter, corsair;
 	unit_type_pointer hatchery, lair, hive, creep_colony, sunken_colony, spore_colony, nydus_canal, spawning_pool, evolution_chamber;
 	unit_type_pointer drone, overlord, zergling, larva;
 	unit_type_pointer vespene_geyser;
@@ -228,6 +231,7 @@ namespace unit_types {
 		get(spell_scanner_sweep, BWAPI::UnitTypes::Spell_Scanner_Sweep);
 		get(starport, BWAPI::UnitTypes::Terran_Starport);
 		get(control_tower, BWAPI::UnitTypes::Terran_Control_Tower);
+		get(engineering_bay, BWAPI::UnitTypes::Terran_Engineering_Bay);
 
 		get(scv, BWAPI::UnitTypes::Terran_SCV);
 		get(marine, BWAPI::UnitTypes::Terran_Marine);
@@ -254,8 +258,18 @@ namespace unit_types {
 		get(robotics_facility, BWAPI::UnitTypes::Protoss_Robotics_Facility);
 
 		get(probe, BWAPI::UnitTypes::Protoss_Probe);
+		get(zealot, BWAPI::UnitTypes::Protoss_Zealot);
+		get(dragoon, BWAPI::UnitTypes::Protoss_Dragoon);
 		get(archon, BWAPI::UnitTypes::Protoss_Archon);
 		get(dark_archon, BWAPI::UnitTypes::Protoss_Dark_Archon);
+
+		get(observer, BWAPI::UnitTypes::Protoss_Observer);
+		get(shuttle, BWAPI::UnitTypes::Protoss_Shuttle);
+		get(scout, BWAPI::UnitTypes::Protoss_Scout);
+		get(carrier, BWAPI::UnitTypes::Protoss_Carrier);
+		get(interceptor, BWAPI::UnitTypes::Protoss_Interceptor);
+		get(arbiter, BWAPI::UnitTypes::Protoss_Arbiter);
+		get(corsair, BWAPI::UnitTypes::Protoss_Corsair);
 
 		get(hatchery, BWAPI::UnitTypes::Zerg_Hatchery);
 		get(lair, BWAPI::UnitTypes::Zerg_Lair);
@@ -376,7 +390,9 @@ unit_type*new_unit_type(BWAPI::UnitType game_unit_type,unit_type*ut) {
 	ut->is_mechanical = game_unit_type.isMechanical();
 	ut->is_hovering = ut->is_worker || ut == unit_types::vulture || ut == unit_types::archon || ut == unit_types::dark_archon;
 	ut->is_non_usable = ut == unit_types::spider_mine || ut == unit_types::nuclear_missile;
+	ut->is_non_usable |= game_unit_type.maxHitPoints() <= 1;
 	ut->is_detector = game_unit_type.isDetector();
+	ut->is_liftable = game_unit_type.isFlyingBuilding();
 	return ut;
 }
 unit_type*get_unit_type(unit_type*&rv,BWAPI::UnitType game_unit_type) {
@@ -426,7 +442,9 @@ std::tuple<double, double> get_unit_value(unit_type*from, unit_type*to) {
 		minerals = to->minerals_cost;
 		gas = to->gas_cost;
 	}
-	if (from != nullptr) xcept("unable to trace how %s changed into %s\n", from->name, to->name);
+	// TODO: display an error on screen or something when this occurs
+	//if (from != nullptr) xcept("unable to trace how %s changed into %s\n", from->name, to->name);
+	if (from != nullptr) log(" !! error: unable to trace how %s changed into %s\n", from->name, to->name);
 	log("final cost: %g %g\n", minerals, gas);
 	return std::make_tuple(minerals, gas);
 }
