@@ -32,6 +32,7 @@ struct state {
 	a_vector<st_base> bases;
 	int idle_workers = 0;
 	int army_size = 0;
+	bool dont_build_refineries = false;
 };
 
 a_unordered_map<unit*, double> last_seen_resources;
@@ -258,7 +259,7 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep, bool no
 			}
 			if (!has_enough_gas) {
 				unit_type*refinery = unit_types::refinery;
-				if (st.minerals >= refinery->minerals_cost) {
+				if (st.minerals >= refinery->minerals_cost && !st.dont_build_refineries) {
 					bool found = false;
 					for (auto&v : st.bases) {
 						for (auto&r : v.s->resources) {
@@ -642,8 +643,8 @@ static const auto maxprod = [](state&st, unit_type*ut, const std::function<bool(
 			for (auto&v : st.units[bt]) {
 				if (!v.has_addon) {
 					bt = addon;
-					return nodelay(st, bt, func);
-					break;
+// 					return nodelay(st, bt, func);
+// 					break;
 				}
 			}
 		}
@@ -677,8 +678,8 @@ static const auto maxprod1 = [](state&st, unit_type*ut) {
 			for (auto&v : st.units[bt]) {
 				if (!v.has_addon) {
 					bt = addon;
-					return depbuild(st, state(st), bt);
-					break;
+// 					return depbuild(st, state(st), bt);
+// 					break;
 				}
 			}
 		}
