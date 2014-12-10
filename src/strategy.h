@@ -217,10 +217,6 @@ void execute_best_with_expand(const list_T&list) {
 
 }
 
-#include "strat_proxy_rax.h"
-#include "strat_wraith.h"
-#include "strat_vulture.h"
-
 template<typename T>
 struct render_helper {
 	template<typename T>
@@ -255,10 +251,18 @@ std::function<void()> wrap() {
 	};
 }
 
+#include "strat_proxy_rax.h"
+#include "strat_wraith.h"
+#include "strat_vulture.h"
+#include "strat_tank.h"
+#include "strat_tvp_opening.h"
+
 a_map<a_string, std::function<void()>> strat_map = {
 	{ "proxy rax", wrap<proxy_rax>() },
 	{ "wraith", wrap<wraith>() },
-	{ "vulture", wrap<strat_vulture>() }
+	{ "vulture", wrap<strat_vulture>() },
+	{ "tank", wrap<strat_tank>() },
+	{ "tvp opening", wrap<strat_tvp_opening>() },
 };
 
 bool run_strat(const char*name) {
@@ -277,7 +281,10 @@ void strategy_task() {
 
 	//run_strat("proxy rax");
 	//run_strat("wraith");
-	run_strat("vulture");
+	//run_strat("vulture");
+	//run_strat("tank");
+	run_strat("tvp opening");
+	run_strat("tank");
 	while (true) {
 
 		using namespace buildpred;

@@ -94,9 +94,12 @@
     <ClInclude Include="src\players.h" />
     <ClInclude Include="src\strategy.h" />
     <ClInclude Include="src\strat_proxy_rax.h" />
+    <ClInclude Include="src\strat_tank.h" />
+    <ClInclude Include="src\strat_tvp_opening.h" />
     <ClInclude Include="src\strat_vulture.h" />
     <ClInclude Include="src\strat_wraith.h" />
     <ClInclude Include="src\upgrades.h" />
+    <ClInclude Include="src\wall_in.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

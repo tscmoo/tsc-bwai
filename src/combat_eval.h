@@ -251,7 +251,7 @@ namespace combat_eval {
 									} else attack(target, 1.0);
 									if (c.st->type == unit_types::siege_tank_siege_mode) {
 										combatant*ntarget = target + 1;
-										for (int i = 0; i < 2; ++i) {
+										for (int i = 0; i < 1; ++i) {
 											if (ntarget < enemy_team.units.data() + enemy_team.units.size()) {
 												weapon_stats*nw = ntarget->st->type->is_flyer ? c.st->air_weapon : c.st->ground_weapon;
 												//if (w && c.move + ntarget->move<w->max_range && c.move + ntarget->move>w->min_range) {

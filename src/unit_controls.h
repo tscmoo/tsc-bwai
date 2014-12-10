@@ -22,6 +22,8 @@ struct unit_controller {
 	int fail_build_count = 0;
 	xy move_away_from;
 	int move_away_until = 0;
+	int at_go_to_counter = 0;
+	int last_siege = 0;
 };
 
 namespace unit_controls {
@@ -90,15 +92,19 @@ void move(unit_controller*c) {
 		}
 		//if ((u->pos - move_to).length() <= 16) {
 		if ((u->pos - c->go_to).length() <= 8) {
-			if (u->type == unit_types::siege_tank_tank_mode) {
+			++c->at_go_to_counter;
+			if (u->type == unit_types::siege_tank_tank_mode && c->at_go_to_counter>=20) {
 				u->game_unit->siege();
+				c->last_siege = current_frame;
 			} else {
 				if (u->game_order != BWAPI::Orders::HoldPosition) {
 					u->game_unit->holdPosition();
 				}
 			}
 		} else {
-			if (u->game_unit->isSieged()) {
+			if (u->loaded_into) {
+				u->loaded_into->game_unit->unload(u->game_unit);
+			} else if (u->game_unit->isSieged()) {
 				if (current_frame - u->last_attacked >= 90) u->game_unit->unsiege();
 			} else if (u->type == unit_types::medic) {
 				if (u->game_order != BWAPI::Orders::MedicHeal1 && u->game_order != BWAPI::Orders::MedicHeal2) {
