@@ -179,6 +179,7 @@ struct unit {
 	int defensive_matrix_timer;
 	double defensive_matrix_hp;
 	int scan_me_until;
+	bool is_powered;
 
 	std::array<size_t,std::extent<decltype(units::unit_containers)>::value> container_indexes;
 };
@@ -655,6 +656,8 @@ void update_unit_stuff(unit*u) {
 	u->lockdown_timer = u->game_unit->getLockdownTimer() * 8;
 	u->defensive_matrix_timer = u->game_unit->getDefenseMatrixTimer() * 8;
 	u->defensive_matrix_hp = u->game_unit->getDefenseMatrixPoints();
+	
+	u->is_powered = !u->game_unit->isUnpowered();
 
 	unit_building*b = u->building;
 	if (b) {

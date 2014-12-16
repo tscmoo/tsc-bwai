@@ -2,18 +2,23 @@
 namespace square_pathing {
 ;
 
-bool can_fit_at(const xy pos, const std::array<int,4>&dims) {
+bool can_fit_at(const xy pos, const std::array<int,4>&dims, bool include_enemy_buildings = true) {
 	using namespace grid;
 	int right = pos.x + dims[0];
 	int bottom = pos.y + dims[1];
 	int left = pos.x - dims[2];
 	int top = pos.y - dims[3];
 	walk_square*sq = &get_walk_square(xy(left, top));
+	unit*prev_building = nullptr;
 	for (int y = top&-8; y <= bottom; y += 8) {
 		walk_square*nsq = sq;
 		for (int x = left&-8; x <= right; x += 8) {
 			if (!nsq->walkable) return false;
 			for (unit*b : nsq->buildings) {
+				if (b == prev_building) continue;
+				prev_building = b;
+				// TODO: something about neutral buildings
+				if (b->owner == players::opponent_player) continue;
 				xy bpos = b->pos;
 				int bright = bpos.x + b->type->dimension_right();
 				int bbottom = bpos.y + b->type->dimension_down();
@@ -38,6 +43,7 @@ struct pathing_map {
 	bool initialized = false;
 	std::array<int, 4> dimensions;
 	tsc::dynamic_bitset walkable;
+	bool include_enemy_buildings = true;
 	
 	a_vector<path_node> path_nodes;
 	a_vector<path_node*> nearest_path_node;
@@ -59,6 +65,7 @@ tsc::dynamic_bitset test_walkable;
 a_list<pathing_map> all_pathing_maps;
 
 a_unordered_map<unit_type*, pathing_map*> pathing_map_for_unit_type;
+a_unordered_map<unit_type*, pathing_map*> pathing_map_for_unit_type_no_enemy_buildings;
 
 a_vector<std::tuple<xy, xy>> invalidation_queue;
 
@@ -66,8 +73,8 @@ void invalidate_area(xy from, xy to) {
 	invalidation_queue.emplace_back(from, to);
 }
 
-pathing_map&get_pathing_map(unit_type*ut) {
-	auto*&r = pathing_map_for_unit_type[ut];
+pathing_map&get_pathing_map(unit_type*ut, bool include_enemy_buildings = true) {
+	auto*&r = include_enemy_buildings ? pathing_map_for_unit_type[ut] : pathing_map_for_unit_type_no_enemy_buildings[ut];
 	if (r) return *r;
 	all_pathing_maps.emplace_back();
 	r = &all_pathing_maps.back();
@@ -75,6 +82,7 @@ pathing_map&get_pathing_map(unit_type*ut) {
 	if (ut->is_flyer) xcept("get_pathing_map for a flyer");
 	r->walkable.resize(walkmap_width * walkmap_height);
 	r->nearest_path_node.resize(nearest_path_node_width*nearest_path_node_height);
+	r->include_enemy_buildings = include_enemy_buildings;
 	return *r;
 }
 
@@ -128,16 +136,19 @@ void update_map(pathing_map&map, xy from, xy to) {
 
 			if (!grid::get_walk_square(pos).walkable) continue;
 
-			bool kay = can_fit_at(pos, dims) || can_fit_at(pos + xy(7,0),dims);
-			if (!kay) kay |= can_fit_at(pos + xy(0, 7), dims) || can_fit_at(pos + xy(7, 7), dims);
-			if (!kay) {
-				for (int x = 1; x < 7 && !kay; ++x) {
-					if (can_fit_at(pos + xy(x, 0), dims)) kay = true;
-					else if (can_fit_at(pos + xy(x, 7), dims)) kay = true;
-				}
-				for (int y = 1; y < 7 && !kay; ++y) {
-					if (can_fit_at(pos + xy(0, y), dims)) kay = true;
-					else if (can_fit_at(pos + xy(7, y), dims)) kay = true;
+			bool kay = can_fit_at(pos, dims, map.include_enemy_buildings);
+			if (!kay && can_fit_at(pos + xy(4, 4), { 0, 0, 0, 0 }, map.include_enemy_buildings)) {
+				kay = can_fit_at(pos + xy(7, 0), dims, map.include_enemy_buildings);
+				if (!kay) kay |= can_fit_at(pos + xy(0, 7), dims, map.include_enemy_buildings) || can_fit_at(pos + xy(7, 7), dims, map.include_enemy_buildings);
+				if (!kay) {
+					for (int x = 1; x < 7 && !kay; ++x) {
+						if (can_fit_at(pos + xy(x, 0), dims, map.include_enemy_buildings)) kay = true;
+						else if (can_fit_at(pos + xy(x, 7), dims, map.include_enemy_buildings)) kay = true;
+					}
+					for (int y = 1; y < 7 && !kay; ++y) {
+						if (can_fit_at(pos + xy(0, y), dims, map.include_enemy_buildings)) kay = true;
+						else if (can_fit_at(pos + xy(7, y), dims, map.include_enemy_buildings)) kay = true;
+					}
 				}
 			}
 			size_t index = walk_pos_index(xy(x, y));

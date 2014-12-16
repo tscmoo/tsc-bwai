@@ -383,6 +383,7 @@ void give_lifts(combat_unit*dropship, a_vector<combat_unit*>&allies, int process
 }
 
 struct group_t {
+	size_t idx;
 	double value;
 	a_vector<unit*> enemies;
 	a_vector<combat_unit*> allies;
@@ -649,6 +650,9 @@ void update_groups() {
 	std::sort(new_groups.begin(), new_groups.end(), [&](const group_t&a, const group_t&b) {
 		return a.value > b.value;
 	});
+	for (size_t i = 0; i < new_groups.size(); ++i) {
+		new_groups[i].idx = i;
+	}
 
 	for (auto&g : new_groups) {
 		if (true) {
@@ -676,18 +680,13 @@ void update_groups() {
 		for (auto&g : new_groups) {
 			bool okay = true;
 			size_t count = 0;
-			//for (auto*n : square_pathing::find_path(square_pathing::get_pathing_map(c->u->type), c->u->pos, g.enemies.front()->pos)) {
-			//	xy pos = n->pos;
 			for (xy pos : find_bigstep_path(c->u->type, c->u->pos, g.enemies.front()->pos)) {
 				size_t index = grid::build_square_index(pos);
 				if (entire_threat_area.test(index)) {
-					//log("threat area found after %d\n", count);
-					//okay = g.threat_area.test(index);
-					//log("%p -> %p - found after %d, okay %d\n", c, &g, count, okay);
-					//break;
 					bool found = false;
 					for (auto&g2 : new_groups) {
 						if (&g2 == &g) continue;
+						if (g2.is_defensive_group) continue;
 						for (unit*e : g2.enemies) {
 							double wr = 0.0;
 							if (e->type == unit_types::bunker) {
@@ -700,15 +699,13 @@ void update_groups() {
 							double d = diag_distance(pos - e->pos);
 							//log("%s - %d - d to %s is %g\n", c->u->type->name, count, e->type->name, d);
 							if (d <= wr || d <= 32 * 10) {
+								//log("%s - %d - -> %d bumped into %d (%s %g)\n", c->u->type->name, count, g.idx, g2.idx, e->type->name, d);
 								found = true;
-								okay = &g2 == &g;
-								if (okay) break;
+								okay = false;
+								break;
 							}
 						}
 						if (found) break;
-					}
-					if (found) {
-						//log("%p -> %p - found after %d, okay %d\n", c, &g, count, okay);
 					}
 					if (found) break;
 				}
@@ -725,6 +722,8 @@ void update_groups() {
 					okay = true;
 				}
 			}
+			//if (okay) log("%s can reach %d\n", c->u->type->name, g.idx);
+			//else log("%s can not reach %d\n", c->u->type->name, g.idx);
 			if (okay) can_reach_group[c].insert(&g);
 			multitasking::yield_point();
 		}
@@ -815,7 +814,6 @@ void update_groups() {
 // 		++i;
 // 	}
 
-	size_t group_idx = 0;
 	for (auto&g : new_groups) {
 		bool is_attacking = false;
 		bool is_base_defence = false;
@@ -870,7 +868,7 @@ void update_groups() {
 					if (is_just_one_worker && !is_attacking && c->u->type->is_worker) return std::numeric_limits<double>::infinity();
 					if (c->u->type->is_worker && !c->u->force_combat_unit && !is_base_defence) return std::numeric_limits<double>::infinity();
 					//if (c->u->type->is_worker) return std::numeric_limits<double>::infinity();
-					if (!c->u->is_loaded && !square_pathing::unit_can_reach(c->u, c->u->pos, g.enemies.front()->pos)) return std::numeric_limits<double>::infinity();
+					//if (!c->u->is_loaded && !square_pathing::unit_can_reach(c->u, c->u->pos, g.enemies.front()->pos)) return std::numeric_limits<double>::infinity();
 					if (blacklist.count(c)) return std::numeric_limits<double>::infinity();
 					if (!can_reach_group[c].count(&g)) return std::numeric_limits<double>::infinity();;
 					double d;
@@ -894,7 +892,7 @@ void update_groups() {
 			};
 			combat_unit*nearest_unit = get_nearest_unit();
 			while (nearest_unit && !is_useful(nearest_unit)) {
-				//log("%p -> %p is not useful\n", nearest_unit, &g);
+				//log("%p (%s) -> %p is not useful\n", nearest_unit, nearest_unit->u->type->name, &g);
 				if (blacklist.count(nearest_unit)) {
 					nearest_unit = nullptr;
 					break;
@@ -906,7 +904,7 @@ void update_groups() {
 				best_unit = nearest_unit;
 				best_score = get_score_for(best_unit);
 			}
-			if (!best_unit) log("failed to find unit for group %d\n", group_idx);
+			if (!best_unit) log("failed to find unit for group %d\n", g.idx);
 // 			if (!best_unit) {
 // 				for (auto*c : g.allies) {
 // 					available_units.insert(c);
@@ -917,7 +915,7 @@ void update_groups() {
 // 			if (best_unit->u->type->is_worker && !best_unit->u->force_combat_unit && !is_base_defence) break;
 // 			if (best_unit->u->type->is_worker && !best_unit->u->force_combat_unit && !is_attacking) break;
 // 			//if (best_unit->u->type->is_worker && !best_unit->u->force_combat_unit && std::get<2>(best_score) >= 0) break;
-			//log("add %s to group %d with score %d %g\n", best_unit->u->type->name, group_idx, std::get<0>(best_score), std::get<1>(best_score));
+			//log("add %s to group %d with score %d %g\n", best_unit->u->type->name, g.idx, std::get<0>(best_score), std::get<1>(best_score));
 			g.allies.push_back(best_unit);
 			available_units.erase(best_unit);
 			if (std::get<1>(best_score)) break;
@@ -925,8 +923,7 @@ void update_groups() {
 			if (is_just_one_worker) break;
 			if (best_unit->u->type->is_worker && !best_unit->u->force_combat_unit) ++worker_count;
 		}
-		log("group %d: %d allies %d enemies\n", group_idx, g.allies.size(), g.enemies.size());
-		++group_idx;
+		log("group %d: %d allies %d enemies\n", g.idx, g.allies.size(), g.enemies.size());
 	}
 
 	for (auto*c : available_units) {
@@ -1553,6 +1550,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 		//if (d > w->max_range) return std::make_tuple(std::numeric_limits<double>::infinity(), std::ceil(hits), d);
 		if (!ew) hits += 4;
 		if (e->lockdown_timer) hits += 10;
+		if (e->type->requires_pylon && !e->is_powered) hits += 10;
 		//if (d > w->max_range) return std::make_tuple(std::numeric_limits<double>::infinity(), hits + (d - w->max_range) / a->u->stats->max_speed / 90, 0.0);
 		if (d > w->max_range) hits += (d - w->max_range) / a->u->stats->max_speed;
 		if (e->is_flying) hits /= 10;
@@ -1649,7 +1647,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 
 	//if (target && a->u->type != unit_types::siege_tank_tank_mode && a->u->type != unit_types::siege_tank_siege_mode && a->u->type != unit_types::goliath && !a->u->is_flying) {
 	if (target && a->u->type != unit_types::siege_tank_tank_mode && a->u->type != unit_types::siege_tank_siege_mode && !target->is_flying && !a->u->is_flying) {
-		if (a->u->stats->ground_weapon && target->stats->ground_weapon && !target->is_flying && target->visible) {
+		if (a->u->stats->ground_weapon && target->stats->ground_weapon && !target->is_flying && target->visible && !(target->type->requires_pylon && !target->is_powered)) {
 			unit*nearest_siege_tank = get_best_score(allies, [&](unit*u) {
 				if (u->type != unit_types::siege_tank_tank_mode && u->type != unit_types::siege_tank_siege_mode) return std::numeric_limits<double>::infinity();
 				return diag_distance(u->pos - a->u->pos);
@@ -1843,7 +1841,7 @@ void do_run(combat_unit*a, const a_vector<unit*>&enemies) {
 			if (!e->stats->ground_weapon) return std::numeric_limits<double>::infinity();
 			return units_distance(e, a->u) - e->stats->ground_weapon->max_range;
 		}, std::numeric_limits<double>::infinity());
-		if (ne) {
+		if (ne && ne->type != unit_types::bunker) {
 			double d = units_distance(ne, a->u);
 			double wr = a->u->stats->ground_weapon->max_range;
 			double net_d = net ? units_distance(net, a->u) : 1000.0;
@@ -2244,6 +2242,7 @@ void fight() {
 					//cooldown_override = 45;
 				}
 				if (!u->visible) cooldown_override = 0;
+				if (u->type->requires_pylon && !u->is_powered) cooldown_override = 15 * 60;
 				auto&c = eval.add_unit(st, team);
 				c.move = get_best_score(make_transform_filter(team ? nearby_allies : nearby_enemies, [&](unit*e) {
 					if (e->type->is_flyer && !c.st->ground_weapon) return std::numeric_limits<double>::infinity();
