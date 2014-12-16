@@ -355,14 +355,17 @@ xy get_nearest_node_pos(unit*u) {
 	return get_nearest_node_pos(u->type, u->pos);
 }
 
-bool unit_can_reach(unit*u, xy from, xy to) {
-	if (u->type->is_flyer) return true;
-	auto&map = square_pathing::get_pathing_map(u->type);
+bool unit_can_reach(unit_type*ut, xy from, xy to) {
+	if (ut->is_flyer) return true;
+	auto&map = square_pathing::get_pathing_map(ut);
 	path_node*a = square_pathing::get_nearest_path_node(map, from);
 	path_node*b = square_pathing::get_nearest_path_node(map, to);
 	if (!a) return !b;
 	if (!b) return !a;
 	return a->root_index==b->root_index;
+}
+bool unit_can_reach(unit*u, xy from, xy to) {
+	return unit_can_reach(u->type, from, to);
 }
 
 struct closed_t {

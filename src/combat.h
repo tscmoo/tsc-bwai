@@ -528,7 +528,9 @@ void update_groups() {
 			unit*ne = v.enemies.front();
 			double d = units_distance(e, ne);
 			if (d >= 32 * 15) continue;
-			if (!square_pathing::unit_can_reach(e, e->pos, ne->pos)) continue;
+			unit_type*ut = e->type;
+			if (ut->is_building) ut = unit_types::scv;
+			if (!square_pathing::unit_can_reach(ut, e->pos, ne->pos)) continue;
 			g = &v;
 			break;
 		}
@@ -700,7 +702,7 @@ void update_groups() {
 							if (d <= wr || d <= 32 * 10) {
 								found = true;
 								okay = &g2 == &g;
-								break;
+								if (okay) break;
 							}
 						}
 						if (found) break;
@@ -819,7 +821,7 @@ void update_groups() {
 		bool is_base_defence = false;
 		bool is_just_one_worker = g.enemies.size() == 1 && g.enemies.front()->type->is_worker;
 		for (unit*e : g.enemies) {
-			if (current_frame - e->last_attacking <= 15 * 10) is_attacking = true;
+			if (current_frame - e->last_attacked <= 15 * 10) is_attacking = true;
 			if (!is_base_defence) is_base_defence = my_base.test(grid::build_square_index(g.enemies.front()->pos));
 		}
 		int worker_count = 0;
@@ -999,6 +1001,8 @@ a_deque<xy> find_path(unit_type*ut, xy from, pred_T&&pred, est_dist_T&&est_dist,
 	}
 };
 
+a_unordered_map<combat_unit*, std::tuple<unit*, double, int>> registered_focus_fire;
+
 a_unordered_map<unit*, int> dropship_spread;
 a_unordered_map<unit*, double> focus_fire;
 a_unordered_map<unit*, double> prepared_damage;
@@ -1016,7 +1020,19 @@ tsc::dynamic_bitset build_square_taken;
 a_unordered_map<unit*, int> space_left;
 
 void prepare_attack() {
-	focus_fire.clear();
+	for (auto i = registered_focus_fire.begin(); i != registered_focus_fire.end();) {
+		unit*target;
+		double damage;
+		int end_frame;
+		std::tie(target, damage, end_frame) = i->second;
+		if (current_frame >= end_frame) {
+			if (std::abs(focus_fire[target] -= damage) < 1) {
+				focus_fire.erase(target);
+			}
+			i = registered_focus_fire.erase(i);
+		} else ++i;
+	}
+	//focus_fire.clear();
 	prepared_damage.clear();
 	dropship_spread.clear();
 	is_being_healed.clear();
@@ -1519,12 +1535,14 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 		weapon_stats*w = e->is_flying ? u->stats->air_weapon : u->stats->ground_weapon;
 		if (!w) return std::make_tuple(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
 		double d = units_distance(u, e);
-		if (!e->stats->ground_weapon && !e->stats->air_weapon && e->type != unit_types::bunker) return std::make_tuple(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), d);
+		if (!e->stats->ground_weapon && !e->stats->air_weapon && e->type != unit_types::bunker && e->type != unit_types::carrier) return std::make_tuple(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), d);
+		//if (!e->stats->ground_weapon && !e->stats->air_weapon && e->type != unit_types::bunker) return std::make_tuple(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), d);
 		//if (!e->stats->ground_weapon && !e->stats->air_weapon) return std::make_tuple(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), d);
 		weapon_stats*ew = a->u->is_flying ? e->stats->air_weapon : e->stats->ground_weapon;
 		if (d < w->min_range) return std::make_tuple(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
 		double ehp = e->shields + e->hp;
 		ehp -= focus_fire[e];
+		if (ehp <= 0) ehp = e->stats->shields + e->stats->hp;
 		if (wants_to_lay_spider_mines && !e->type->is_flyer && !e->type->is_hovering && !e->type->is_building) {
 			//if (e->type->is_hovering) return std::make_tuple(1000 + d / a->u->stats->max_speed, 0.0, 0.0);
 			//return std::make_tuple(prepared_damage[e] + d / a->u->stats->max_speed, 0.0, 0.0);
@@ -1537,6 +1555,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 		if (e->lockdown_timer) hits += 10;
 		//if (d > w->max_range) return std::make_tuple(std::numeric_limits<double>::infinity(), hits + (d - w->max_range) / a->u->stats->max_speed / 90, 0.0);
 		if (d > w->max_range) hits += (d - w->max_range) / a->u->stats->max_speed;
+		if (e->is_flying) hits /= 10;
 		return std::make_tuple(hits, 0.0, 0.0);
 	};
 
@@ -1560,7 +1579,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 					if (a->siege_up_close) add = 0;
 					if (d <= 32 * 12 + add) {
 						if (current_frame >= a->u->controller->noorder_until) {
-							if (siege_tank_count < (int)enemies.size()) {
+							if (siege_tank_count < (int)enemies.size() || (target && target->building)) {
 								if (a->u->game_unit->siege()) {
 									a->u->controller->noorder_until = current_frame + 30;
 									a->u->controller->last_siege = current_frame;
@@ -1628,7 +1647,8 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 	//if (target != a->target) log("%s: change target to %p\n", a->u->type->name, target);
 	a->target = target;
 
-	if (target && a->u->type != unit_types::siege_tank_tank_mode && a->u->type != unit_types::siege_tank_siege_mode) {
+	//if (target && a->u->type != unit_types::siege_tank_tank_mode && a->u->type != unit_types::siege_tank_siege_mode && a->u->type != unit_types::goliath && !a->u->is_flying) {
+	if (target && a->u->type != unit_types::siege_tank_tank_mode && a->u->type != unit_types::siege_tank_siege_mode && !target->is_flying && !a->u->is_flying) {
 		if (a->u->stats->ground_weapon && target->stats->ground_weapon && !target->is_flying && target->visible) {
 			unit*nearest_siege_tank = get_best_score(allies, [&](unit*u) {
 				if (u->type != unit_types::siege_tank_tank_mode && u->type != unit_types::siege_tank_siege_mode) return std::numeric_limits<double>::infinity();
@@ -1785,6 +1805,13 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 			} else {
 				if (my_weapon && d <= my_weapon->max_range && a->u->weapon_cooldown <= latency_frames) {
 					focus_fire[target] += damage;
+					auto i = registered_focus_fire.find(a);
+					if (i != registered_focus_fire.end()) {
+						if (std::abs(focus_fire[std::get<0>(i->second)] -= std::get<1>(i->second)) < 1) {
+							focus_fire.erase(std::get<0>(i->second));
+						}
+					}
+					registered_focus_fire[a] = std::make_tuple(target, damage, current_frame + 30);
 				}
 			}
 		}
@@ -2489,6 +2516,13 @@ void fight() {
 				}, std::numeric_limits<double>::infinity());
 			}
 
+			int op_ground_units = 0;
+			int op_air_units = 0;
+			for (unit*u : nearby_enemies) {
+				if (u->is_flying) ++op_air_units;
+				else ++op_ground_units;
+			}
+
 			if (!ignore) {
 				for (auto*a : nearby_combat_units) {
 					if (!quick_fight) a->last_fight = current_frame;
@@ -2589,6 +2623,7 @@ void fight() {
 							if (my_siege_tank_count >= 1 && players::my_player->has_upgrade(upgrade_types::siege_mode)) {
 								bool okay = my_sieged_tank_count >= op_sieged_tank_count && op_sieged_tank_count < 4;
 								if (a->u->type == unit_types::siege_tank_tank_mode || a->u->type == unit_types::siege_tank_siege_mode) okay = true;
+								okay &= op_ground_units > op_air_units;
 								if (!a->u->is_flying && okay) {
 									double r = get_best_score_value(nearby_allies, [&](unit*u) {
 										if (u->type != unit_types::siege_tank_tank_mode && u->type != unit_types::siege_tank_siege_mode) return std::numeric_limits<double>::infinity();
@@ -2833,6 +2868,14 @@ void render() {
 // 
 // 		}
 // 	}
+
+	if (true) {
+
+		for (auto&v : focus_fire) {
+			game->drawTextMap(v.first->pos.x, v.first->pos.y, "\x08%g", v.second);
+		}
+
+	}
 }
 
 void init() {

@@ -196,6 +196,7 @@ namespace combat_eval {
 							//} else if (target->move > w->max_range) {
 								double speed = c.st->max_speed;
 								if (c.st->type == unit_types::siege_tank_siege_mode) speed = 2;
+								if (c.st->type == unit_types::interceptor && c.move <= 0) speed = 0;
 								if (speed > 0) {
 									++target_count;
 									c.move -= c.st->max_speed;
@@ -227,6 +228,7 @@ namespace combat_eval {
 										my_team.damage_dealt += damage_dealt;
 										enemy_team.damage_taken += damage_dealt;
 										int cooldown = w->cooldown;
+										if (c.st->type == unit_types::interceptor) cooldown = 60;
 										if (c.st->type == unit_types::marine) {
 // 											if (my_team.has_stim && c.stim_pack_timer == 0 && c.hp>10) {
 // 												c.stim_pack_timer = 220;

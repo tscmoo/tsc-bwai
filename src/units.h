@@ -165,7 +165,6 @@ struct unit {
 	player_t*last_type_change_owner;
 
 	bool force_combat_unit;
-	int last_attacking;
 	int last_attacked;
 	int prev_weapon_cooldown;
 
@@ -638,7 +637,6 @@ void update_unit_stuff(unit*u) {
 	u->target = targetunit(u->game_unit->getTarget());
 	u->order_target = targetunit(u->game_unit->getOrderTarget());
 
-	if (u->game_unit->isAttacking()) u->last_attacking = current_frame;
 	if (u->weapon_cooldown > u->prev_weapon_cooldown) u->last_attacked = current_frame;
 
 	u->loaded_units.clear();
@@ -691,7 +689,7 @@ unit*new_unit(BWAPI_Unit game_unit) {
 	u->gone = false;
 
 	u->force_combat_unit = false;
-	u->last_attacking = 0;
+	//u->last_attacking = 0;
 	u->last_attacked = 0;
 	u->prev_weapon_cooldown = 0;
 
