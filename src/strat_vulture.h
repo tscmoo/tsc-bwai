@@ -139,9 +139,23 @@ struct strat_vulture {
 					}
 					if (rs) ++count;
 				}
-				return count >= 8;
+				return count >= 4;
 			};
 			auto can_expand = [&]() {
+				auto my_st = get_my_current_state();
+				if (my_st.bases.size() == 1) {
+					for (unit*u : enemy_units) {
+						if (!u->type->is_resource_depot) continue;
+						bool is_expo = true;
+						for (xy p : start_locations) {
+							if (u->building->build_pos == p) {
+								is_expo = false;
+								break;
+							}
+						}
+						if (is_expo) return true;
+					}
+				}
 				return is_long_distance_mining();
 			};
 
