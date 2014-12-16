@@ -279,16 +279,16 @@ void update_spots() {
 		update_incomes();
 		last_update = current_frame;
 
-// 		for (auto&s : spots) {
-// 			for (auto&s2 : spots) {
-// 				if (&s == &s2) continue;
-// 				if (s.cc_build_pos.x < s2.cc_build_pos.x) continue;
-// 				if (s.cc_build_pos.y < s2.cc_build_pos.y) continue;
-// 				if (s.cc_build_pos.x >= s2.cc_build_pos.x + 32 * 4) continue;
-// 				if (s.cc_build_pos.y >= s2.cc_build_pos.y + 32 * 3) continue;
-// 				while (!s2.resources.empty()) move(&s2.resources.back(), &s);
-// 			}
-// 		}
+		for (auto&s : spots) {
+			for (auto&s2 : spots) {
+				if (&s == &s2) continue;
+				if (s.cc_build_pos.x < s2.cc_build_pos.x) continue;
+				if (s.cc_build_pos.y < s2.cc_build_pos.y) continue;
+				if (s.cc_build_pos.x >= s2.cc_build_pos.x + 32 * 4) continue;
+				if (s.cc_build_pos.y >= s2.cc_build_pos.y + 32 * 3) continue;
+				while (!s2.resources.empty()) move(&s2.resources.back(), &s);
+			}
+		}
 	}
 
 	for (auto i=spots.begin();i!=spots.end();) {
