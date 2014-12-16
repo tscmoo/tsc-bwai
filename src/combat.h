@@ -1647,34 +1647,38 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 
 	//if (target && a->u->type != unit_types::siege_tank_tank_mode && a->u->type != unit_types::siege_tank_siege_mode && a->u->type != unit_types::goliath && !a->u->is_flying) {
 	if (target && a->u->type != unit_types::siege_tank_tank_mode && a->u->type != unit_types::siege_tank_siege_mode && !target->is_flying && !a->u->is_flying) {
-		if (a->u->stats->ground_weapon && target->stats->ground_weapon && !target->is_flying && target->visible && !(target->type->requires_pylon && !target->is_powered)) {
-			unit*nearest_siege_tank = get_best_score(allies, [&](unit*u) {
-				if (u->type != unit_types::siege_tank_tank_mode && u->type != unit_types::siege_tank_siege_mode) return std::numeric_limits<double>::infinity();
-				return diag_distance(u->pos - a->u->pos);
-			}, std::numeric_limits<double>::infinity());
-			double nearest_siege_tank_distance = nearest_siege_tank ? units_distance(a->u, nearest_siege_tank) : 0;
-			if (nearest_siege_tank && nearest_siege_tank_distance <= 32 * 20 && nearest_siege_tank_distance >= 32 * 2) {
-				double wr = target->stats->ground_weapon->max_range;
-				double r = units_distance(target, nearest_siege_tank);
-				if (r > wr + 32 * 2) {
-					if (r > 32 * 12 - wr) {
-						double max_d = diag_distance(a->u->pos - nearest_siege_tank->pos) + 32 * 2;
-						a_deque<xy> path = find_path(a->u->type, a->u->pos, [&](xy pos, xy npos) {
-							double d = diag_distance(npos - nearest_siege_tank->pos);
-							if (d >= max_d) return false;
-							if (build_square_taken.test(grid::build_square_index(npos))) return false;
-							return true;
-						}, [&](xy pos, xy npos) {
-							double d = diag_distance(npos - nearest_siege_tank->pos);
-							return d;
-						}, [&](xy pos) {
-							double d = diag_distance(pos - nearest_siege_tank->pos);
-							return d <= 32 * 12 - wr - 32 * 2;
-						});
-						if (!path.empty()) {
-							a->subaction = combat_unit::subaction_move;
-							build_square_taken.set(grid::build_square_index(path.back()));
-							a->target_pos = path.back();
+		if (a->u->stats->ground_weapon && (target->stats->ground_weapon || target->type == unit_types::bunker) && !target->is_flying && target->visible && !(target->type->requires_pylon && !target->is_powered)) {
+			bool okay = true;
+			if (target->type->race == race_terran) okay = false;
+			if (okay) {
+				unit*nearest_siege_tank = get_best_score(allies, [&](unit*u) {
+					if (u->type != unit_types::siege_tank_tank_mode && u->type != unit_types::siege_tank_siege_mode) return std::numeric_limits<double>::infinity();
+					return diag_distance(u->pos - a->u->pos);
+				}, std::numeric_limits<double>::infinity());
+				double nearest_siege_tank_distance = nearest_siege_tank ? units_distance(a->u, nearest_siege_tank) : 0;
+				if (nearest_siege_tank && nearest_siege_tank_distance <= 32 * 20 && nearest_siege_tank_distance >= 32 * 2) {
+					double wr = target->type == unit_types::bunker ? 32 * 6 : target->stats->ground_weapon->max_range;
+					double r = units_distance(target, nearest_siege_tank);
+					if (r > wr + 32 * 2) {
+						if (r > 32 * 12 - wr) {
+							double max_d = diag_distance(a->u->pos - nearest_siege_tank->pos) + 32 * 2;
+							a_deque<xy> path = find_path(a->u->type, a->u->pos, [&](xy pos, xy npos) {
+								double d = diag_distance(npos - nearest_siege_tank->pos);
+								if (d >= max_d) return false;
+								if (build_square_taken.test(grid::build_square_index(npos))) return false;
+								return true;
+							}, [&](xy pos, xy npos) {
+								double d = diag_distance(npos - nearest_siege_tank->pos);
+								return d;
+							}, [&](xy pos) {
+								double d = diag_distance(pos - nearest_siege_tank->pos);
+								return d <= 32 * 12 - wr - 32 * 2;
+							});
+							if (!path.empty()) {
+								a->subaction = combat_unit::subaction_move;
+								build_square_taken.set(grid::build_square_index(path.back()));
+								a->target_pos = path.back();
+							}
 						}
 					}
 				}
@@ -2620,8 +2624,9 @@ void fight() {
 						}
 						if (run) {
 							if (my_siege_tank_count >= 1 && players::my_player->has_upgrade(upgrade_types::siege_mode)) {
-								bool okay = my_sieged_tank_count >= op_sieged_tank_count && op_sieged_tank_count < 4;
+								bool okay = false;
 								if (a->u->type == unit_types::siege_tank_tank_mode || a->u->type == unit_types::siege_tank_siege_mode) okay = true;
+								okay &= my_sieged_tank_count >= op_sieged_tank_count && op_sieged_tank_count < 4;
 								okay &= op_ground_units > op_air_units;
 								if (!a->u->is_flying && okay) {
 									double r = get_best_score_value(nearby_allies, [&](unit*u) {
