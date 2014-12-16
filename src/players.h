@@ -8,6 +8,8 @@ struct player_t {
 	double gas_lost;
 	int resource_depots_seen;
 	int workers_seen;
+	int race;
+	bool random;
 
 	a_unordered_set<upgrade_type*> upgrades;
 	bool has_upgrade(upgrade_type*t) {
@@ -38,6 +40,15 @@ player_t*get_player(BWAPI_Player game_player) {
 		p->gas_lost = 0.0;
 		p->resource_depots_seen = 0;
 		p->workers_seen = 0;
+		p->race = race_terran;
+		p->random = false;
+		if (game_player->getRace() == BWAPI::Races::Terran) p->race = race_terran;
+		if (game_player->getRace() == BWAPI::Races::Protoss) p->race = race_protoss;
+		if (game_player->getRace() == BWAPI::Races::Zerg) p->race = race_zerg;
+		if (game_player->getRace() == BWAPI::Races::Random) {
+			p->random = true;
+			p->race = race_protoss;
+		}
 	}
 	return p;
 }

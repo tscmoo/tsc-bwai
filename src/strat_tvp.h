@@ -1,5 +1,5 @@
 
-struct strat_tank {
+struct strat_tvp {
 
 
 	void run() {

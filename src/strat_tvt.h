@@ -1,5 +1,5 @@
 
-struct strat_vulture {
+struct strat_tvt {
 
 
 	void run() {
