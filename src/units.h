@@ -206,7 +206,8 @@ namespace unit_types {
 	unit_type_pointer archon, dark_archon;
 	unit_type_pointer observer, shuttle, scout, carrier, interceptor, arbiter, corsair;
 	unit_type_pointer hatchery, lair, hive, creep_colony, sunken_colony, spore_colony, nydus_canal, spawning_pool, evolution_chamber;
-	unit_type_pointer drone, overlord, zergling, larva;
+	unit_type_pointer drone, overlord, zergling, larva, hydralisk, lurker, lurker_egg, ultralisk, defiler;
+	unit_type_pointer mutalisk, cocoon, scourge, queen, guardian, devourer;
 	unit_type_pointer vespene_geyser;
 	std::reference_wrapper<unit_type_pointer> units_that_produce_land_units[] = {
 		cc, barracks, factory,
@@ -285,6 +286,18 @@ namespace unit_types {
 		get(overlord, BWAPI::UnitTypes::Zerg_Overlord);
 		get(zergling, BWAPI::UnitTypes::Zerg_Zergling);
 		get(larva, BWAPI::UnitTypes::Zerg_Larva);
+		get(hydralisk, BWAPI::UnitTypes::Zerg_Hydralisk);
+		get(lurker, BWAPI::UnitTypes::Zerg_Lurker);
+		get(lurker_egg, BWAPI::UnitTypes::Zerg_Lurker_Egg);
+		get(ultralisk, BWAPI::UnitTypes::Zerg_Ultralisk);
+		get(defiler, BWAPI::UnitTypes::Zerg_Defiler);
+
+		get(mutalisk, BWAPI::UnitTypes::Zerg_Mutalisk);
+		get(cocoon, BWAPI::UnitTypes::Zerg_Cocoon);
+		get(scourge, BWAPI::UnitTypes::Zerg_Scourge);
+		get(queen, BWAPI::UnitTypes::Zerg_Queen);
+		get(guardian, BWAPI::UnitTypes::Zerg_Guardian);
+		get(devourer, BWAPI::UnitTypes::Zerg_Devourer);
 
 		get(vespene_geyser, BWAPI::UnitTypes::Resource_Vespene_Geyser);
 	}
