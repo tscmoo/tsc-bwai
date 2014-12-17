@@ -180,6 +180,7 @@ struct unit {
 	double defensive_matrix_hp;
 	int scan_me_until;
 	bool is_powered;
+	int marines_loaded;
 
 	std::array<size_t,std::extent<decltype(units::unit_containers)>::value> container_indexes;
 };
@@ -272,6 +273,7 @@ namespace unit_types {
 		get(arbiter, BWAPI::UnitTypes::Protoss_Arbiter);
 		get(corsair, BWAPI::UnitTypes::Protoss_Corsair);
 
+		get(larva, BWAPI::UnitTypes::Zerg_Larva);
 		get(hatchery, BWAPI::UnitTypes::Zerg_Hatchery);
 		get(lair, BWAPI::UnitTypes::Zerg_Lair);
 		get(hive, BWAPI::UnitTypes::Zerg_Hive);
@@ -285,7 +287,6 @@ namespace unit_types {
 		get(drone, BWAPI::UnitTypes::Zerg_Drone);
 		get(overlord, BWAPI::UnitTypes::Zerg_Overlord);
 		get(zergling, BWAPI::UnitTypes::Zerg_Zergling);
-		get(larva, BWAPI::UnitTypes::Zerg_Larva);
 		get(hydralisk, BWAPI::UnitTypes::Zerg_Hydralisk);
 		get(lurker, BWAPI::UnitTypes::Zerg_Lurker);
 		get(lurker_egg, BWAPI::UnitTypes::Zerg_Lurker_Egg);
@@ -367,7 +368,6 @@ unit_type*new_unit_type(BWAPI::UnitType game_unit_type,unit_type*ut) {
 	ut->tile_height = game_unit_type.tileHeight();
 	ut->minerals_cost = (double)game_unit_type.mineralPrice();
 	ut->gas_cost = (double)game_unit_type.gasPrice();
-	std::tie(ut->total_minerals_cost, ut->total_gas_cost) = get_unit_value(nullptr, ut);
 	ut->build_time = game_unit_type.buildTime();
 	ut->is_building = game_unit_type.isBuilding();
 	ut->is_addon = game_unit_type.isAddon();
@@ -375,6 +375,8 @@ unit_type*new_unit_type(BWAPI::UnitType game_unit_type,unit_type*ut) {
 	ut->is_refinery = game_unit_type.isRefinery();
 	ut->builder_type = get_unit_type(game_unit_type.whatBuilds().first);
 	if (ut->builder_type) ut->builder_type->builds.push_back(ut);
+	ut->is_two_units_in_one_egg = game_unit_type.isTwoUnitsInOneEgg();
+	std::tie(ut->total_minerals_cost, ut->total_gas_cost) = get_unit_value(nullptr, ut);
 	ut->build_near_me = ut->is_resource_depot || ut==unit_types::supply_depot || ut==unit_types::pylon || ut==unit_types::creep_colony || ut==unit_types::sunken_colony || ut==unit_types::spore_colony;
 	for (auto&v : game_unit_type.requiredUnits()) {
 		unit_type*t = get_unit_type(v.first);
@@ -395,7 +397,6 @@ unit_type*new_unit_type(BWAPI::UnitType game_unit_type,unit_type*ut) {
 	if (game_unit_type.size().getID() == BWAPI::UnitSizeTypes::Small) ut->size = unit_type::size_small;
 	if (game_unit_type.size().getID() == BWAPI::UnitSizeTypes::Medium) ut->size = unit_type::size_medium;
 	if (game_unit_type.size().getID() == BWAPI::UnitSizeTypes::Large) ut->size = unit_type::size_large;
-	ut->is_two_units_in_one_egg = game_unit_type.isTwoUnitsInOneEgg();
 	ut->width = std::max(ut->dimensions[0] + 1 + ut->dimensions[2], ut->dimensions[1] + 1 + ut->dimensions[3]);
 	ut->space_required = game_unit_type.spaceRequired();
 	ut->space_provided = game_unit_type.spaceProvided();
@@ -852,6 +853,53 @@ void update_buildings_squares_task() {
 
 }
 
+a_unordered_map<BWAPI::Bullet*, int> bullet_timestamps;
+void update_projectile_stuff_task() {
+	while (true) {
+		a_vector<unit*> bunkers;
+		for (unit*u : enemy_buildings) {
+			if (!u->is_completed) continue;
+			if (u->type == unit_types::bunker) {
+				double d = get_best_score_value(my_units, [&](unit*mu) {
+					return units_distance(mu, u);
+				}, std::numeric_limits<double>::infinity());
+				if (d <= 32 * 5) {
+					bunkers.push_back(u);
+					u->marines_loaded = 0;
+				}
+			}
+		}
+		for (BWAPI::Bullet*b : game->getBullets()) {
+			if (b->getType() == BWAPI::BulletTypes::Gauss_Rifle_Hit && b->getRemoveTimer() > 4) {
+				int&ts = bullet_timestamps[b];
+				if (!ts || current_frame - ts > 15) ts = current_frame;
+				if (b->getTarget() && b->getTarget()->getPlayer() == players::my_player->game_player && current_frame - ts < 15) {
+					unit*target = get_unit(b->getTarget());
+					if (target) {
+						unit*bunker = get_best_score(bunkers, [&](unit*u) {
+							if (u->marines_loaded >= 4) return std::numeric_limits<double>::infinity();
+							double d = units_distance(target, u);
+							if (d >= 32 * 5 + 32) return std::numeric_limits<double>::infinity();
+							return d;
+						}, std::numeric_limits<double>::infinity());
+						if (bunker) {
+							++bunker->marines_loaded;
+						}
+					}
+				}
+			}
+		}
+		for (unit*u : enemy_buildings) {
+			if (!u->is_completed) continue;
+			if (u->type == unit_types::bunker) {
+				log("bunker %p has %d marines\n", u, u->marines_loaded);
+			}
+		}
+
+		multitasking::sleep(1);
+	}
+}
+
 a_vector<std::function<void(unit*)>> on_create_callbacks, on_morph_callbacks, on_destroy_callbacks;
 
 a_vector<std::function<void(unit*)>> on_new_unit_callbacks;
@@ -971,6 +1019,14 @@ void update_units_task() {
 				u->gone = false;
 				//events.emplace_back(event_t::t_refresh, u->game_unit);
 				update_groups(u);
+
+// 				if (u->type == unit_types::marine) {
+// 					for (unit*e : enemy_buildings) {
+// 						if (!e->is_completed || e->type != unit_types::bunker || e->owner != u->owner) continue;
+// 						if (diag_distance(e->pos - u->pos) >= 32 * 4) continue;
+// 						if (e->marines_loaded) --e->marines_loaded;
+// 					}
+// 				}
 			}
 		}
 
@@ -1051,6 +1107,8 @@ void init() {
 
 	multitasking::spawn(0,update_units_task,"update units");
 	multitasking::spawn(update_buildings_squares_task,"update buildings squares");
+
+	multitasking::spawn(update_projectile_stuff_task, "update projectile stuff");
 
 	render::add(render);
 
