@@ -8,13 +8,11 @@ struct strat_tvz_opening {
 		using namespace buildpred;
 
 		auto build = [&](state&st) {
-			if (count_units_plus_production(st, unit_types::vulture) + count_units_plus_production(st, unit_types::vulture) == 0) {
-				if (!my_completed_units_of_type[unit_types::machine_shop].empty()) {
-					if (count_units_plus_production(st, unit_types::starport) == 0) {
-						return depbuild(st, state(st), unit_types::starport);
-					}
-					return depbuild(st, state(st), unit_types::vulture);
+			if (!my_completed_units_of_type[unit_types::factory].empty()) {
+				if (count_units_plus_production(st, unit_types::starport) == 0) {
+					return depbuild(st, state(st), unit_types::starport);
 				}
+				if (count_units_plus_production(st, unit_types::vulture) < 2) return depbuild(st, state(st), unit_types::vulture);
 			}
 			return nodelay(st, unit_types::scv, [&](state&st) {
 				st.dont_build_refineries = true;
@@ -70,7 +68,7 @@ struct strat_tvz_opening {
 			int marine_count = my_completed_units_of_type[unit_types::marine].size();
 			auto my_st = get_my_current_state();
 			bool has_bunker = !my_units_of_type[unit_types::bunker].empty();
-			if (my_st.bases.size() > 1 && (siege_tank_count >= 2 && (has_bunker || siege_tank_count >= 3)) || goliath_count + siege_tank_count * 2 >= 6) break;
+			//if (my_st.bases.size() > 1 && (has_bunker || siege_tank_count >= 3) || goliath_count + siege_tank_count * 2 >= 6) break;
 			if (my_st.bases.size() > 1 && marine_count >= 1) combat::build_bunker_count = 1;
 			if (my_st.bases.size() == 1 && current_used_total_supply >= 18 && vulture_count >= 2) {
 				if (siege_tank_count >= 2) {
@@ -88,6 +86,7 @@ struct strat_tvz_opening {
 					if (is_expo) expand = true;
 				}
 			}
+			if (!my_completed_units_of_type[unit_types::wraith].empty() && !expand) break;
 			execute_build(expand, build);
 
 			multitasking::sleep(15 * 5);
