@@ -1656,6 +1656,15 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 	//if (target != a->target) log("%s: change target to %p\n", a->u->type->name, target);
 	a->target = target;
 
+	if (a->u->is_loaded && a->u->loaded_into->type == unit_types::bunker) {
+		if (units_distance(a->u, target) >= 32 * 6) {
+			if (current_frame >= a->u->controller->noorder_until) {
+				a->u->loaded_into->game_unit->unload(a->u->game_unit);
+				a->u->controller->noorder_until = current_frame + 4;
+			}
+		}
+	}
+
 	//if (target && a->u->type != unit_types::siege_tank_tank_mode && a->u->type != unit_types::siege_tank_siege_mode && a->u->type != unit_types::goliath && !a->u->is_flying) {
 	if (target && a->u->type != unit_types::siege_tank_tank_mode && a->u->type != unit_types::siege_tank_siege_mode && !target->is_flying && !a->u->is_flying) {
 		if (a->u->stats->ground_weapon && (target->stats->ground_weapon || target->type == unit_types::bunker) && !target->is_flying && target->visible && !(target->type->requires_pylon && !target->is_powered)) {
