@@ -271,6 +271,7 @@ void update_combat_units() {
 		//if (worker_count > 1 && u->type->is_worker && !u->force_combat_unit) continue;
 		if (u->type->is_worker) ++worker_count;
 		if (u->type->is_worker && worker_count > 6) continue;
+		if (u->type->is_worker && current_used_total_supply >= 70) continue;
 		combat_unit&c = combat_unit_map[u];
 		if (!c.u) c.u = u;
 		live_combat_units.push_back(&c);
@@ -1379,11 +1380,13 @@ void finish_attack() {
 	}
 
 	if (!my_completed_units_of_type[unit_types::scv].empty()) {
+		a_unordered_map<unit*, group_t*> unit_group;
 		a_vector<combat_unit*> scvs;
 		int non_scv_count = 0;
 		for (auto&g : groups) {
 			if (g.allies.size() == 1) continue;
 			for (auto*a : g.allies) {
+				unit_group[a->u] = &g;
 				if (a->u->type == unit_types::scv) scvs.push_back(a);
 				else ++non_scv_count;
 			}
@@ -1406,9 +1409,11 @@ void finish_attack() {
 			int max_n = 2;
 			if (u->type == unit_types::siege_tank_tank_mode || u->type == unit_types::siege_tank_siege_mode) max_n = 5;
 			if (u->building) max_n = 4;
+			auto*ug = unit_group[u];
 			for (int i = 0; i < max_n; ++i) {
 				combat_unit*c = get_best_score(scvs, [&](combat_unit*c) {
 					if (c->u == u) return std::numeric_limits<double>::infinity();
+					if (u && unit_group[c->u] != ug) return std::numeric_limits<double>::infinity();
 					if (!square_pathing::unit_can_reach(c->u, c->u->pos, u->pos)) return std::numeric_limits<double>::infinity();
 					return diag_distance(u->pos - c->u->pos);
 				}, std::numeric_limits<double>::infinity());
@@ -1423,6 +1428,11 @@ void finish_attack() {
 	if (no_aggressive_groups) {
 		for (auto&g : groups) {
 			if (!g.is_aggressive_group) continue;
+			int buildings = 0;
+			for (unit*e : g.enemies) {
+				if (e->type->is_building) ++buildings;
+			}
+			if (!buildings) continue;
 			for (auto*a : g.allies) {
 				if (current_frame - a->last_fight < 15 * 3 && current_frame - a->last_run >= 15 * 3) continue;
  				if (current_frame - a->last_run >= 15 * 20) continue;
