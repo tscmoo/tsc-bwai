@@ -154,6 +154,7 @@ constexpr bool is_bwapi_4 = std::is_pointer<BWAPI::Player>::value;
 
 using BWAPI_Player = std::conditional<is_bwapi_4, BWAPI::Player, BWAPI::Player*>::type;
 using BWAPI_Unit = std::conditional<is_bwapi_4, BWAPI::Unit, BWAPI::Unit*>::type;
+using BWAPI_Bullet = std::conditional<is_bwapi_4, BWAPI::Bullet, BWAPI::Bullet*>::type;
 
 struct bwapi_pos {
 	int x, y;
@@ -183,6 +184,23 @@ int bwapi_tech_type_energy_cost(BWAPI::TechType type) {
 	return type.energyUsed();
 }
 
+template<bool b = is_bwapi_4, typename std::enable_if<b>::type* = 0>
+bool bwapi_is_powered(BWAPI_Unit unit) {
+	return unit->isPowered();
+}
+template<bool b = is_bwapi_4, typename std::enable_if<!b>::type* = 0>
+bool bwapi_is_powered(BWAPI_Unit unit) {
+	return !unit->isUnpowered();
+}
+
+template<bool b = is_bwapi_4, typename std::enable_if<b>::type* = 0>
+bool bwapi_is_healing_order(BWAPI::Order order) {
+	return order == BWAPI::Orders::MedicHeal || order == BWAPI::Orders::MedicHealToIdle;
+}
+template<bool b = is_bwapi_4, typename std::enable_if<!b>::type* = 0>
+bool bwapi_is_healing_order(BWAPI::Order order) {
+	return order == BWAPI::Orders::MedicHeal1 || order == BWAPI::Orders::MedicHeal2;
+}
 
 int latency_frames;
 
