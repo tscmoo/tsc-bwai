@@ -182,9 +182,17 @@ xy find(starts_T&&starts,unit_type*ut,pred_T&&pred,bool only_walkable=true) {
 		return can_build_at(ut,bs) && pred(bs);
 	},[&](xy pos) {
 		double r = 0;
-		for (unit*w : my_workers) r += unit_pathing_distance(w,pos);
+		r += get_best_score_value(my_workers, [&](unit*w) {
+			return diag_distance(w->pos - pos);
+		});
+		if (ut != unit_types::bunker) {
+			r -= get_best_score_value(enemy_units, [&](unit*u) {
+				if (u->type->is_non_usable || !u->stats->ground_weapon) return std::numeric_limits<double>::infinity();
+				return diag_distance(u->pos - pos);
+			}, std::numeric_limits<double>::infinity());
+		}
 		return r;
-	},only_walkable);;
+	}, only_walkable);
 }
 template<typename starts_T>
 xy find(starts_T&&starts,unit_type*ut,bool only_walkable=true) {
