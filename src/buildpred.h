@@ -556,6 +556,17 @@ void add_builds(const state&st) {
 	for (auto*v : dead_list) build::cancel_build_task(v);
 }
 
+int count_production(state&st, unit_type*ut) {
+	int r = 0;
+	for (auto&v : st.production) {
+		if (v.second == ut) ++r;
+	}
+	return r;
+}
+int count_units_plus_production(state&st, unit_type*ut) {
+	return st.units[ut].size() + count_production(st, ut);
+};
+
 static const auto depbuild_until = [](state&st, const state&prev_st, unit_type*ut, int end_frame) {
 	if (&st == &prev_st) xcept("&st == &prev_st");
 	unit_type*t = ut;
@@ -622,6 +633,9 @@ static const auto nodelay_n = [](state&st, unit_type*ut, int n, const std::funct
 };
 static const auto nodelay = [](state&st, unit_type*ut, const std::function<bool(state&)>&func) {
 	if (ut->is_worker && st.units[ut].size() >= 70) return func(st);
+	if (ut->is_worker) {
+		if (count_production(st, ut) >= 3) return func(st);
+	}
 	return nodelay_n(st, ut, 0, func);
 };
 
@@ -696,13 +710,6 @@ static const auto maxprod1 = [](state&st, unit_type*ut) {
 	}
 };
 
-int count_units_plus_production(state&st, unit_type*ut) {
-	int r = 0;
-	for (auto&v : st.production) {
-		if (v.second == ut) ++r;
-	}
-	return r + st.units[ut].size();
-};
 
 struct variant {
 	bool expand;
