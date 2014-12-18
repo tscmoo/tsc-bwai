@@ -287,7 +287,7 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep, bool no
 				}
 			}
 			if (build->required_supply) {
-				//if (st.used_supply[build->race] + build->required_supply>400) return failed;
+				if (st.used_supply[build->race] + build->required_supply > 200) return failed;
 				if (st.used_supply[build->race] + build->required_supply > st.max_supply[build->race]) {
 					//if (nodep) return failed;
 					//return unit_types::supply_depot;
@@ -430,7 +430,7 @@ void run(a_vector<state>&all_states, ruleset rules, bool is_for_me) {
 		return get_best_score(available_bases, [&](resource_spots::spot*s) {
 			double score = unit_pathing_distance(worker_type, s->cc_build_pos, initial_state.bases.front().s->cc_build_pos);
 			double res = 0;
-			if (is_for_me) {
+			if (is_for_me && initial_state.bases.size() > 1) {
 				double ned = get_best_score_value(is_for_me ? enemy_units : my_units, [&](unit*e) {
 					if (e->type->is_worker) return std::numeric_limits<double>::infinity();
 					return diag_distance(s->pos - e->pos);
@@ -658,6 +658,7 @@ static const auto maxprod = [](state&st, unit_type*ut, const std::function<bool(
 	} else {
 		st = std::move(prev_st);
 		if (t != failed) return nodelay(st, ut, func);
+		if (ut->required_supply && st.used_supply[ut->race] + ut->required_supply > 200) return nodelay(st, ut, func);
 		return nodelay(st, bt, func);
 	}
 };
@@ -690,6 +691,7 @@ static const auto maxprod1 = [](state&st, unit_type*ut) {
 	else {
 		st = std::move(prev_st);
 		if (t != failed) return depbuild(st, state(st), ut);
+		if (ut->required_supply && st.used_supply[ut->race] + ut->required_supply > 200) return depbuild(st, state(st), ut);
 		return depbuild(st, state(st), bt);
 	}
 };
