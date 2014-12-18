@@ -58,7 +58,7 @@ struct weapon_stats {
 	bool targets_ground;
 	enum { damage_type_none, damage_type_concussive, damage_type_normal, damage_type_explosive };
 	int damage_type;
-	enum { explosion_type_none, explosion_type_radial_splash };
+	enum { explosion_type_none, explosion_type_radial_splash, explosion_type_enemy_splash };
 	int explosion_type;
 	double inner_splash_radius, median_splash_radius, outer_splash_radius;
 };
@@ -150,6 +150,7 @@ struct unit {
 	a_vector<unit_type*> train_queue;
 	unit*addon;
 	bool cloaked, detected;
+	bool burrowed;
 	bool invincible;
 
 	double energy;
@@ -207,6 +208,7 @@ namespace unit_types {
 	unit_type_pointer archon, dark_archon;
 	unit_type_pointer observer, shuttle, scout, carrier, interceptor, arbiter, corsair;
 	unit_type_pointer hatchery, lair, hive, creep_colony, sunken_colony, spore_colony, nydus_canal, spawning_pool, evolution_chamber;
+	unit_type_pointer hydralisk_den, spire, greater_spire;
 	unit_type_pointer drone, overlord, zergling, larva, hydralisk, lurker, lurker_egg, ultralisk, defiler;
 	unit_type_pointer mutalisk, cocoon, scourge, queen, guardian, devourer;
 	unit_type_pointer vespene_geyser;
@@ -283,6 +285,9 @@ namespace unit_types {
 		get(nydus_canal, BWAPI::UnitTypes::Zerg_Nydus_Canal);
 		get(spawning_pool, BWAPI::UnitTypes::Zerg_Spawning_Pool);
 		get(evolution_chamber, BWAPI::UnitTypes::Zerg_Evolution_Chamber);
+		get(hydralisk_den, BWAPI::UnitTypes::Zerg_Hydralisk_Den);
+		get(spire, BWAPI::UnitTypes::Zerg_Spire);
+		get(greater_spire, BWAPI::UnitTypes::Zerg_Greater_Spire);
 
 		get(drone, BWAPI::UnitTypes::Zerg_Drone);
 		get(overlord, BWAPI::UnitTypes::Zerg_Overlord);
@@ -529,6 +534,7 @@ void update_weapon_stats(weapon_stats*st) {
 	if (gw.damageType() == BWAPI::DamageTypes::Explosive) st->damage_type = weapon_stats::damage_type_explosive;
 	st->explosion_type = gw.explosionType();
 	if (gw.explosionType() == BWAPI::ExplosionTypes::Radial_Splash) st->explosion_type = weapon_stats::explosion_type_radial_splash;
+	if (gw.explosionType() == BWAPI::ExplosionTypes::Enemy_Splash) st->explosion_type = weapon_stats::explosion_type_enemy_splash;
 	st->inner_splash_radius = gw.innerSplashRadius();
 	st->median_splash_radius = gw.medianSplashRadius();
 	st->outer_splash_radius = gw.outerSplashRadius();
@@ -632,8 +638,9 @@ void update_unit_stuff(unit*u) {
 		u->train_queue.push_back(get_unit_type(v));
 	}
 	u->addon = u->game_unit->getAddon() ? get_unit(u->game_unit->getAddon()) : nullptr;
-
-	u->cloaked = u->game_unit->isCloaked();
+	
+	u->cloaked = u->game_unit->isCloaked() || u->game_unit->isBurrowed();
+	u->burrowed = u->game_unit->isBurrowed();
 	u->detected = u->game_unit->isDetected();
 	u->invincible = u->game_unit->isInvincible();
 
@@ -671,7 +678,7 @@ void update_unit_stuff(unit*u) {
 	u->defensive_matrix_timer = u->game_unit->getDefenseMatrixTimer() * 8;
 	u->defensive_matrix_hp = u->game_unit->getDefenseMatrixPoints();
 	
-	u->is_powered = !u->game_unit->isUnpowered();
+	u->is_powered = bwapi_is_powered(u->game_unit);
 
 	unit_building*b = u->building;
 	if (b) {
@@ -853,7 +860,7 @@ void update_buildings_squares_task() {
 
 }
 
-a_unordered_map<BWAPI::Bullet*, int> bullet_timestamps;
+a_unordered_map<BWAPI_Bullet, int> bullet_timestamps;
 void update_projectile_stuff_task() {
 	while (true) {
 		a_vector<unit*> bunkers;
@@ -869,7 +876,7 @@ void update_projectile_stuff_task() {
 				}
 			}
 		}
-		for (BWAPI::Bullet*b : game->getBullets()) {
+		for (BWAPI_Bullet b : game->getBullets()) {
 			if (b->getType() == BWAPI::BulletTypes::Gauss_Rifle_Hit && b->getRemoveTimer() > 4) {
 				int&ts = bullet_timestamps[b];
 				if (!ts || current_frame - ts > 15) ts = current_frame;
