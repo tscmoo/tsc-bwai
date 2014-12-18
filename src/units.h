@@ -1088,6 +1088,28 @@ void update_units_task() {
 		}
 		destroyed_units.clear();
 
+		static int last_eval_gg = 0;
+		if (current_frame - last_eval_gg >= 15 * 10) {
+			last_eval_gg = current_frame;
+			double enemy_army_supply = 0;
+			for (unit*u : enemy_units) {
+				if (u->gone || u->type->is_worker) continue;
+				enemy_army_supply += u->type->required_supply;
+			}
+			static int gg_frame = 0;
+			bool call_gg = false;
+			if (current_used_total_supply <= 5 && enemy_army_supply >= 20 && current_minerals < 500) call_gg = true;
+			if (current_used_total_supply <= 1 && enemy_army_supply >= 5 && current_minerals < 50) call_gg = true;
+			if (!gg_frame && call_gg) {
+				gg_frame = current_frame;
+				game->sendText("gg");
+				log("gg, i lost :(\n");
+			}
+			if (gg_frame && current_frame >= gg_frame + 15 * 10) {
+				game->leaveGame();
+			}
+		}
+
 		multitasking::sleep(1);
 	}
 
