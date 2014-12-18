@@ -107,7 +107,7 @@ void move(unit_controller*c) {
 			} else if (u->game_unit->isSieged()) {
 				if (current_frame - u->last_attacked >= 90) u->game_unit->unsiege();
 			} else if (u->type == unit_types::medic) {
-				if (u->game_order != BWAPI::Orders::MedicHeal1 && u->game_order != BWAPI::Orders::MedicHeal2) {
+				if (!bwapi_is_healing_order(u->game_order)) {
 					u->game_unit->useTech(upgrade_types::healing->game_tech_type, BWAPI::Position(move_to.x, move_to.y));
 				}
 			} else u->game_unit->move(BWAPI::Position(move_to.x, move_to.y));
@@ -344,7 +344,7 @@ void process(a_vector<unit_controller*>&controllers) {
 				bool issue_attack = true;
 				if (u->type == unit_types::medic) {
 					issue_attack = false;
-					if (u->game_order != BWAPI::Orders::MedicHeal1 && u->game_order != BWAPI::Orders::MedicHeal2) {
+					if (!bwapi_is_healing_order(u->game_order)) {
 						if (!u->game_unit->useTech(upgrade_types::healing->game_tech_type, c->target->game_unit)) {
 							c->go_to = c->target->pos;
 							move(c);
