@@ -221,7 +221,10 @@ void add_scout(unit*u) {
 }
 void rm_scout(unit*u) {
 	for (auto&v : all_scouts) {
-		if (v.scout_unit == u) v.scout_unit = nullptr;
+		if (v.scout_unit == u) {
+			if (u && u->controller->action == unit_controller::action_scout) u->controller->action = unit_controller::action_idle;
+			v.scout_unit = nullptr;
+		}
 	}
 }
 
