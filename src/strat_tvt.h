@@ -11,6 +11,8 @@ struct strat_tvt {
 		get_upgrades::set_upgrade_value(upgrade_types::personal_cloaking, 200.0);
 		get_upgrades::set_upgrade_value(upgrade_types::ocular_implants, 300.0);
 
+		//combat::no_aggressive_groups = false;
+		combat::no_aggressive_groups = true;
 
 		while (true) {
 
@@ -45,6 +47,8 @@ struct strat_tvt {
 				if (e->type == unit_types::battlecruiser) ++enemy_bc_count;
 			}
 			int my_tank_count = my_units_of_type[unit_types::siege_tank_tank_mode].size() + my_units_of_type[unit_types::siege_tank_siege_mode].size();
+			int my_goliath_count = my_units_of_type[unit_types::goliath].size();
+			int my_vulture_count = my_units_of_type[unit_types::vulture].size();
 			int desired_bc_count = enemy_tank_count / 4 - enemy_goliath_count - enemy_wraith_count;
 			if (enemy_tank_count / 2 > my_tank_count) desired_bc_count = 0;
 			if (current_used_total_supply >= 180.0 && desired_bc_count < 4) desired_bc_count = 4;
@@ -55,6 +59,10 @@ struct strat_tvt {
 			if (enemy_wraith_count >= 8) desired_valkyrie_count = enemy_wraith_count / 3;
 			int desired_science_vessel_count = my_tank_count / 4;
 			if (enemy_wraith_count >= 6 && desired_science_vessel_count<1) desired_science_vessel_count = 1;
+
+			if (my_tank_count >= 12 || my_tank_count > enemy_tank_count || my_goliath_count >= 8) combat::no_aggressive_groups = false;
+			if (my_tank_count + my_goliath_count < 6 && my_tank_count <= enemy_tank_count / 2) combat::no_aggressive_groups = true;
+			if (my_vulture_count >= 50 || current_minerals >= 8000) combat::no_aggressive_groups = false;
 
 			auto build_vulture = [&](state&st) {
 				return nodelay(st, unit_types::scv, [&](state&st) {
@@ -86,10 +94,10 @@ struct strat_tvt {
 					if (wraith_count < desired_wraith_count) {
 						return maxprod(st, unit_types::wraith, backbone);
 					}
-					int droppable_units = count_units_plus_production(st, unit_types::goliath) + count_units_plus_production(st, unit_types::vulture);
-					if (count_units_plus_production(st, unit_types::dropship) < droppable_units / 12) {
-						return maxprod(st, unit_types::dropship, backbone);
-					}
+// 					int droppable_units = count_units_plus_production(st, unit_types::goliath) + count_units_plus_production(st, unit_types::vulture);
+// 					if (count_units_plus_production(st, unit_types::dropship) < droppable_units / 12) {
+// 						return maxprod(st, unit_types::dropship, backbone);
+// 					}
 					int tank_count = count_units_plus_production(st, unit_types::siege_tank_tank_mode);
 					tank_count += count_units_plus_production(st, unit_types::siege_tank_siege_mode);
 					if (tank_count < desired_tank_count) {
