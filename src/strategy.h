@@ -253,6 +253,7 @@ std::function<void()> wrap() {
 
 #include "strat_proxy_rax.h"
 #include "strat_wraith.h"
+#include "strat_tvt_opening.h"
 #include "strat_tvt.h"
 #include "strat_tvp_opening.h"
 #include "strat_tvp.h"
@@ -262,6 +263,7 @@ std::function<void()> wrap() {
 a_map<a_string, std::function<void()>> strat_map = {
 	{ "proxy rax", wrap<proxy_rax>() },
 	{ "wraith", wrap<wraith>() },
+	{ "tvt opening", wrap<strat_tvt_opening>() },
 	{ "tvt", wrap<strat_tvt>() },
 	{ "tvp opening", wrap<strat_tvp_opening>() },
 	{ "tvp", wrap<strat_tvp>() },
@@ -285,6 +287,7 @@ void strategy_task() {
 	if (players::opponent_player->random) {
 		run_strat("tvp opening");
 	} else if (players::opponent_player->race == race_terran) {
+		run_strat("tvt opening");
 	} else if (players::opponent_player->race == race_protoss) {
 		run_strat("tvp opening");
 	} else if (players::opponent_player->race == race_zerg) {
