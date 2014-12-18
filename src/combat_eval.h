@@ -189,7 +189,7 @@ namespace combat_eval {
 								if (c.st->max_speed > 0 && c.move > 0) {
 									++target_count;
 									c.move -= c.st->max_speed;
-									my_team.score += c.st->max_speed / 100.0;
+									my_team.score += c.st->max_speed / 1000.0;
 								}
 							} else if (c.move + target->move > (use_spider_mine ? 0 : w->max_range)) {
 							//} else if (c.move > w->max_range) {
@@ -200,7 +200,7 @@ namespace combat_eval {
 								if (speed > 0) {
 									++target_count;
 									c.move -= c.st->max_speed;
-									my_team.score += c.st->max_speed / 100.0;
+									my_team.score += c.st->max_speed / 1000.0;
 								}
 							} else {
 								++target_count;
@@ -238,7 +238,7 @@ namespace combat_eval {
 										}
 										if (c.stim_pack_timer) cooldown /= 2;
 										c.cooldown = cooldown;
-										//my_team.score += damage_dealt;
+										my_team.score += damage_dealt / 100;
 										if (target->hp <= 0) {
 											double value = target->st->type->total_minerals_cost + target->st->type->total_gas_cost;
 											my_team.score += value;
@@ -251,15 +251,17 @@ namespace combat_eval {
 										attack(target, 0.5);
 										--c.spider_mine_count;
 									} else attack(target, 1.0);
-									if (c.st->type == unit_types::siege_tank_siege_mode) {
+									if (c.st->type == unit_types::siege_tank_siege_mode || c.st->type == unit_types::valkyrie) {
 										combatant*ntarget = target + 1;
-										for (int i = 0; i < 1; ++i) {
+										int max_n = 1;
+										if (c.st->type == unit_types::valkyrie) max_n = 3;
+										for (int i = 0; i < max_n; ++i) {
 											if (ntarget < enemy_team.units.data() + enemy_team.units.size()) {
 												weapon_stats*nw = ntarget->st->type->is_flyer ? c.st->air_weapon : c.st->ground_weapon;
 												//if (w && c.move + ntarget->move<w->max_range && c.move + ntarget->move>w->min_range) {
 												if (nw == w && c.move + ntarget->move < w->max_range) {
 													//if (nw == w && ntarget->move<w->max_range) {
-													attack(ntarget, 0.5);
+													attack(ntarget, 1.0);
 												}
 											}
 											++ntarget;
