@@ -6,6 +6,15 @@ a_unordered_map<upgrade_type*, double> upgrade_value_overrides;
 void set_upgrade_value(upgrade_type*upg, double value) {
 	upgrade_value_overrides[upg] = value;
 }
+bool no_auto_upgrades = false;
+void set_no_auto_upgrades(bool val) {
+	for (auto&b : build::build_tasks) {
+		if (b.type->upgrade && !b.upgrade_done_frame) {
+			b.dead = true;
+		}
+	}
+	no_auto_upgrades = val;
+}
 
 void get_upgrades() {
 
@@ -30,6 +39,7 @@ void get_upgrades() {
 		};
 		for (unit_type*req : upg.required_units) add(req);
 		if (upgrade_value_overrides[&upg]) val = upgrade_value_overrides[&upg];
+		if (val >= 0 && no_auto_upgrades) continue;
 		if (sum >= val*1.5) {
 			bool already_upgrading = false;
 			for (build::build_task&b : build::build_tasks) {
