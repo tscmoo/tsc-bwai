@@ -1449,6 +1449,10 @@ state get_op_current_state() {
 	}
 	if (initial_state.bases.empty()) {
 		auto*s = get_best_score_p(resource_spots::spots, [&](resource_spots::spot*s) {
+			double start_dist = get_best_score_value(start_locations, [&](xy pos) {
+				return diag_distance(pos - s->cc_build_pos);
+			});
+			if (start_dist >= 32 * 10) return 10000 + start_dist;
 			return get_best_score(make_transform_filter(my_resource_depots, [&](unit*u) {
 				return -unit_pathing_distance(unit_types::scv, u->pos, s->cc_build_pos);
 			}), identity<double>());
