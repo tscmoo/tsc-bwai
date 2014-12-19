@@ -270,8 +270,17 @@ void update_combat_units() {
 		if (u->type->is_non_usable) continue;
 		//if (worker_count > 1 && u->type->is_worker && !u->force_combat_unit) continue;
 		if (u->type->is_worker) ++worker_count;
-		if (u->type->is_worker && worker_count > 6) continue;
-		if (u->type->is_worker && current_used_total_supply >= 70) continue;
+		bool skip = false;
+		if (u->type->is_worker && worker_count > std::min((size_t)6, my_workers.size() - 2)) skip = true;
+		if (u->type->is_worker && current_used_total_supply >= 70) skip = true;
+		if (skip) {
+			bool dont_reset = false;
+			dont_reset |= u->controller->action == unit_controller::action_idle;
+			dont_reset |= u->controller->action == unit_controller::action_gather;
+			dont_reset |= u->controller->action == unit_controller::action_build;
+			if (!dont_reset) u->controller->action = unit_controller::action_idle;
+			continue;
+		}
 		combat_unit&c = combat_unit_map[u];
 		if (!c.u) c.u = u;
 		live_combat_units.push_back(&c);
@@ -868,7 +877,7 @@ void update_groups() {
 					double d;
 					if (c->u->is_loaded) d = diag_distance(g.enemies.front()->pos - c->u->pos);
 					else d = units_pathing_distance(c->u, g.enemies.front());
-					if (c->u->type->is_worker && !c->u->force_combat_unit && d >= 32 * 12) return std::numeric_limits<double>::infinity();
+					if (c->u->type->is_worker && !c->u->force_combat_unit && d >= 32 * 12 && current_used_total_supply > 30) return std::numeric_limits<double>::infinity();
 					if (c->u->type->is_worker && !c->u->force_combat_unit && worker_count >= 6) return std::numeric_limits<double>::infinity();
 					if (is_just_one_worker && !is_attacking && d >= 32 * 15) return std::numeric_limits<double>::infinity();
 					if (c->u->type->is_worker && !c->u->force_combat_unit && is_just_one_worker && !g.allies.empty()) return std::numeric_limits<double>::infinity();
@@ -1684,7 +1693,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 	a->target = target;
 
 	if (a->u->is_loaded && a->u->loaded_into->type == unit_types::bunker) {
-		if (units_distance(a->u, target) >= 32 * 6) {
+		if (units_distance(a->u->loaded_into, target) >= 32 * 6) {
 			if (current_frame >= a->u->controller->noorder_until) {
 				a->u->loaded_into->game_unit->unload(a->u->game_unit);
 				a->u->controller->noorder_until = current_frame + 4;
@@ -1732,6 +1741,26 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 								a->target_pos = path.back();
 							}
 						}
+					}
+				}
+			}
+		}
+	}
+
+	if (a->u->type == unit_types::marine && target) {
+		unit*bunker = get_best_score(my_completed_units_of_type[unit_types::bunker], [&](unit*u) {
+			if (space_left[u] < a->u->type->space_required) return std::numeric_limits<double>::infinity();
+			double d = diag_distance(u->pos - a->u->pos);
+			if (d >= 32 * 10) return std::numeric_limits<double>::infinity();
+			return d;
+		}, std::numeric_limits<double>::infinity());
+		if (bunker) {
+			double d = units_distance(a->u, bunker);
+			if (units_distance(bunker, target) < 32 * 6 && d < units_distance(target, bunker)) {
+				space_left[bunker] -= a->u->type->space_required;
+				if (current_frame >= a->u->controller->noorder_until) {
+					if (a->u->game_unit->rightClick(bunker->game_unit)) {
+						a->u->controller->noorder_until = current_frame + 30;
 					}
 				}
 			}
@@ -1923,7 +1952,7 @@ void do_run(combat_unit*a, const a_vector<unit*>&enemies) {
 	}
 	if (a->u->type == unit_types::marine && a->subaction == combat_unit::subaction_move) {
 		unit*bunker = get_best_score(my_completed_units_of_type[unit_types::bunker], [&](unit*u) {
-			if (space_left[u] == 0) return std::numeric_limits<double>::infinity();
+			if (space_left[u] < a->u->type->space_required) return std::numeric_limits<double>::infinity();
 			double d = diag_distance(u->pos - a->u->pos);
 			if (d >= 32 * 10) return std::numeric_limits<double>::infinity();
 			return d;
