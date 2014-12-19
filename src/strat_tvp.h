@@ -49,14 +49,23 @@ struct strat_tvp {
 			desired_goliath_count += (enemy_shuttle_count + enemy_observer_count + 1) / 2;
 			desired_goliath_count += enemy_scout_count + enemy_arbiter_count + enemy_corsair_count;
 			if (my_tank_count >= 5) desired_goliath_count += 2;
+			int desired_vulture_count = enemy_zealot_count;
 
 			auto build = [&](state&st) {
 				return nodelay(st, unit_types::scv, [&](state&st) {
 					auto backbone = [&](state&st) {
-						if (st.gas < 100) {
+						if (st.gas < 100 || count_units_plus_production(st, unit_types::vulture) < desired_vulture_count) {
 							return maxprod(st, unit_types::vulture, [&](state&st) {
 								return maxprod1(st, unit_types::siege_tank_tank_mode);
 							});
+						}
+						if (my_tank_count >= 3 && st.gas >= 200) {
+							// This is temporary until I fix addon production
+							int machine_shops = 0;
+							for (auto&v : st.units[unit_types::factory]) {
+								if (v.has_addon) ++machine_shops;
+							}
+							if (machine_shops < 2) return depbuild(st, state(st), unit_types::machine_shop);
 						}
 						return maxprod(st, unit_types::siege_tank_tank_mode, [&](state&st) {
 							return maxprod1(st, unit_types::vulture);
