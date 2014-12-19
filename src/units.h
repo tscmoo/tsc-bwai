@@ -95,6 +95,7 @@ struct unit_building {
 	xy build_pos;
 	xy last_registered_pos;
 	int building_addon_frame;
+	bool is_liftable_wall;
 };
 
 struct unit;
@@ -132,6 +133,7 @@ struct unit {
 
 	bool visible, dead;
 	int last_seen, creation_frame;
+	int last_shown;
 	xy pos;
 	bool gone;
 	double speed, hspeed, vspeed;
@@ -509,6 +511,7 @@ void update_unit_type(unit*u) {
 			u->building = &unit_building_container.back();
 			u->building->u = u;
 			u->building->building_addon_frame = 0;
+			u->building->is_liftable_wall = false;
 		}
 	} else u->building = 0;
 }
@@ -711,6 +714,7 @@ unit*new_unit(BWAPI_Unit game_unit) {
 	u->creation_frame = current_frame;
 	u->last_seen = current_frame;
 	u->gone = false;
+	u->last_shown = current_frame;
 
 	u->force_combat_unit = false;
 	//u->last_attacking = 0;
@@ -969,6 +973,7 @@ void update_units_task() {
 				log("show %s\n",u->type->name);
 				if (u->visible) update_unit_owner(u);
 				if (u->visible) update_unit_type(u);
+				u->last_shown = current_frame;
 				update_stats(u->stats);
 				break;
 			case event_t::t_hide:

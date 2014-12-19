@@ -105,7 +105,7 @@ wall_spot find_wall_spot_from_to(unit_type*path_ut, xy from, xy to, bool test_wa
 	for (size_t i = 1; i < path.size(); ++i) {
 		len += diag_distance(path[i] - path[i - 1]);
 		if (len >= 32 * 40) {
-			path.resize(std::min(i + n_space*2, path.size()));
+			path.resize(std::min(i + n_space * 2, path.size()));
 			break;
 		}
 	}
@@ -114,11 +114,15 @@ wall_spot find_wall_spot_from_to(unit_type*path_ut, xy from, xy to, bool test_wa
 
 	double best_score = std::numeric_limits<double>::infinity();
 	wall_spot best;
-	for (size_t i = 0; i + n_space*2 < path.size(); ++i) {
+	grid::build_square*prev_bs = nullptr;
+	for (size_t i = 0; i + n_space * 2 < path.size(); ++i) {
 		wall_spot ws;
 		ws.center = path[i + n_space];
+		auto*bs = &grid::get_build_square(ws.center);
+		if (bs == prev_bs) continue;
+		prev_bs = bs;
 
-		ws.inside = get_best_score(make_iterators_range(path.begin()+i,path.begin()+i+n_space), [&](xy pos) {
+		ws.inside = get_best_score(make_iterators_range(path.begin() + i, path.begin() + i + n_space), [&](xy pos) {
 			return -diag_distance(pos - ws.center);
 		});
 		ws.outside = get_best_score(make_iterators_range(path.begin() + i + n_space, path.begin() + i + n_space + n_space), [&](xy pos) {
@@ -162,12 +166,16 @@ wall_spot default_find_wall_spot(unit_type*path_ut) {
 	}), true);
 }
 
+
 struct wall_builder {
 
 	wall_spot spot;
 	unit_type*against_ut = nullptr;
 	a_vector<unit_type*> buildings;
 	a_vector<xy> buildings_pos;
+
+	wall_builder();
+	~wall_builder();
 
 	void against(unit_type*ut) {
 		against_ut = ut;
@@ -195,9 +203,9 @@ struct wall_builder {
 					}
 				}
 			};
-			find_build_spots(0);
-			if (set.size() <= 20) find_build_spots(1);
-			if (set.size() <= 20) find_build_spots(2);
+			for (int i = 0; i < 16 && set.size() < 40; ++i) {
+				find_build_spots(i);
+			}
 			a_vector<xy> vec;
 			for (auto&v : set) vec.push_back(v);
 			log("%d: %d build spots\n", i, vec.size());
@@ -262,7 +270,7 @@ struct wall_builder {
 				if (n == 0) break;
 				std::shuffle(build_spots[n].begin(), build_spots[n].end(), shuffle_rng);
 				index[n] = 0;
-				++index[--n];
+				--n;
 				continue;
 			}
 			xy upper_left = build_spots[n][index[n]++];
@@ -277,6 +285,29 @@ struct wall_builder {
 				if (n_bottom_right.y <= upper_left.y) continue;
 				valid = false;
 				break;
+			}
+			if (valid) {
+				valid = n == 0;
+				for (size_t i = 0; i < n; ++i) {
+					xy n_upper_left = build_pos[i];
+					xy n_bottom_right = n_upper_left + xy(buildings[i]->tile_width * 32, buildings[i]->tile_height * 32);
+					xy a0 = upper_left;
+					xy a1 = bottom_right;
+					xy b0 = n_upper_left;
+					xy b1 = n_bottom_right;
+
+					int x, y;
+					if (a0.x > b1.x) x = a0.x - b1.x;
+					else if (b0.x > a1.x) x = b0.x - a1.x;
+					else x = 0;
+					if (a0.y > b1.y) y = a0.y - b1.y;
+					else if (b0.y > a1.y) y = b0.y - a1.y;
+					else y = 0;
+					if (x == 0 && y == 0) {
+						valid = true;
+						break;
+					}
+				}
 			}
 			//log("build spot %d %d for %d is %s\n", upper_left.x, upper_left.y, n, valid ? "valid" : "not valid");
 			if (!valid) continue;
@@ -294,18 +325,20 @@ struct wall_builder {
 				multitasking::yield_point();
 				//log("path.size() is %d\n", path.size());
 				if (path.empty()) {
-					bool test_siege_tank = false;
+					bool test_siege_tank = true;
 					bool okay = !test_siege_tank;
 					if (test_siege_tank) {
+						xy siege_tank_inside = get_nearest_path_node(siege_tank_pathing_map, spot.inside)->pos;
 						xy siege_tank_outside = get_nearest_path_node(siege_tank_pathing_map, spot.outside)->pos;
 						size_t path_iterations = 0;
-						a_deque<xy> path = square_pathing::find_square_path(siege_tank_pathing_map, siege_tank_outside, [&](xy pos, xy npos) {
+						a_deque<xy> path = square_pathing::find_square_path(siege_tank_pathing_map, siege_tank_inside, [&](xy pos, xy npos) {
 							if (++path_iterations >= 1024) multitasking::yield_point();
+							if (diag_distance(npos - spot.center) >= max_center_distance * 2 + 32) return false;
 							return path_pred(npos, unit_types::siege_tank_tank_mode, false);
 						}, [&](xy pos, xy npos) {
-							return diag_distance(npos - spot.inside);
+							return diag_distance(npos - siege_tank_outside);
 						}, [&](xy pos) {
-							return manhattan_distance(spot.inside - pos) <= 64;
+							return manhattan_distance(siege_tank_outside - pos) <= 64;
 						});
 						okay = !path.empty();
 					}
@@ -332,12 +365,22 @@ struct wall_builder {
 		a_vector<bool> found(buildings.size());
 		a_unordered_set<build::build_task*> build_task_taken;
 		for (auto&b : build::build_tasks) {
-			if (b.built_unit) continue;
 			for (size_t i = 0; i < buildings_pos.size(); ++i) {
 				if (b.build_pos == buildings_pos[i]) {
 					log("found wall %d\n", i);
 					found[i] = true;
 					build_task_taken.insert(&b);
+					if (b.built_unit) log("%s->is_liftable is %d\n", b.built_unit->type->name, b.built_unit->type->is_liftable);
+					if (b.built_unit && b.built_unit->type->is_liftable) {
+						if (!b.built_unit->building->is_liftable_wall) {
+							unit*u = b.built_unit;
+							xy upper_left = u->pos - xy(u->type->dimension_left(), u->type->dimension_up());
+							xy bottom_right = u->pos + xy(u->type->dimension_right(), u->type->dimension_down());
+							square_pathing::invalidate_area(upper_left, bottom_right);
+						}
+						b.built_unit->building->is_liftable_wall = true;
+						log("%s marked as liftable wall\n", b.built_unit->type->name);
+					}
 					break;
 				}
 			}
@@ -388,8 +431,93 @@ struct wall_builder {
 
 };
 
+a_vector<wall_builder*> active_walls;
+wall_builder::wall_builder() {
+	active_walls.push_back(this);
+}
+wall_builder::~wall_builder() {
+	find_and_erase(active_walls, this);
+}
+
+a_set<unit*> lift_queue;
+
+void lift_please(unit*building) {
+	lift_queue.insert(building);
+}
+
+int active_wall_count() {
+	return active_walls.size();
+}
+
+void lift_wall_task() {
+	while (true) {
+
+		for (unit*u : my_buildings) {
+			if (u->building->is_liftable_wall) {
+				bool lift = lift_queue.count(u) != 0;
+				if (lift) {
+					u->controller->noorder_until = current_frame + 15 * 4;
+					if (!u->building->is_lifted) {
+						double my_army = 0;
+						for (unit*nu : my_units) {
+							if (nu->building || nu->type->is_worker) continue;
+							if (diag_distance(nu->pos - u->pos) > 32 * 10) continue;
+							my_army += u->type->required_supply;
+						}
+						double op_army = 0;
+						for (unit*nu : enemy_units) {
+							if (nu->building || nu->type->is_worker) continue;
+							if (diag_distance(nu->pos - u->pos) > 32 * 10) continue;
+							op_army += u->type->required_supply;
+						}
+						if (op_army == 0 || my_army >= op_army + 4) u->game_unit->lift();
+					}
+				} else {
+					if (u->building->is_lifted) {
+						a_vector<xy> avail_pos;
+						for (auto*v : active_walls) {
+							for (size_t i = 0; i < v->buildings.size(); ++i) {
+								if (v->buildings[i] == u->type && !grid::get_build_square(v->buildings_pos[i]).building) {
+									avail_pos.push_back(v->buildings_pos[i]);
+								}
+							}
+						}
+						if (!avail_pos.empty()) {
+							xy pos = get_best_score(avail_pos, [&](xy pos) {
+								return diag_distance(pos - u->building->build_pos);
+							});
+							u->controller->noorder_until = current_frame + 15;
+							u->game_unit->land(BWAPI::TilePosition(pos.x / 32, pos.y / 32));
+						}
+					}
+				}
+
+				if (!u->building->is_lifted) {
+					bool found = false;
+					for (auto*v : active_walls) {
+						for (xy pos : v->buildings_pos) {
+							if (pos == u->building->build_pos) {
+								found = true;
+								break;
+							}
+						}
+						if (found) break;
+					}
+					if (!found) u->game_unit->lift();
+					if (u->building->is_lifted) u->building->is_liftable_wall = false;
+				}
+			}
+		}
+
+		lift_queue.clear();
+
+		multitasking::sleep(8);
+	}
+}
 
 void init() {
+
+	multitasking::spawn(lift_wall_task, "lift wall");
 
 }
 

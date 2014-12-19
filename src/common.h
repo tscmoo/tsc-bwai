@@ -187,7 +187,7 @@ double units_distance(xy a_pos,unit_type*at,xy b_pos,unit_type*bt) {
 template<int dummy=0>
 double units_pathing_distance(unit*a, unit*b, bool include_enemy_buildings = true) {
 	if (a->type->is_flyer) return units_difference(a->pos, a->type->dimensions, b->pos, b->type->dimensions).length();
-	auto&map = square_pathing::get_pathing_map(a->type, include_enemy_buildings);
+	auto&map = square_pathing::get_pathing_map(a->type, include_enemy_buildings ? square_pathing::pathing_map_index::no_enemy_buildings : square_pathing::pathing_map_index::default);
 	double d = square_pathing::get_distance(map, a->pos, b->pos);
 	if (d > 32 * 4) return d;
 	return units_difference(a->pos,a->type->dimensions,b->pos,b->type->dimensions).length();

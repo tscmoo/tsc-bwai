@@ -227,6 +227,10 @@ struct unit_type;
 namespace square_pathing {
 	void invalidate_area(xy from, xy to);
 }
+namespace wall_in {
+	void lift_please(unit*);
+	int active_wall_count();
+}
 a_vector<xy> start_locations;
 xy my_start_location;
 

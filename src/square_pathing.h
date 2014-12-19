@@ -2,7 +2,7 @@
 namespace square_pathing {
 ;
 
-bool can_fit_at(const xy pos, const std::array<int,4>&dims, bool include_enemy_buildings = true) {
+bool can_fit_at(const xy pos, const std::array<int, 4>&dims, bool include_enemy_buildings = true, bool include_liftable_wall = false, unit**wall_building = nullptr) {
 	using namespace grid;
 	int right = pos.x + dims[0];
 	int bottom = pos.y + dims[1];
@@ -18,7 +18,11 @@ bool can_fit_at(const xy pos, const std::array<int,4>&dims, bool include_enemy_b
 				if (b == prev_building) continue;
 				prev_building = b;
 				// TODO: something about neutral buildings
-				if (b->owner == players::opponent_player) continue;
+				if (!include_enemy_buildings && b->owner == players::opponent_player) continue;
+				if (!include_liftable_wall && b->building->is_liftable_wall) {
+					if (wall_building && !b->building->is_lifted) *wall_building = b;
+					continue;
+				}
 				xy bpos = b->pos;
 				int bright = bpos.x + b->type->dimension_right();
 				int bbottom = bpos.y + b->type->dimension_down();
@@ -44,6 +48,7 @@ struct pathing_map {
 	std::array<int, 4> dimensions;
 	tsc::dynamic_bitset walkable;
 	bool include_enemy_buildings = true;
+	bool include_liftable_wall = false;
 	
 	a_vector<path_node> path_nodes;
 	a_vector<path_node*> nearest_path_node;
@@ -64,8 +69,8 @@ tsc::dynamic_bitset test_walkable;
 
 a_list<pathing_map> all_pathing_maps;
 
-a_unordered_map<unit_type*, pathing_map*> pathing_map_for_unit_type;
-a_unordered_map<unit_type*, pathing_map*> pathing_map_for_unit_type_no_enemy_buildings;
+enum class pathing_map_index { default, no_enemy_buildings, include_liftable_wall };
+std::array<a_unordered_map<unit_type*, pathing_map*>, 3> pathing_map_for_unit_type;
 
 a_vector<std::tuple<xy, xy>> invalidation_queue;
 
@@ -73,8 +78,8 @@ void invalidate_area(xy from, xy to) {
 	invalidation_queue.emplace_back(from, to);
 }
 
-pathing_map&get_pathing_map(unit_type*ut, bool include_enemy_buildings = true) {
-	auto*&r = include_enemy_buildings ? pathing_map_for_unit_type[ut] : pathing_map_for_unit_type_no_enemy_buildings[ut];
+pathing_map&get_pathing_map(unit_type*ut, pathing_map_index index = pathing_map_index::default) {
+	auto*&r = pathing_map_for_unit_type[(int)index][ut];
 	if (r) return *r;
 	all_pathing_maps.emplace_back();
 	r = &all_pathing_maps.back();
@@ -82,7 +87,8 @@ pathing_map&get_pathing_map(unit_type*ut, bool include_enemy_buildings = true) {
 	if (ut->is_flyer) xcept("get_pathing_map for a flyer");
 	r->walkable.resize(walkmap_width * walkmap_height);
 	r->nearest_path_node.resize(nearest_path_node_width*nearest_path_node_height);
-	r->include_enemy_buildings = include_enemy_buildings;
+	r->include_enemy_buildings = index != pathing_map_index::no_enemy_buildings;
+	r->include_liftable_wall = index == pathing_map_index::include_liftable_wall;
 	return *r;
 }
 
@@ -136,18 +142,18 @@ void update_map(pathing_map&map, xy from, xy to) {
 
 			if (!grid::get_walk_square(pos).walkable) continue;
 
-			bool kay = can_fit_at(pos, dims, map.include_enemy_buildings);
-			if (!kay && can_fit_at(pos + xy(4, 4), { 0, 0, 0, 0 }, map.include_enemy_buildings)) {
-				kay = can_fit_at(pos + xy(7, 0), dims, map.include_enemy_buildings);
-				if (!kay) kay |= can_fit_at(pos + xy(0, 7), dims, map.include_enemy_buildings) || can_fit_at(pos + xy(7, 7), dims, map.include_enemy_buildings);
+			bool kay = can_fit_at(pos, dims, map.include_enemy_buildings, map.include_liftable_wall);
+			if (!kay && can_fit_at(pos + xy(4, 4), { 0, 0, 0, 0 }, map.include_enemy_buildings, map.include_liftable_wall)) {
+				kay = can_fit_at(pos + xy(7, 0), dims, map.include_enemy_buildings, map.include_liftable_wall);
+				if (!kay) kay |= can_fit_at(pos + xy(0, 7), dims, map.include_enemy_buildings, map.include_liftable_wall) || can_fit_at(pos + xy(7, 7), dims, map.include_enemy_buildings, map.include_liftable_wall);
 				if (!kay) {
 					for (int x = 1; x < 7 && !kay; ++x) {
-						if (can_fit_at(pos + xy(x, 0), dims, map.include_enemy_buildings)) kay = true;
-						else if (can_fit_at(pos + xy(x, 7), dims, map.include_enemy_buildings)) kay = true;
+						if (can_fit_at(pos + xy(x, 0), dims, map.include_enemy_buildings, map.include_liftable_wall)) kay = true;
+						else if (can_fit_at(pos + xy(x, 7), dims, map.include_enemy_buildings, map.include_liftable_wall)) kay = true;
 					}
 					for (int y = 1; y < 7 && !kay; ++y) {
-						if (can_fit_at(pos + xy(0, y), dims, map.include_enemy_buildings)) kay = true;
-						else if (can_fit_at(pos + xy(7, y), dims, map.include_enemy_buildings)) kay = true;
+						if (can_fit_at(pos + xy(0, y), dims, map.include_enemy_buildings, map.include_liftable_wall)) kay = true;
+						else if (can_fit_at(pos + xy(7, y), dims, map.include_enemy_buildings, map.include_liftable_wall)) kay = true;
 					}
 				}
 			}
@@ -366,17 +372,17 @@ xy get_nearest_node_pos(unit*u) {
 	return get_nearest_node_pos(u->type, u->pos);
 }
 
-bool unit_can_reach(unit_type*ut, xy from, xy to) {
+bool unit_can_reach(unit_type*ut, xy from, xy to, pathing_map_index index = pathing_map_index::default) {
 	if (ut->is_flyer) return true;
-	auto&map = square_pathing::get_pathing_map(ut);
+	auto&map = square_pathing::get_pathing_map(ut, index);
 	path_node*a = square_pathing::get_nearest_path_node(map, from);
 	path_node*b = square_pathing::get_nearest_path_node(map, to);
 	if (!a) return !b;
 	if (!b) return !a;
 	return a->root_index==b->root_index;
 }
-bool unit_can_reach(unit*u, xy from, xy to) {
-	return unit_can_reach(u->type, from, to);
+bool unit_can_reach(unit*u, xy from, xy to, pathing_map_index index = pathing_map_index::default) {
+	return unit_can_reach(u->type, from, to, index);
 }
 
 struct closed_t {
@@ -583,7 +589,7 @@ a_deque<xy> find_square_path(pathing_map&map, xy from, pred_T&&pred, est_dist_T&
 }
 
 // Brood war is too picky about what can be the final destination for a path
-xy get_go_to_along_path(unit*u, const a_deque<xy>&path) {
+xy get_go_to_along_path(unit*u, const a_deque<xy>&path, unit**wall_building = nullptr) {
 	if (path.empty()) return u->pos;
 	double dis = 0.0;
 	xy lpos = path.front();
@@ -592,7 +598,7 @@ xy get_go_to_along_path(unit*u, const a_deque<xy>&path) {
 		if (dis >= 32 * 4) {
 			auto&dims = u->type->dimensions;
 			auto test = [&](xy npos) {
-				if (!can_fit_at(npos, dims)) return false;
+				if (!can_fit_at(npos, dims, true, false, wall_building)) return false;
 				return grid::get_build_square(npos).entirely_walkable;
 			};
 			if (test(pos)) return pos;
@@ -608,6 +614,13 @@ xy get_go_to_along_path(unit*u, const a_deque<xy>&path) {
 		//if (frames_to_reach(u, diag_distance(pos - u->pos)) >= 30) return pos;
 	}
 	return path.back();
+}
+
+xy get_go_to_along_path_and_lift_wall(unit*u, const a_deque<xy>&path) {
+	unit*wall_building = nullptr;
+	xy r = get_go_to_along_path(u, path, &wall_building);
+	if (wall_building) wall_in::lift_please(wall_building);
+	return r;
 }
 
 size_t force_field_size = 32;
@@ -686,7 +699,7 @@ xy get_move_to(unit*u, xy goal, int priority) {
 		if (std::get<0>(final_ff) >= current_frame) {
 			final_ff = std::make_tuple(current_frame, priority, angle, u);
 		}
-		return get_go_to_along_path(u, escape_path);
+		return get_go_to_along_path_and_lift_wall(u, escape_path);
 	}
 	if (next_node != to_node) {
 		for (xy pos : square_path) {
@@ -694,7 +707,7 @@ xy get_move_to(unit*u, xy goal, int priority) {
 			ff = std::make_tuple(current_frame, priority, angle, nullptr);
 		}
 	} else return goal;
-	return get_go_to_along_path(u, square_path);
+	return get_go_to_along_path_and_lift_wall(u, square_path);
 }
 
 void square_pathing_update_maps_task() {
@@ -737,9 +750,9 @@ void square_pathing_update_maps_task() {
 
 void render() {
 
-	auto&test = get_pathing_map(unit_types::scv);
-
-// 	BWAPI::Position screen_pos = game->getScreenPosition();
+// 	auto&test = get_pathing_map(unit_types::zealot);
+// 
+// 	bwapi_pos screen_pos = game->getScreenPosition();
 // 	for (int y = screen_pos.y + 480 / 2 - 480 / 4 / 2; y < screen_pos.y + 480 / 2 + 480 / 4 / 2; y += 8) {
 // 		for (int x = screen_pos.x + 640 / 2 - 640 / 4 / 2; x < screen_pos.x + 640 / 2 + 640 / 4 / 2; x += 8) {
 // 			if ((size_t)x >= (size_t)grid::map_width || (size_t)y >= (size_t)grid::map_height) break;
