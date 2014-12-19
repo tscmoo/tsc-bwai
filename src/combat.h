@@ -1640,6 +1640,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 					//if (d > 32 * 12 + add && (!target->visible || current_frame - target->last_shown >= current_frame * 2)) {
 					if (d > 32 * 12 + add || (!target->visible && current_frame - a->u->controller->last_siege >= 15 * 8)) {
 						if (current_frame - a->u->last_attacked >= 15 * 4) {
+							if (!target->visible) a->siege_up_close = true;
 							if (a->u->game_unit->unsiege()) {
 								a->u->controller->noorder_until = current_frame + 30;
 							}
