@@ -226,6 +226,7 @@ void process(resource_t&r) {
 
 	if (my_workers.size() >= 15 && current_gas < 400) minerals_to_gas_weight = 0.25;
 	if (my_workers.size() >= 30 && current_gas < 1000) minerals_to_gas_weight = 0.25;
+	if (max_gas && current_gas < max_gas) minerals_to_gas_weight = 0.25;
 	if (max_gas && current_gas >= max_gas) minerals_to_gas_weight = 100.0;
 
 	if (next_income>0 && (current_frame-r.last_find_transfer>=30 || current_frame<30)) {
