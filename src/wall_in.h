@@ -455,6 +455,16 @@ void lift_wall_task() {
 		for (unit*u : my_buildings) {
 			if (u->building->is_liftable_wall) {
 				bool lift = lift_queue.count(u) != 0;
+				if (!lift) {
+					for (unit*nu : my_units) {
+						if (nu->controller->action == unit_controller::action_gather || nu->controller->action == unit_controller::action_attack) {
+							if (units_distance(u, nu) <= 32 * 2) {
+								lift = true;
+								break;
+							}
+						}
+					}
+				}
 				if (lift) {
 					u->controller->noorder_until = current_frame + 15 * 4;
 					if (!u->building->is_lifted) {
