@@ -67,7 +67,7 @@ struct strat_tvz {
 				}
 			}
 
-			if (my_tank_count < 2 && enemy_hydralisk_den_count) {
+			if ((my_tank_count < 2 && enemy_hydralisk_den_count) || (my_goliath_count<4 && enemy_spire_count)) {
 				combat::build_bunker_count = 2;
 			} else combat::build_bunker_count = 0;
 
