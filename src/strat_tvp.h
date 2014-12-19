@@ -96,7 +96,7 @@ struct strat_tvp {
 				return count >= 8;
 			};
 			auto can_expand = [&]() {
-				if (buildpred::get_my_current_state().bases.size() <= 2 && (my_tank_count < 12 && my_goliath_count < 8)) return false;
+				if (buildpred::get_my_current_state().bases.size() == 2 && (my_tank_count < 12 && my_goliath_count < 8)) return false;
 				return is_long_distance_mining();
 			};
 
