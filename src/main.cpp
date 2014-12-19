@@ -317,7 +317,7 @@ struct module : BWAPI::AIModule {
 	virtual void onFrame() override {
 
 		static bool holding_x;
-		if (GetKeyState('X') & 0x80) holding_x = true;
+		if (game->getKeyState('X')) holding_x = true;
 		else holding_x = false;
 		static bool last_holding_x;
 		static bool fast = false;
