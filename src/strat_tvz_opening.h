@@ -6,6 +6,7 @@ struct strat_tvz_opening {
 	void run() {
 
 		combat::no_aggressive_groups = true;
+		combat::aggressive_wraiths = true;
 
 		using namespace buildpred;
 
@@ -41,18 +42,16 @@ struct strat_tvz_opening {
 					}
 					if (count_units_plus_production(st, unit_types::vulture) < 2) return depbuild(st, state(st), unit_types::vulture);
 				}
+				int scv_count = count_units_plus_production(st, unit_types::scv);
+				if (scv_count >= 11 && count_units_plus_production(st, unit_types::barracks) == 0) return depbuild(st, state(st), unit_types::barracks);
+				if (scv_count >= 12 && count_units_plus_production(st, unit_types::refinery) == 0) return depbuild(st, state(st), unit_types::refinery);
+				if (scv_count >= 16 && count_units_plus_production(st, unit_types::factory) == 0) return depbuild(st, state(st), unit_types::factory);
 				return nodelay(st, unit_types::scv, [&](state&st) {
 					st.dont_build_refineries = true;
-					int scv_count = count_units_plus_production(st, unit_types::scv);
-					if (scv_count >= 11 && count_units_plus_production(st, unit_types::barracks) == 0) return depbuild(st, state(st), unit_types::barracks);
-					if (scv_count >= 12 && count_units_plus_production(st, unit_types::refinery) == 0) return depbuild(st, state(st), unit_types::refinery);
 					auto backbone = [&](state&st) {
-						return maxprod(st, unit_types::goliath, [&](state&st) {
-							return maxprod1(st, unit_types::vulture);
-						});
+						return maxprod1(st, unit_types::vulture);
 					};
 					int vulture_count = count_units_plus_production(st, unit_types::vulture);
-					int goliath_count = count_units_plus_production(st, unit_types::goliath);
 					int siege_tank_count = count_units_plus_production(st, unit_types::siege_tank_tank_mode) + count_units_plus_production(st, unit_types::siege_tank_siege_mode);
 					int marine_count = count_units_plus_production(st, unit_types::marine);
 					if (vulture_count < 2) {
@@ -65,9 +64,6 @@ struct strat_tvz_opening {
 					}
 					if (!my_units_of_type[unit_types::starport].empty() && count_units_plus_production(st, unit_types::wraith) == 0) {
 						return nodelay(st, unit_types::wraith, backbone);
-					}
-					if (goliath_count >= 4 && siege_tank_count < 2) {
-						return nodelay(st, unit_types::siege_tank_tank_mode, backbone);
 					}
 					return backbone(st);
 				});
@@ -88,17 +84,16 @@ struct strat_tvz_opening {
 			}
 			bool expand = false;
 			int vulture_count = my_completed_units_of_type[unit_types::vulture].size();
-			int goliath_count = my_completed_units_of_type[unit_types::goliath].size();
 			int siege_tank_count = my_completed_units_of_type[unit_types::siege_tank_tank_mode].size() + my_completed_units_of_type[unit_types::siege_tank_siege_mode].size();
 			int marine_count = my_completed_units_of_type[unit_types::marine].size();
+			int wraith_count = my_completed_units_of_type[unit_types::wraith].size();
 			auto my_st = get_my_current_state();
 			bool has_bunker = !my_units_of_type[unit_types::bunker].empty();
-			//if (my_st.bases.size() > 1 && (has_bunker || siege_tank_count >= 3) || goliath_count + siege_tank_count * 2 >= 6) break;
 			if (my_st.bases.size() > 1 && marine_count >= 1) combat::build_bunker_count = 1;
 			if (!has_zergling_tight_wall && !my_units_of_type[unit_types::barracks].empty()) {
 				combat::build_bunker_count = 1;
 			}
-			if (my_st.bases.size() == 1 && current_used_total_supply >= 18 && vulture_count >= 2) {
+			if (my_st.bases.size() == 1 && current_used_total_supply >= 18 && vulture_count >= 2 && wraith_count >= 1) {
 				if (siege_tank_count >= 2) {
 					expand = true;
 				}
