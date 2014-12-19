@@ -45,7 +45,7 @@ void get_upgrades() {
 		};
 		for (unit_type*req : upg.required_units) add(req);
 		if (upgrade_value_overrides[&upg]) val = upgrade_value_overrides[&upg];
-		if (val >= 0 && no_auto_upgrades) continue;
+		else if (no_auto_upgrades) continue;
 		if (sum >= val*1.5) {
 			bool already_upgrading = false;
 			for (build::build_task&b : build::build_tasks) {
@@ -66,7 +66,7 @@ void get_upgrades() {
 					build::add_build_sum(prio, &upg, 1);
 					break;
 				} else {
-					if (sum >= val * 3) {
+					if (sum >= val * 3 && !no_auto_upgrades) {
 						build::add_build_sum(prio, upg.builder_type, 1);
 						break;
 					}
