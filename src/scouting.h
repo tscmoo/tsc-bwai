@@ -2,6 +2,8 @@
 namespace scouting {
 ;
 
+double comsat_supply = 60.0;
+
 struct scout {
 	unit*scout_unit = nullptr;
 
@@ -273,7 +275,7 @@ void scouting_task() {
 
 		process_scouts();
 
-		if (current_used_total_supply >= 60 || !my_completed_units_of_type[unit_types::academy].empty()) {
+		if (current_used_total_supply >= comsat_supply || !my_completed_units_of_type[unit_types::academy].empty()) {
 			if (!my_units_of_type[unit_types::cc].empty()) {
 				if (my_units_of_type[unit_types::academy].empty()) {
 					build::add_build_sum(0, unit_types::academy, 1);
