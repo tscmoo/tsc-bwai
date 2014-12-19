@@ -512,7 +512,7 @@ void update_groups() {
 					if (u->controller->action == unit_controller::action_scout) return std::numeric_limits<double>::infinity();
 					if (u->type == unit_types::vulture) return std::numeric_limits<double>::infinity();
 					if (!u->building) return std::numeric_limits<double>::infinity();
-					return units_pathing_distance(e, u);
+					return units_pathing_distance(u, e);
 				});
 				if (nd < 32 * 25) {
 					is_aggressive = false;
@@ -962,7 +962,6 @@ void update_groups() {
 		}
 	} else {
 		for (auto*c : available_units) {
-			if (c->u->type->is_worker && !c->u->force_combat_unit) continue;
 			c->action = combat_unit::action_idle;
 		}
 	}
@@ -1587,7 +1586,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 		if (d < w->min_range) return std::make_tuple(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
 		double ehp = e->shields + e->hp;
 		ehp -= focus_fire[e];
-		if (ehp <= 0) ehp = e->stats->shields + e->stats->hp;
+		if (ehp <= 0) ehp = e->stats->shields + e->stats->hp - ehp;
 		if (wants_to_lay_spider_mines && !e->type->is_flyer && !e->type->is_hovering && !e->type->is_building) {
 			//if (e->type->is_hovering) return std::make_tuple(1000 + d / a->u->stats->max_speed, 0.0, 0.0);
 			//return std::make_tuple(prepared_damage[e] + d / a->u->stats->max_speed, 0.0, 0.0);
@@ -1600,7 +1599,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 		if (e->lockdown_timer) hits += 10;
 		if (e->type->requires_pylon && !e->is_powered) hits += 10;
 		//if (d > w->max_range) return std::make_tuple(std::numeric_limits<double>::infinity(), hits + (d - w->max_range) / a->u->stats->max_speed / 90, 0.0);
-		if (d > w->max_range) hits += (d - w->max_range) / a->u->stats->max_speed;
+		if (d > w->max_range) hits += (d - w->max_range) / a->u->stats->max_speed / 4;
 		if (e->is_flying) hits /= 10;
 		if (current_frame - e->last_seen >= 15 * 30) hits += 20;
 		return std::make_tuple(hits, 0.0, 0.0);
@@ -1625,7 +1624,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 					if (target->burrowed || target->type->is_non_usable) add = 0;
 					if (current_frame - a->u->last_attacked <= 15 * 4) a->siege_up_close = false;
 					if (a->siege_up_close) add = 0;
-					if (d <= 32 * 12 + add) {
+					if (d <= 32 * 12 + add && target->visible) {
 						if (siege_tank_count < (int)enemies.size() || (target && target->building)) {
 							if (a->u->game_unit->siege()) {
 								a->u->controller->noorder_until = current_frame + 30;
@@ -1638,7 +1637,8 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 					double add = target->stats->max_speed * 15 * 6;
 					if (target->burrowed || target->type->is_non_usable) add = 0;
 					if (a->siege_up_close && sieged_tank_count >= siege_tank_count / 2) add = 0;
-					if (d > 32 * 12 + add && (!target->visible || current_frame - target->last_shown >= current_frame * 2)) {
+					//if (d > 32 * 12 + add && (!target->visible || current_frame - target->last_shown >= current_frame * 2)) {
+					if (d > 32 * 12 + add || (!target->visible && current_frame - a->u->controller->last_siege >= 15 * 8)) {
 						if (current_frame - a->u->last_attacked >= 15 * 4) {
 							if (a->u->game_unit->unsiege()) {
 								a->u->controller->noorder_until = current_frame + 30;
@@ -1950,7 +1950,7 @@ void do_run(combat_unit*a, const a_vector<unit*>&enemies) {
 			double net_d = net ? units_distance(net, a->u) : 1000.0;
 			double net_wr = net ? ew->max_range : 0.0;
 			double margin = 64;
-			if (net && !square_pathing::unit_can_reach(net, net->pos, a->u->pos, square_pathing::pathing_map_index::include_liftable_wall)) margin = 0.0;
+			if (net && !square_pathing::unit_can_reach(a->u, a->u->pos, net->pos, square_pathing::pathing_map_index::include_liftable_wall)) margin = 0.0;
 			bool too_close = net_d <= margin;
 			if (d - wr < net_d - net_wr - margin && !too_close) {
 				if (move_close_if_unreachable(a, ne)) return;

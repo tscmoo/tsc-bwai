@@ -47,6 +47,7 @@ struct pathing_map {
 	bool initialized = false;
 	std::array<int, 4> dimensions;
 	tsc::dynamic_bitset walkable;
+	unit_type*ut;
 	bool include_enemy_buildings = true;
 	bool include_liftable_wall = false;
 	
@@ -87,6 +88,7 @@ pathing_map&get_pathing_map(unit_type*ut, pathing_map_index index = pathing_map_
 	if (ut->is_flyer) xcept("get_pathing_map for a flyer");
 	r->walkable.resize(walkmap_width * walkmap_height);
 	r->nearest_path_node.resize(nearest_path_node_width*nearest_path_node_height);
+	r->ut = ut;
 	r->include_enemy_buildings = index != pathing_map_index::no_enemy_buildings;
 	r->include_liftable_wall = index == pathing_map_index::include_liftable_wall;
 	return *r;
@@ -179,6 +181,8 @@ void generate_path_nodes(pathing_map&map) {
 	double elapsed = 0.0;
 
 	auto dims = map.dimensions;
+
+	log("generate path nodes for %s %d %d\n", map.ut->name, map.include_enemy_buildings, map.include_liftable_wall);
 
 	a_vector<path_node> new_path_nodes;
 
