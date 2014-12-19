@@ -52,15 +52,17 @@
 
 #include <tsc/strf.h>
 
+constexpr bool test_mode = true;
+
 int current_frame;
 
 struct simple_logger {
 	std::mutex mut;
 	tsc::a_string str, str2;
-	bool newline;
-	FILE*f;
-	simple_logger() : newline(true) {
-		f = fopen("log.txt","w");
+	bool newline = true;
+	FILE*f = nullptr;
+	simple_logger() {
+		if (test_mode) f = fopen("log.txt", "w");
 	}
 	template<typename...T>
 	void operator()(const char*fmt,T&&...args) {
@@ -308,6 +310,8 @@ struct module : BWAPI::AIModule {
 
 		init();
 
+		game->setLocalSpeed(0);
+
 	}
 
 	virtual void onEnd(bool is_winner) override {
@@ -316,17 +320,19 @@ struct module : BWAPI::AIModule {
 
 	virtual void onFrame() override {
 
-		static bool holding_x;
-		if (game->getKeyState('X')) holding_x = true;
-		else holding_x = false;
-		static bool last_holding_x;
-		static bool fast = false;
-		if (last_holding_x&&!holding_x) fast=!fast;
-		last_holding_x = holding_x;
-		if (fast) {
-			game->setLocalSpeed(0);
-		} else {
-			game->setLocalSpeed(30);
+		if (test_mode) {
+			static bool holding_x;
+			if (game->getKeyState('X')) holding_x = true;
+			else holding_x = false;
+			static bool last_holding_x;
+			static bool fast = true;
+			if (last_holding_x&&!holding_x) fast = !fast;
+			last_holding_x = holding_x;
+			if (fast) {
+				game->setLocalSpeed(0);
+			} else {
+				game->setLocalSpeed(30);
+			}
 		}
 
 		current_frame = game->getFrameCount();

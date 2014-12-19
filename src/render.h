@@ -120,9 +120,11 @@ void render() {
 	draw_screen_stacked_text(16,8,format("FPS: %.02f  load: %02d%%  carry: %.02f   APM: %d",fps,(int)(avg_load*100),-multitasking::detail::frame_time_carry,game->getAPM()));
 	draw_screen_stacked_text(16,8,format("%02d:%02d  Income: %.02f/%.02f  Predicted: %.02f/%.02f",current_frame/15/60,current_frame/15%60,current_minerals_per_frame,current_gas_per_frame,predicted_minerals_per_frame,predicted_gas_per_frame));
 
-	render_task_list();
+	if (test_mode) {
+		render_task_list();
 
-	for (auto&v : render_funcs) std::get<0>(v)();
+		for (auto&v : render_funcs) std::get<0>(v)();
+	}
 
 // 	BWAPI::Position mpos = game->getScreenPosition() + game->getMousePosition();
 // 	xy pos(mpos.x, mpos.y);
