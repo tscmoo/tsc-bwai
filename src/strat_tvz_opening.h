@@ -1,53 +1,78 @@
 
 struct strat_tvz_opening {
 
+	wall_in::wall_builder wall;
+
 	void run() {
 
 		combat::no_aggressive_groups = true;
 
 		using namespace buildpred;
 
-		auto build = [&](state&st) {
-			if (!my_completed_units_of_type[unit_types::factory].empty()) {
-				if (count_units_plus_production(st, unit_types::starport) == 0) {
-					return depbuild(st, state(st), unit_types::starport);
-				}
-				if (count_units_plus_production(st, unit_types::vulture) < 2) return depbuild(st, state(st), unit_types::vulture);
-			}
-			return nodelay(st, unit_types::scv, [&](state&st) {
-				st.dont_build_refineries = true;
-				if (count_units_plus_production(st, unit_types::refinery) == 0) {
-					return depbuild(st, state(st), unit_types::refinery);
-				}
-				auto backbone = [&](state&st) {
-					return maxprod(st, unit_types::goliath, [&](state&st) {
-						return maxprod1(st, unit_types::vulture);
-					});
-				};
-				int vulture_count = count_units_plus_production(st, unit_types::vulture);
-				int goliath_count = count_units_plus_production(st, unit_types::goliath);
-				int siege_tank_count = count_units_plus_production(st, unit_types::siege_tank_tank_mode) + count_units_plus_production(st, unit_types::siege_tank_siege_mode);
-				int marine_count = count_units_plus_production(st, unit_types::marine);
-				if (vulture_count < 2) {
-					return nodelay(st, unit_types::vulture, [&](state&st) {
-						return depbuild(st, state(st), unit_types::marine);
-					});
-				}
-				if (!my_units_of_type[unit_types::factory].empty() && marine_count < 3) {
-					return nodelay(st, unit_types::marine, backbone);
-				}
-				if (!my_units_of_type[unit_types::starport].empty() && count_units_plus_production(st, unit_types::wraith) == 0) {
-					return nodelay(st, unit_types::wraith, backbone);
-				}
-				if (goliath_count >= 4 && siege_tank_count < 2) {
-					return nodelay(st, unit_types::siege_tank_tank_mode, backbone);
-				}
-				return backbone(st);
-			});
-		};
-
 		resource_gathering::max_gas = 100;
+		int wall_calculated = 0;
+		bool has_wall = false;
+		bool has_zergling_tight_wall = false;
+		bool being_zergling_rushed = false;
 		while (true) {
+
+			int my_marine_count = my_units_of_type[unit_types::marine].size();
+			int enemy_zergling_count = 0;
+			for (unit*e : enemy_units) {
+				if (e->type == unit_types::zergling) ++enemy_zergling_count;
+			}
+
+			auto build = [&](state&st) {
+				if (my_completed_units_of_type[unit_types::factory].empty()) {
+					if (enemy_zergling_count > my_marine_count && !being_zergling_rushed) {
+						log("waa being zergling rushed!\n");
+						being_zergling_rushed = true;
+					}
+					if (being_zergling_rushed && my_marine_count < 5) {
+						return nodelay(st, unit_types::marine, [&](state&st) {
+							return nodelay(st, unit_types::scv, [&](state&st) {
+								return depbuild(st, state(st), unit_types::vulture);
+							});
+						});
+					}
+				} else {
+					if (count_units_plus_production(st, unit_types::starport) == 0) {
+						return depbuild(st, state(st), unit_types::starport);
+					}
+					if (count_units_plus_production(st, unit_types::vulture) < 2) return depbuild(st, state(st), unit_types::vulture);
+				}
+				return nodelay(st, unit_types::scv, [&](state&st) {
+					st.dont_build_refineries = true;
+					int scv_count = count_units_plus_production(st, unit_types::scv);
+					if (scv_count >= 11 && count_units_plus_production(st, unit_types::barracks) == 0) return depbuild(st, state(st), unit_types::barracks);
+					if (scv_count >= 12 && count_units_plus_production(st, unit_types::refinery) == 0) return depbuild(st, state(st), unit_types::refinery);
+					auto backbone = [&](state&st) {
+						return maxprod(st, unit_types::goliath, [&](state&st) {
+							return maxprod1(st, unit_types::vulture);
+						});
+					};
+					int vulture_count = count_units_plus_production(st, unit_types::vulture);
+					int goliath_count = count_units_plus_production(st, unit_types::goliath);
+					int siege_tank_count = count_units_plus_production(st, unit_types::siege_tank_tank_mode) + count_units_plus_production(st, unit_types::siege_tank_siege_mode);
+					int marine_count = count_units_plus_production(st, unit_types::marine);
+					if (vulture_count < 2) {
+						return nodelay(st, unit_types::vulture, [&](state&st) {
+							return depbuild(st, state(st), unit_types::marine);
+						});
+					}
+					if (!my_units_of_type[unit_types::factory].empty() && marine_count < 3) {
+						return nodelay(st, unit_types::marine, backbone);
+					}
+					if (!my_units_of_type[unit_types::starport].empty() && count_units_plus_production(st, unit_types::wraith) == 0) {
+						return nodelay(st, unit_types::wraith, backbone);
+					}
+					if (goliath_count >= 4 && siege_tank_count < 2) {
+						return nodelay(st, unit_types::siege_tank_tank_mode, backbone);
+					}
+					return backbone(st);
+				});
+			};
+
 			if (!my_units_of_type[unit_types::factory].empty()) {
 				resource_gathering::max_gas = 250;
 			}
@@ -70,6 +95,9 @@ struct strat_tvz_opening {
 			bool has_bunker = !my_units_of_type[unit_types::bunker].empty();
 			//if (my_st.bases.size() > 1 && (has_bunker || siege_tank_count >= 3) || goliath_count + siege_tank_count * 2 >= 6) break;
 			if (my_st.bases.size() > 1 && marine_count >= 1) combat::build_bunker_count = 1;
+			if (!has_zergling_tight_wall && !my_units_of_type[unit_types::barracks].empty()) {
+				combat::build_bunker_count = 1;
+			}
 			if (my_st.bases.size() == 1 && current_used_total_supply >= 18 && vulture_count >= 2) {
 				if (siege_tank_count >= 2) {
 					expand = true;
@@ -89,6 +117,33 @@ struct strat_tvz_opening {
 			if (!my_completed_units_of_type[unit_types::wraith].empty() && !expand) break;
 			execute_build(expand, build);
 
+			if (combat::defence_choke.center != xy()) {
+				if (wall_calculated < 2) {
+					++wall_calculated;
+
+					wall = wall_in::wall_builder();
+
+					wall.spot = wall_in::find_wall_spot_from_to(unit_types::zealot, combat::my_closest_base, combat::defence_choke.outside, false);
+					wall.spot.outside = combat::defence_choke.outside;
+
+					wall.against(wall_calculated == 1 ? unit_types::zergling : unit_types::zealot);
+					wall.add_building(unit_types::supply_depot);
+					wall.add_building(unit_types::barracks);
+					has_wall = true;
+					if (wall_calculated == 1) has_zergling_tight_wall = true;
+					if (!wall.find()) {
+						wall.add_building(unit_types::supply_depot);
+						if (!wall.find()) {
+							log("failed to find wall in :(\n");
+							has_wall = false;
+							if (wall_calculated == 1) has_zergling_tight_wall = false;
+						}
+					}
+					if (has_wall) wall_calculated = 2;
+				}
+			}
+			if (has_wall) wall.build();
+
 			multitasking::sleep(15 * 5);
 		}
 		combat::build_bunker_count = 0;
@@ -99,7 +154,7 @@ struct strat_tvz_opening {
 	}
 
 	void render() {
-
+		wall.render();
 	}
 
 };
