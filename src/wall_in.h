@@ -492,19 +492,21 @@ void lift_wall_task() {
 					}
 				}
 
-				if (!u->building->is_lifted) {
-					bool found = false;
-					for (auto*v : active_walls) {
-						for (xy pos : v->buildings_pos) {
-							if (pos == u->building->build_pos) {
-								found = true;
-								break;
-							}
+				bool found = false;
+				for (auto*v : active_walls) {
+					for (xy pos : v->buildings_pos) {
+						if (pos == u->building->build_pos) {
+							found = true;
+							break;
 						}
-						if (found) break;
 					}
-					if (!found) u->game_unit->lift();
-					if (u->building->is_lifted) u->building->is_liftable_wall = false;
+					if (found) break;
+				}
+				if (!found) {
+					if (!u->building->is_lifted) {
+						u->controller->noorder_until = current_frame + 15;
+						if (u->game_unit->lift()) u->building->is_liftable_wall = false;
+					}
 				}
 			}
 		}
