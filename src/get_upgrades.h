@@ -18,6 +18,12 @@ void set_no_auto_upgrades(bool val) {
 
 void get_upgrades() {
 
+	for (auto&b : build::build_tasks) {
+		if (b.type->upgrade && !b.upgrade_done_frame) {
+			b.dead = true;
+		}
+	}
+
 	a_unordered_set<unit_type*> visited;
 	for (auto&upg : upgrades::upgrade_type_container) {
 		if (upg.gas_cost && current_gas_per_frame == 0) continue;
