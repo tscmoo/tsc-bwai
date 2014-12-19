@@ -40,7 +40,7 @@ struct strat_tvp {
 				if (e->type == unit_types::photon_cannon) ++enemy_cannon_count;
 			}
 			
-			if (my_tank_count >= 12) combat::no_aggressive_groups = false;
+			if (my_tank_count >= 12 || my_tank_count + my_goliath_count >= 20) combat::no_aggressive_groups = false;
 			if (enemy_cannon_count >= 3 && enemy_cannon_count >= my_tank_count) combat::no_aggressive_groups = false;
 			if (my_tank_count < 6 && my_tank_count <= (enemy_dragoon_count + enemy_zealot_count) / 2) combat::no_aggressive_groups = true;
 			if ((enemy_carrier_count >= 2 && enemy_scout_count >= 4) && my_goliath_count < 6) combat::no_aggressive_groups = true;
