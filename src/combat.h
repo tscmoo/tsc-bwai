@@ -1609,7 +1609,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 				if (siege_tank_count >= 4) a->siege_up_close = false;
 				if (a->u->type == unit_types::siege_tank_tank_mode) {
 					double add = target->stats->max_speed * 15;
-					if (target->burrowed) add = 0;
+					if (target->burrowed || target->type->is_non_usable) add = 0;
 					if (current_frame - a->u->last_attacked <= 15 * 4) a->siege_up_close = false;
 					if (a->siege_up_close) add = 0;
 					if (d <= 32 * 12 + add) {
@@ -1625,7 +1625,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 					}
 				} else {
 					double add = target->stats->max_speed * 15 * 6;
-					if (target->burrowed) add = 0;
+					if (target->burrowed || target->type->is_non_usable) add = 0;
 					if (a->siege_up_close && sieged_tank_count >= siege_tank_count / 2) add = 0;
 					if (d > 32 * 12 + add && (!target->visible || current_frame - target->last_shown >= current_frame * 2)) {
 						if (current_frame - a->u->last_attacked >= 15 * 4 && current_frame >= a->u->controller->noorder_until) {

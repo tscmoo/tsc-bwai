@@ -410,7 +410,7 @@ unit_type*new_unit_type(BWAPI::UnitType game_unit_type,unit_type*ut) {
 	ut->is_biological = game_unit_type.isOrganic();
 	ut->is_mechanical = game_unit_type.isMechanical();
 	ut->is_hovering = ut->is_worker || ut == unit_types::vulture || ut == unit_types::archon || ut == unit_types::dark_archon;
-	ut->is_non_usable = ut == unit_types::spider_mine || ut == unit_types::nuclear_missile;
+	ut->is_non_usable = ut == unit_types::spider_mine || ut == unit_types::nuclear_missile || ut == unit_types::larva;
 	ut->is_non_usable |= game_unit_type.maxHitPoints() <= 1;
 	ut->is_detector = game_unit_type.isDetector();
 	ut->is_liftable = game_unit_type.isFlyingBuilding();
