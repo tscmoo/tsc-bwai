@@ -361,8 +361,7 @@ void give_lifts(combat_unit*dropship, a_vector<combat_unit*>&allies, int process
 			}
 		}
 		if (!found) {
-			if (current_frame >= dropship->u->controller->noorder_until) {
-				dropship->u->game_unit->unload(u->game_unit);
+			if (dropship->u->game_unit->unload(u->game_unit)) {
 				dropship->u->controller->noorder_until = current_frame + 4;
 			}
 		}
@@ -1576,7 +1575,12 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 		weapon_stats*w = e->is_flying ? u->stats->air_weapon : u->stats->ground_weapon;
 		if (!w) return std::make_tuple(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
 		double d = units_distance(u, e);
-		if (!e->stats->ground_weapon && !e->stats->air_weapon && e->type != unit_types::bunker && e->type != unit_types::carrier && e->type != unit_types::overlord) return std::make_tuple(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), d);
+		bool is_weaponless_target = false;
+		is_weaponless_target |= e->type == unit_types::bunker;
+		is_weaponless_target |= e->type == unit_types::carrier;
+		is_weaponless_target |= e->type == unit_types::overlord;
+		is_weaponless_target |= e->type == unit_types::pylon;
+		if (!e->stats->ground_weapon && !e->stats->air_weapon && !is_weaponless_target) return std::make_tuple(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), d);
 		//if (!e->stats->ground_weapon && !e->stats->air_weapon && e->type != unit_types::bunker) return std::make_tuple(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), d);
 		//if (!e->stats->ground_weapon && !e->stats->air_weapon) return std::make_tuple(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), d);
 		weapon_stats*ew = a->u->is_flying ? e->stats->air_weapon : e->stats->ground_weapon;
@@ -1607,7 +1611,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 	if (a->u->type == unit_types::siege_tank_tank_mode || a->u->type == unit_types::siege_tank_siege_mode) {
 		if (players::my_player->has_upgrade(upgrade_types::siege_mode)) {
 			target = get_best_score(enemies, score);
-			if (target && current_frame - target->last_seen < 15 * 8) {
+			if (target && current_frame - target->last_seen < 15 * 8 && !target->is_flying) {
 				double d = units_distance(a->u, target);
 				int siege_tank_count = 0;
 				int sieged_tank_count = 0;
@@ -1622,13 +1626,11 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 					if (current_frame - a->u->last_attacked <= 15 * 4) a->siege_up_close = false;
 					if (a->siege_up_close) add = 0;
 					if (d <= 32 * 12 + add) {
-						if (current_frame >= a->u->controller->noorder_until) {
-							if (siege_tank_count < (int)enemies.size() || (target && target->building)) {
-								if (a->u->game_unit->siege()) {
-									a->u->controller->noorder_until = current_frame + 30;
-									a->u->controller->last_siege = current_frame;
-									a->siege_up_close = false;
-								}
+						if (siege_tank_count < (int)enemies.size() || (target && target->building)) {
+							if (a->u->game_unit->siege()) {
+								a->u->controller->noorder_until = current_frame + 30;
+								a->u->controller->last_siege = current_frame;
+								a->siege_up_close = false;
 							}
 						}
 					}
@@ -1637,7 +1639,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 					if (target->burrowed || target->type->is_non_usable) add = 0;
 					if (a->siege_up_close && sieged_tank_count >= siege_tank_count / 2) add = 0;
 					if (d > 32 * 12 + add && (!target->visible || current_frame - target->last_shown >= current_frame * 2)) {
-						if (current_frame - a->u->last_attacked >= 15 * 4 && current_frame >= a->u->controller->noorder_until) {
+						if (current_frame - a->u->last_attacked >= 15 * 4) {
 							if (a->u->game_unit->unsiege()) {
 								a->u->controller->noorder_until = current_frame + 30;
 							}
@@ -1648,6 +1650,14 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 						}
 						if (current_frame - a->u->controller->last_siege >= 15 * 10 && current_frame - a->u->last_attacked >= 15 * 4) {
 							a->siege_up_close = true;
+						}
+					}
+				}
+			} else {
+				if (a->u->type == unit_types::siege_tank_siege_mode) {
+					if (current_frame - a->u->last_attacked >= 15 * 4) {
+						if (a->u->game_unit->unsiege()) {
+							a->u->controller->noorder_until = current_frame + 30;
 						}
 					}
 				}
@@ -1694,8 +1704,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 
 	if (a->u->is_loaded && a->u->loaded_into->type == unit_types::bunker) {
 		if (units_distance(a->u->loaded_into, target) >= 32 * 6) {
-			if (current_frame >= a->u->controller->noorder_until) {
-				a->u->loaded_into->game_unit->unload(a->u->game_unit);
+			if (a->u->loaded_into->game_unit->unload(a->u->game_unit)) {
 				a->u->controller->noorder_until = current_frame + 4;
 			}
 		}
@@ -1758,6 +1767,8 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 			double d = units_distance(a->u, bunker);
 			if (units_distance(bunker, target) < 32 * 6 && d < units_distance(target, bunker)) {
 				space_left[bunker] -= a->u->type->space_required;
+				a->subaction = combat_unit::subaction_idle;
+				a->u->controller->action = unit_controller::action_idle;
 				if (current_frame >= a->u->controller->noorder_until) {
 					if (a->u->game_unit->rightClick(bunker->game_unit)) {
 						a->u->controller->noorder_until = current_frame + 30;
@@ -2236,10 +2247,8 @@ void do_defence(const a_vector<combat_unit*>&allies) {
 					a->siege_pos = a->u->pos;
 					a->subaction = combat_unit::subaction_idle;
 					if (diag_distance(a->u->pos - a->siege_pos) >= 16) {
-						if (current_frame >= a->u->controller->noorder_until) {
-							if (a->u->game_unit->unsiege()) {
-								a->u->controller->noorder_until = current_frame + 30;
-							}
+						if (a->u->game_unit->unsiege()) {
+							a->u->controller->noorder_until = current_frame + 30;
 						}
 					}
 				} else {
@@ -2249,11 +2258,9 @@ void do_defence(const a_vector<combat_unit*>&allies) {
 						a->target_pos = a->siege_pos;
 					} else {
 						if (players::my_player->has_upgrade(upgrade_types::siege_mode)) {
-							if (current_frame >= a->u->controller->noorder_until) {
-								if (a->u->game_unit->siege()) {
-									a->u->controller->noorder_until = current_frame + 30;
-									a->u->controller->last_siege = current_frame;
-								}
+							if (a->u->game_unit->siege()) {
+								a->u->controller->noorder_until = current_frame + 30;
+								a->u->controller->last_siege = current_frame;
 							}
 						}
 					}
