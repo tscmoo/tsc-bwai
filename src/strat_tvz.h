@@ -7,6 +7,7 @@ struct strat_tvz {
 		combat::no_aggressive_groups = true;
 
 		get_upgrades::set_upgrade_value(upgrade_types::terran_vehicle_weapons_1, 2000.0);
+		get_upgrades::no_auto_upgrades = true;
 
 		bool built_missile_turret = false;
 		while (true) {
@@ -37,13 +38,14 @@ struct strat_tvz {
 				if (e->type == unit_types::spire || e->type==unit_types::greater_spire) ++enemy_spire_count;
 			}
 
-			if (my_tank_count + my_goliath_count / 2 + my_marine_count / 4 >= 8) combat::no_aggressive_groups = false;
-			if (my_tank_count + my_goliath_count / 2 + my_marine_count / 4 < 4) combat::no_aggressive_groups = true;
+			if (my_tank_count + my_goliath_count / 2 + my_marine_count / 6 >= 12) combat::no_aggressive_groups = false;
+			if (my_tank_count + my_goliath_count / 2 + my_marine_count / 6 < 6) combat::no_aggressive_groups = true;
 			if (enemy_lurker_count >= my_tank_count && my_science_vessel_count == 0) combat::no_aggressive_groups = true;
 			if (enemy_lurker_count >= 4 && my_tank_count < 4) combat::no_aggressive_groups = true;
 
 			if (my_tank_count < 2 && enemy_mutalisk_count == 0 && enemy_spire_count == 0) {
-				if ((enemy_hydralisk_den_count != 0) != (enemy_lair_count != 0)) {
+				//if ((enemy_hydralisk_den_count != 0) != (enemy_lair_count != 0)) {
+				if (enemy_hydralisk_den_count == 0 || enemy_lair_count == 0) {
 					// TODO: instead of doing this, the wraith should be added as a scout with a mission to scout buildings,
 					//       or something like that
 					unit*scout_building = get_best_score(enemy_buildings, [&](unit*u) {
@@ -65,21 +67,30 @@ struct strat_tvz {
 				}
 			}
 
+			if (my_tank_count < 2 && enemy_hydralisk_den_count) {
+				combat::build_bunker_count = 2;
+			} else combat::build_bunker_count = 0;
+
 			bool lurkers_are_coming = my_tank_count <= 2 && enemy_mutalisk_count == 0 && (enemy_lurker_count || (enemy_hydralisk_den_count && enemy_lair_count));
 			if (lurkers_are_coming) {
 				log("lurkers are coming!\n");
+				scouting::comsat_supply = 70.0;
 				get_upgrades::set_no_auto_upgrades(true);
 				if (!my_units_of_type[unit_types::science_facility].empty()) get_upgrades::set_upgrade_value(upgrade_types::siege_mode, -1.0);
 			} else {
-				get_upgrades::set_no_auto_upgrades(false);
+				scouting::comsat_supply = 60.0;
+				if (my_tank_count >= 2) get_upgrades::set_no_auto_upgrades(false);
 				if (my_tank_count >= 1) get_upgrades::set_upgrade_value(upgrade_types::siege_mode, -1);
 			}
+
+			if (enemy_spire_count || enemy_mutalisk_count) scouting::comsat_supply = 80.0;
 
 			int desired_science_vessel_count = (enemy_lurker_count + 3) / 4;
 			if (desired_science_vessel_count == 0 && lurkers_are_coming) ++desired_science_vessel_count;
 			if (desired_science_vessel_count > 1 && my_tank_count + my_goliath_count < 4) desired_science_vessel_count = 1;
 			int desired_goliath_count = 2 + enemy_mutalisk_count / 2 + enemy_mutalisk_count / 3 + enemy_guardian_count * 2;
 			if (my_marine_count < 10 && my_goliath_count < 2 && my_tank_count < 3) desired_goliath_count = 0;
+			if (my_tank_count < 2 && enemy_mutalisk_count == 0 && enemy_spire_count == 0) desired_goliath_count = 0;
 			int desired_wraith_count = 1 + (my_tank_count + my_goliath_count) / 8;
 			if (my_tank_count >= 4 && enemy_mutalisk_count + enemy_hydralisk_count < 6) desired_wraith_count += 2;
 			if (my_goliath_count < 3 && my_valkyrie_count && enemy_mutalisk_count + enemy_spire_count) desired_wraith_count += 2;
@@ -97,11 +108,19 @@ struct strat_tvz {
 				desired_valkyrie_count = 0;
 				desired_medic_count = 0;
 			}
-
+			
 			auto build = [&](state&st) {
 				return nodelay(st, unit_types::scv, [&](state&st) {
 					std::function<bool(state&)> army = [&](state&st) {
-						if (lurkers_are_coming || my_tank_count < 1) {
+						if (my_tank_count >= 3 && st.gas >= 200) {
+							// This is temporary until I fix addon production
+							int machine_shops = 0;
+							for (auto&v : st.units[unit_types::factory]) {
+								if (v.has_addon) ++machine_shops;
+							}
+							if (machine_shops < 2) return depbuild(st, state(st), unit_types::machine_shop);
+						}
+						if (lurkers_are_coming || my_tank_count < 1 || (count_units_plus_production(st, unit_types::goliath) >= desired_goliath_count && st.gas >= 100)) {
 							return maxprod(st, unit_types::siege_tank_tank_mode, [&](state&st) {
 								return depbuild(st, state(st), unit_types::marine);
 							});
@@ -155,7 +174,7 @@ struct strat_tvz {
 // 								return nodelay(st, unit_types::missile_turret, army);
 // 							};
 // 						}
-					if (count_units_plus_production(st, unit_types::barracks) < 2) {
+					if (count_units_plus_production(st, unit_types::barracks) < 2 && !lurkers_are_coming) {
 						return nodelay(st, unit_types::barracks, army);
 					}
 
