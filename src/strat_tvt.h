@@ -66,7 +66,7 @@ struct strat_tvt {
 
 			auto build_vulture = [&](state&st) {
 				return nodelay(st, unit_types::scv, [&](state&st) {
-					auto backbone = [&](state&st) {
+					std::function<bool(state&)> army = [&](state&st) {
 						if (enemy_tank_count >= 8) {
 							return maxprod(st, unit_types::siege_tank_tank_mode, [&](state&st) {
 								return maxprod1(st, unit_types::vulture);
@@ -74,25 +74,35 @@ struct strat_tvt {
 						}
 						return maxprod1(st, unit_types::vulture);
 					};
-					int bc_count = count_units_plus_production(st, unit_types::battlecruiser);
-					if (bc_count < desired_bc_count) {
-						return maxprod(st, unit_types::battlecruiser, backbone);
-					}
-					int valkyrie_count = count_units_plus_production(st, unit_types::valkyrie);
-					if (valkyrie_count < desired_valkyrie_count) {
-						return maxprod(st, unit_types::valkyrie, backbone);
-					}
-					int science_vessel_count = count_units_plus_production(st, unit_types::science_vessel);
-					if (science_vessel_count < desired_science_vessel_count) {
-						return maxprod(st, unit_types::science_vessel, backbone);
-					}
 					int goliath_count = count_units_plus_production(st, unit_types::goliath);
 					if (goliath_count < desired_goliath_count) {
-						return maxprod(st, unit_types::goliath, backbone);
+						army = [army](state&st) {
+							return maxprod(st, unit_types::goliath, army);
+						};
 					}
 					int wraith_count = count_units_plus_production(st, unit_types::wraith);
 					if (wraith_count < desired_wraith_count) {
-						return maxprod(st, unit_types::wraith, backbone);
+						army = [army](state&st) {
+							return maxprod(st, unit_types::wraith, army);
+						};
+					}
+					int bc_count = count_units_plus_production(st, unit_types::battlecruiser);
+					if (bc_count < desired_bc_count) {
+						army = [army](state&st) {
+							return maxprod(st, unit_types::battlecruiser, army);
+						};
+					}
+					int valkyrie_count = count_units_plus_production(st, unit_types::valkyrie);
+					if (valkyrie_count < desired_valkyrie_count) {
+						army = [army](state&st) {
+							return maxprod(st, unit_types::valkyrie, army);
+						};
+					}
+					int science_vessel_count = count_units_plus_production(st, unit_types::science_vessel);
+					if (science_vessel_count < desired_science_vessel_count) {
+						army = [army](state&st) {
+							return maxprod(st, unit_types::science_vessel, army);
+						};
 					}
 // 					int droppable_units = count_units_plus_production(st, unit_types::goliath) + count_units_plus_production(st, unit_types::vulture);
 // 					if (count_units_plus_production(st, unit_types::dropship) < droppable_units / 12) {
@@ -101,7 +111,9 @@ struct strat_tvt {
 					int tank_count = count_units_plus_production(st, unit_types::siege_tank_tank_mode);
 					tank_count += count_units_plus_production(st, unit_types::siege_tank_siege_mode);
 					if (tank_count < desired_tank_count) {
-						return maxprod(st, unit_types::siege_tank_tank_mode, backbone);
+						army = [army](state&st) {
+							return maxprod(st, unit_types::siege_tank_tank_mode, army);
+						};
 					}
 					int vulture_count = count_units_plus_production(st, unit_types::vulture);
 					if (vulture_count >= 15) {
@@ -109,23 +121,23 @@ struct strat_tvt {
 						int nuclear_missile_count = count_units_plus_production(st, unit_types::nuclear_missile);
 						if (ghost_count >= 2) {
 							int nuclear_silo_count = count_units_plus_production(st, unit_types::nuclear_silo);
-							if (nuclear_silo_count == nuclear_missile_count) return nodelay(st, unit_types::nuclear_silo, backbone);
-							if (nuclear_missile_count < 2) return nodelay(st, unit_types::nuclear_missile, backbone);
+							if (nuclear_silo_count == nuclear_missile_count) return nodelay(st, unit_types::nuclear_silo, army);
+							if (nuclear_missile_count < 2) return nodelay(st, unit_types::nuclear_missile, army);
 						}
 						if (ghost_count < vulture_count / 7) {
-							return maxprod(st, unit_types::ghost, backbone);
+							return maxprod(st, unit_types::ghost, army);
 						}
 						if (wraith_count < vulture_count / 6) {
-							return maxprod(st, unit_types::wraith, backbone);
+							return maxprod(st, unit_types::wraith, army);
 						}
 						if (goliath_count < vulture_count / 9) {
-							return maxprod(st, unit_types::goliath, backbone);
+							return maxprod(st, unit_types::goliath, army);
 						}
 						if (science_vessel_count < vulture_count / 6) {
-							return maxprod(st, unit_types::science_vessel, backbone);
+							return maxprod(st, unit_types::science_vessel, army);
 						}
 					}
-					return backbone(st);
+					return army(st);
 				});
 			};
 
