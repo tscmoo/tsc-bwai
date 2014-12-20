@@ -2766,9 +2766,9 @@ void fight() {
 						}
 						if (run) {
 							if (my_siege_tank_count >= 1 && players::my_player->has_upgrade(upgrade_types::siege_mode)) {
-								bool okay = false;
+								bool okay = true;
 								if (a->u->type == unit_types::siege_tank_tank_mode || a->u->type == unit_types::siege_tank_siege_mode) okay = true;
-								okay &= my_sieged_tank_count >= op_sieged_tank_count && op_sieged_tank_count < 4;
+								//okay &= my_sieged_tank_count >= op_sieged_tank_count && op_sieged_tank_count < 4;
 								okay &= op_ground_units > op_air_units;
 								if (!a->u->is_flying && okay) {
 									double r = get_best_score_value(nearby_allies, [&](unit*u) {
