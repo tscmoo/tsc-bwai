@@ -60,7 +60,7 @@ struct strat_tvt {
 			int desired_science_vessel_count = my_tank_count / 4;
 			if (enemy_wraith_count >= 6 && desired_science_vessel_count<1) desired_science_vessel_count = 1;
 
-			if (my_tank_count >= 12 || my_tank_count > enemy_tank_count || my_goliath_count >= 8) combat::no_aggressive_groups = false;
+			if (my_tank_count >= 12 || my_tank_count > enemy_tank_count + 4 || my_goliath_count >= 8) combat::no_aggressive_groups = false;
 			if (my_tank_count + my_goliath_count < 6 && my_tank_count <= enemy_tank_count / 2) combat::no_aggressive_groups = true;
 			if (my_vulture_count >= 50 || current_minerals >= 8000) combat::no_aggressive_groups = false;
 
@@ -116,6 +116,7 @@ struct strat_tvt {
 						};
 					}
 					int vulture_count = count_units_plus_production(st, unit_types::vulture);
+					if (vulture_count < 4) return maxprod1(st, unit_types::vulture);
 					if (vulture_count >= 15) {
 						int ghost_count = count_units_plus_production(st, unit_types::ghost);
 						int nuclear_missile_count = count_units_plus_production(st, unit_types::nuclear_missile);
