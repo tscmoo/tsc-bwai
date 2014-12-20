@@ -24,6 +24,7 @@ struct unit_controller {
 	int move_away_until = 0;
 	int at_go_to_counter = 0;
 	int last_siege = 0;
+	int last_return_cargo = 0;
 };
 
 namespace unit_controls {
@@ -206,8 +207,10 @@ void process(a_vector<unit_controller*>&controllers) {
 		if (c->action==unit_controller::action_gather) {
 
 			auto o = u->game_order;
+			if (o == BWAPI::Orders::MiningMinerals || o == BWAPI::Orders::HarvestGas) c->last_return_cargo = current_frame;
 			if (u->game_unit->isCarryingMinerals() || u->game_unit->isCarryingGas()) {
-				if (o!=BWAPI::Orders::ReturnMinerals && o!=BWAPI::Orders::ReturnGas) {
+				if ((o != BWAPI::Orders::ReturnMinerals && o != BWAPI::Orders::ReturnGas) || current_frame - c->last_return_cargo >= 15 * 8) {
+					c->last_return_cargo = current_frame;
 					u->game_unit->returnCargo();
 					c->noorder_until = current_frame + 8;
 				}
