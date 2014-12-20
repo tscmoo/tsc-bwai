@@ -1979,6 +1979,14 @@ void do_run(combat_unit*a, const a_vector<unit*>&enemies) {
 		}
 	}
 
+	if (a->u->type->is_worker) {
+		a->subaction = combat_unit::subaction_idle;
+		if (a->u->controller->action != unit_controller::action_gather && a->u->controller->action != unit_controller::action_build) {
+			a->u->controller->action = unit_controller::action_idle;
+		}
+		return;
+	}
+
 	unit*u = a->u;
 	
 	a_deque<xy> path = find_path(u->type, u->pos, [&](xy pos, xy npos) {
