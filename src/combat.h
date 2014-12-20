@@ -2868,16 +2868,12 @@ void combat_task() {
 
 }
 
-#include "combat_tactics.h"
-
 void update_combat_groups_task() {
 	while (true) {
 
 		multitasking::sleep(10);
 
 		update_groups();
-
-		combat_tactics::on_groups_updated();
 
 	}
 }
@@ -2903,16 +2899,6 @@ void update_defence_choke_task() {
 				}
 			}
 		}
-
-	}
-}
-
-void combat_tactics_task() {
-	while (true) {
-
-		multitasking::sleep(1);
-
-		combat_tactics::run();
 
 	}
 }
@@ -3029,12 +3015,10 @@ void init() {
 	multitasking::spawn(generate_defence_spots_task, "generate defence spots");
 	multitasking::spawn(combat_task, "combat");
 	multitasking::spawn(update_combat_groups_task, "update combat groups");
-	multitasking::spawn(combat_tactics_task, "combat tactics");
 	multitasking::spawn(update_defence_choke_task, "update defence choke spot");
 
 	render::add(render);
 
-	combat_tactics::init();
 }
 
 }
