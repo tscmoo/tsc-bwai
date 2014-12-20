@@ -15,6 +15,7 @@ struct strat_tvz_opening {
 		bool has_wall = false;
 		bool has_zergling_tight_wall = false;
 		bool being_zergling_rushed = false;
+		bool has_built_bunker = false;
 		while (true) {
 
 			int my_marine_count = my_units_of_type[unit_types::marine].size();
@@ -29,7 +30,8 @@ struct strat_tvz_opening {
 						log("waa being zergling rushed!\n");
 						being_zergling_rushed = true;
 					}
-					if (being_zergling_rushed && my_marine_count < 5) {
+					bool initial_marine = !st.units[unit_types::barracks].empty() && count_units_plus_production(st, unit_types::marine) == 0;
+					if ((being_zergling_rushed && my_marine_count < 5) || initial_marine) {
 						return nodelay(st, unit_types::marine, [&](state&st) {
 							return nodelay(st, unit_types::scv, [&](state&st) {
 								return depbuild(st, state(st), unit_types::vulture);
@@ -93,6 +95,8 @@ struct strat_tvz_opening {
 			if (!has_zergling_tight_wall && !my_units_of_type[unit_types::barracks].empty()) {
 				combat::build_bunker_count = 1;
 			}
+			if (!my_units_of_type[unit_types::bunker].empty()) has_built_bunker = true;
+			if (has_built_bunker) combat::build_bunker_count = 0;
 			if (my_st.bases.size() == 1 && current_used_total_supply >= 18 && vulture_count >= 2 && wraith_count >= 1) {
 				if (siege_tank_count >= 2) {
 					expand = true;
