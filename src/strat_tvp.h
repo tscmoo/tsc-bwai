@@ -18,6 +18,7 @@ struct strat_tvp {
 
 			int my_tank_count = my_units_of_type[unit_types::siege_tank_tank_mode].size() + my_units_of_type[unit_types::siege_tank_siege_mode].size();
 			int my_goliath_count = my_units_of_type[unit_types::goliath].size();
+			int my_vulture_count = my_units_of_type[unit_types::vulture].size();
 
 			int enemy_zealot_count = 0;
 			int enemy_dragoon_count = 0;
@@ -85,7 +86,7 @@ struct strat_tvp {
 				});
 			};
 
-			auto is_long_distance_mining = [&]() {
+			auto long_distance_miners = [&]() {
 				int count = 0;
 				for (auto&g : resource_gathering::live_gatherers) {
 					if (!g.resource) continue;
@@ -103,11 +104,12 @@ struct strat_tvp {
 					}
 					if (rs) ++count;
 				}
-				return count >= 8;
+				return count;
 			};
 			auto can_expand = [&]() {
-				if (buildpred::get_my_current_state().bases.size() == 2 && (my_tank_count < 12 && my_goliath_count < 8)) return false;
-				return is_long_distance_mining();
+				if (long_distance_miners() >= 20) return true;
+				if (buildpred::get_my_current_state().bases.size() == 2 && (my_tank_count < 12 && my_goliath_count < 8 && my_vulture_count < 30)) return false;
+				return long_distance_miners() >= 8;
 			};
 
 			execute_build(can_expand(), build);
