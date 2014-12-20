@@ -628,6 +628,7 @@ static const auto nodelay_n = [](state&st, unit_type*ut, int n, const std::funct
 		return nodelay_stage2(st, std::move(imm_st), ut, n, func);
 	} else {
 		st = std::move(prev_st);
+		if (ut->required_supply && st.used_supply[ut->race] + ut->required_supply > 200) return false;
 		return func(st);
 	}
 };
@@ -672,7 +673,7 @@ static const auto maxprod = [](state&st, unit_type*ut, const std::function<bool(
 	} else {
 		st = std::move(prev_st);
 		if (t != failed) return nodelay(st, ut, func);
-		if (ut->required_supply && st.used_supply[ut->race] + ut->required_supply > 200) return nodelay(st, ut, func);
+		if (ut->required_supply && st.used_supply[ut->race] + ut->required_supply > 200) return false;
 		return nodelay(st, bt, func);
 	}
 };
@@ -705,7 +706,7 @@ static const auto maxprod1 = [](state&st, unit_type*ut) {
 	else {
 		st = std::move(prev_st);
 		if (t != failed) return depbuild(st, state(st), ut);
-		if (ut->required_supply && st.used_supply[ut->race] + ut->required_supply > 200) return depbuild(st, state(st), ut);
+		if (ut->required_supply && st.used_supply[ut->race] + ut->required_supply > 200) return false;
 		return depbuild(st, state(st), bt);
 	}
 };
