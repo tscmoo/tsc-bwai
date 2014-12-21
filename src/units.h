@@ -198,7 +198,7 @@ namespace unit_types {
 	typedef unit_type*unit_type_pointer;
 	unit_type_pointer unknown;
 	unit_type_pointer cc, supply_depot, barracks, factory, science_facility, nuclear_silo, bunker, refinery, machine_shop;
-	unit_type_pointer missile_turret, academy, comsat_station, starport, control_tower, engineering_bay;
+	unit_type_pointer missile_turret, academy, comsat_station, starport, control_tower, engineering_bay, armory;
 	unit_type_pointer spell_scanner_sweep;
 	unit_type_pointer scv, marine, vulture, siege_tank_tank_mode, siege_tank_siege_mode, goliath;
 	unit_type_pointer medic, ghost;
@@ -238,6 +238,7 @@ namespace unit_types {
 		get(starport, BWAPI::UnitTypes::Terran_Starport);
 		get(control_tower, BWAPI::UnitTypes::Terran_Control_Tower);
 		get(engineering_bay, BWAPI::UnitTypes::Terran_Engineering_Bay);
+		get(armory, BWAPI::UnitTypes::Terran_Armory);
 
 		get(scv, BWAPI::UnitTypes::Terran_SCV);
 		get(marine, BWAPI::UnitTypes::Terran_Marine);
