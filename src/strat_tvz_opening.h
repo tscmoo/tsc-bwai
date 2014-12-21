@@ -61,11 +61,16 @@ struct strat_tvz_opening {
 							return depbuild(st, state(st), unit_types::marine);
 						});
 					}
-					if (!my_units_of_type[unit_types::factory].empty() && marine_count < 3) {
+					if (count_units_plus_production(st, unit_types::factory) && marine_count < 3) {
 						return nodelay(st, unit_types::marine, backbone);
 					}
-					if (!my_units_of_type[unit_types::starport].empty() && count_units_plus_production(st, unit_types::wraith) == 0) {
-						return nodelay(st, unit_types::wraith, backbone);
+					if (count_units_plus_production(st, unit_types::starport)) {
+						if (count_units_plus_production(st, unit_types::wraith) == 0) {
+							return nodelay(st, unit_types::wraith, backbone);
+						}
+						if (count_units_plus_production(st, unit_types::armory) == 0) {
+							return nodelay(st, unit_types::armory, backbone);
+						}
 					}
 					return backbone(st);
 				});
