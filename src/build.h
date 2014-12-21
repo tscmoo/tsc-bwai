@@ -844,7 +844,7 @@ void execute_build(build_task&b) {
 		if (current_frame - building->building_addon_frame <= 15) wait = true;
 		if (building->is_lifted) {
 			wait = true;
-			if (current_frame - building->building_addon_frame >= 30) {
+			if (current_frame - building->building_addon_frame >= 30 && !building->is_liftable_wall) {
 				auto pred = [&](grid::build_square&bs) {
 					return build_full_check(bs, builder->type);
 				};
