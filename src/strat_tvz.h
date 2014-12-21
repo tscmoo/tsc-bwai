@@ -9,7 +9,7 @@ struct strat_tvz {
 		get_upgrades::set_upgrade_value(upgrade_types::terran_vehicle_weapons_1, 2000.0);
 		get_upgrades::no_auto_upgrades = true;
 
-		bool built_missile_turret = false;
+		bool maxed_out_aggression = false;
 		while (true) {
 
 			using namespace buildpred;
@@ -43,6 +43,12 @@ struct strat_tvz {
 			if (my_tank_count + my_goliath_count / 2 + my_marine_count / 6 < 6) combat::no_aggressive_groups = true;
 			if (enemy_lurker_count >= my_tank_count && my_science_vessel_count == 0) combat::no_aggressive_groups = true;
 			if (enemy_lurker_count >= 4 && my_tank_count < 4) combat::no_aggressive_groups = true;
+
+			if (current_used_total_supply >= 190.0) maxed_out_aggression = true;
+			if (maxed_out_aggression) {
+				combat::no_aggressive_groups = false;
+				if (current_used_total_supply < 100.0) maxed_out_aggression = false;
+			}
 
 			if (my_tank_count < 2 && enemy_mutalisk_count == 0 && enemy_spire_count == 0) {
 				//if ((enemy_hydralisk_den_count != 0) != (enemy_lair_count != 0)) {

@@ -13,6 +13,7 @@ struct strat_tvt {
 
 		//combat::no_aggressive_groups = false;
 		combat::no_aggressive_groups = true;
+		bool maxed_out_aggression = false;
 
 		while (true) {
 
@@ -63,6 +64,12 @@ struct strat_tvt {
 			if (my_tank_count >= 12 || my_tank_count > enemy_tank_count + 4 || my_goliath_count >= 8) combat::no_aggressive_groups = false;
 			if (my_tank_count + my_goliath_count < 6 && my_tank_count <= enemy_tank_count / 2) combat::no_aggressive_groups = true;
 			if (my_vulture_count >= 50 || current_minerals >= 8000) combat::no_aggressive_groups = false;
+
+			if (current_used_total_supply >= 190.0) maxed_out_aggression = true;
+			if (maxed_out_aggression) {
+				combat::no_aggressive_groups = false;
+				if (current_used_total_supply < 100.0) maxed_out_aggression = false;
+			}
 
 			auto build_vulture = [&](state&st) {
 				return nodelay(st, unit_types::scv, [&](state&st) {
