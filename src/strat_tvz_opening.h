@@ -7,6 +7,7 @@ struct strat_tvz_opening {
 
 		combat::no_aggressive_groups = true;
 		combat::aggressive_wraiths = true;
+		get_upgrades::no_auto_upgrades = true;
 
 		using namespace buildpred;
 
