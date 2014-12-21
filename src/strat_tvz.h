@@ -68,7 +68,7 @@ struct strat_tvz {
 				}
 			}
 
-			bool lurkers_are_coming = my_tank_count <= 2 && enemy_mutalisk_count == 0 && (enemy_lurker_count || (enemy_hydralisk_den_count && enemy_lair_count));
+			bool lurkers_are_coming = my_tank_count <= 4 && enemy_mutalisk_count == 0 && (enemy_lurker_count || (enemy_hydralisk_den_count && enemy_lair_count));
 			if (lurkers_are_coming) {
 				log("lurkers are coming!\n");
 				scouting::comsat_supply = 70.0;
@@ -82,14 +82,14 @@ struct strat_tvz {
 
 			if ((my_tank_count < 2 && enemy_hydralisk_den_count) || (my_goliath_count < 4 && enemy_spire_count)) {
 				get_upgrades::set_no_auto_upgrades(true);
-				combat::build_bunker_count = 2;
+				combat::build_bunker_count = get_my_current_state().bases.size();
 			} else combat::build_bunker_count = 0;
 
 			if (enemy_spire_count || enemy_mutalisk_count) scouting::comsat_supply = 80.0;
 
-			int desired_science_vessel_count = (enemy_lurker_count + 3) / 4;
+			int desired_science_vessel_count = (enemy_lurker_count + 5) / 6;
 			if (desired_science_vessel_count == 0 && lurkers_are_coming) ++desired_science_vessel_count;
-			if (desired_science_vessel_count > 1 && my_tank_count + my_goliath_count < 4) desired_science_vessel_count = 1;
+			if (desired_science_vessel_count > 1 && my_tank_count + my_goliath_count < 8) desired_science_vessel_count = 1;
 			int desired_goliath_count = 2 + enemy_mutalisk_count / 2 + enemy_mutalisk_count / 3 + enemy_guardian_count * 2;
 			if (enemy_spire_count + enemy_mutalisk_count) desired_goliath_count += 2;
 			if (my_tank_count < 2 && enemy_mutalisk_count == 0 && enemy_spire_count == 0) desired_goliath_count = 0;
@@ -113,7 +113,7 @@ struct strat_tvz {
 			auto build = [&](state&st) {
 				return nodelay(st, unit_types::scv, [&](state&st) {
 					std::function<bool(state&)> army = [&](state&st) {
-						if ((my_tank_count >= 3 && st.gas >= 200) || lurkers_are_coming) {
+						if (my_tank_count >= 3 && st.gas >= 200) {
 							// This is temporary until I fix addon production
 							int machine_shops = 0;
 							for (auto&v : st.units[unit_types::factory]) {
@@ -121,7 +121,12 @@ struct strat_tvz {
 							}
 							if (machine_shops < 2) return depbuild(st, state(st), unit_types::machine_shop);
 						}
-						if (lurkers_are_coming || my_tank_count < 1 || (count_units_plus_production(st, unit_types::goliath) >= desired_goliath_count && st.gas >= 100)) {
+						if (lurkers_are_coming) {
+							return nodelay(st, unit_types::siege_tank_tank_mode, [&](state&st) {
+								return depbuild(st, state(st), unit_types::marine);
+							});
+						}
+						if (my_tank_count < 1 || (count_units_plus_production(st, unit_types::goliath) >= desired_goliath_count && st.gas >= 100)) {
 							return maxprod(st, unit_types::siege_tank_tank_mode, [&](state&st) {
 								return depbuild(st, state(st), unit_types::marine);
 							});
@@ -197,6 +202,8 @@ struct strat_tvz {
 				return count;
 			};
 			auto can_expand = [&]() {
+				if (lurkers_are_coming) return false;
+				if (buildpred::get_my_current_state().bases.size() == 1 && my_tank_count >= 5) return true;
 				if (long_distance_miners() >= 20) return true;
 				if (buildpred::get_my_current_state().bases.size() == 2 && combat::no_aggressive_groups) return false;
 				return long_distance_miners() >= 8;
