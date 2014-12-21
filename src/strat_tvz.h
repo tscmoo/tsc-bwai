@@ -37,6 +37,7 @@ struct strat_tvz {
 				if (e->type == unit_types::lair) ++enemy_lair_count;
 				if (e->type == unit_types::spire || e->type==unit_types::greater_spire) ++enemy_spire_count;
 			}
+			if (enemy_hydralisk_count && !enemy_hydralisk_den_count) ++enemy_hydralisk_den_count;
 
 			if (my_tank_count + my_goliath_count / 2 + my_marine_count / 6 >= 12) combat::no_aggressive_groups = false;
 			if (my_tank_count + my_goliath_count / 2 + my_marine_count / 6 < 6) combat::no_aggressive_groups = true;
@@ -112,7 +113,7 @@ struct strat_tvz {
 			auto build = [&](state&st) {
 				return nodelay(st, unit_types::scv, [&](state&st) {
 					std::function<bool(state&)> army = [&](state&st) {
-						if (my_tank_count >= 3 && st.gas >= 200) {
+						if ((my_tank_count >= 3 && st.gas >= 200) || lurkers_are_coming) {
 							// This is temporary until I fix addon production
 							int machine_shops = 0;
 							for (auto&v : st.units[unit_types::factory]) {
