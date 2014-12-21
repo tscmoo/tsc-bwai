@@ -102,24 +102,8 @@ struct strat_tvz_opening {
 			}
 			if (!my_units_of_type[unit_types::bunker].empty()) has_built_bunker = true;
 			if (has_built_bunker) combat::build_bunker_count = 0;
-			if (my_st.bases.size() == 1 && current_used_total_supply >= 18 && vulture_count >= 2 && wraith_count >= 1) {
-				if (siege_tank_count >= 2) {
-					expand = true;
-				}
-				for (unit*u : enemy_units) {
-					if (!u->type->is_resource_depot) continue;
-					bool is_expo = true;
-					for (xy p : start_locations) {
-						if (u->building->build_pos == p) {
-							is_expo = false;
-							break;
-						}
-					}
-					if (is_expo) expand = true;
-				}
-			}
-			if (!my_completed_units_of_type[unit_types::wraith].empty() && !expand) break;
-			execute_build(expand, build);
+			if (!my_completed_units_of_type[unit_types::wraith].empty()) break;
+			execute_build(false, build);
 
 			if (combat::defence_choke.center != xy()) {
 				if (wall_calculated < 2) {
