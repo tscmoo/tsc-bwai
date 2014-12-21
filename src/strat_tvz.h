@@ -67,10 +67,6 @@ struct strat_tvz {
 				}
 			}
 
-			if ((my_tank_count < 2 && enemy_hydralisk_den_count) || (my_goliath_count<4 && enemy_spire_count)) {
-				combat::build_bunker_count = 2;
-			} else combat::build_bunker_count = 0;
-
 			bool lurkers_are_coming = my_tank_count <= 2 && enemy_mutalisk_count == 0 && (enemy_lurker_count || (enemy_hydralisk_den_count && enemy_lair_count));
 			if (lurkers_are_coming) {
 				log("lurkers are coming!\n");
@@ -83,17 +79,21 @@ struct strat_tvz {
 				if (my_tank_count >= 1) get_upgrades::set_upgrade_value(upgrade_types::siege_mode, -1);
 			}
 
+			if ((my_tank_count < 2 && enemy_hydralisk_den_count) || (my_goliath_count < 4 && enemy_spire_count)) {
+				get_upgrades::set_no_auto_upgrades(true);
+				combat::build_bunker_count = 2;
+			} else combat::build_bunker_count = 0;
+
 			if (enemy_spire_count || enemy_mutalisk_count) scouting::comsat_supply = 80.0;
 
 			int desired_science_vessel_count = (enemy_lurker_count + 3) / 4;
 			if (desired_science_vessel_count == 0 && lurkers_are_coming) ++desired_science_vessel_count;
 			if (desired_science_vessel_count > 1 && my_tank_count + my_goliath_count < 4) desired_science_vessel_count = 1;
 			int desired_goliath_count = 2 + enemy_mutalisk_count / 2 + enemy_mutalisk_count / 3 + enemy_guardian_count * 2;
-			if (my_marine_count < 10 && my_goliath_count < 2 && my_tank_count < 3) desired_goliath_count = 0;
+			if (enemy_spire_count + enemy_mutalisk_count) desired_goliath_count += 2;
 			if (my_tank_count < 2 && enemy_mutalisk_count == 0 && enemy_spire_count == 0) desired_goliath_count = 0;
 			int desired_wraith_count = 1 + (my_tank_count + my_goliath_count) / 8;
 			if (my_tank_count >= 4 && enemy_mutalisk_count + enemy_hydralisk_count < 6) desired_wraith_count += 2;
-			if (my_goliath_count < 3 && my_valkyrie_count && enemy_mutalisk_count + enemy_spire_count) desired_wraith_count += 2;
 			int desired_valkyrie_count = std::min(enemy_mutalisk_count / 4, 4);
 			if ((enemy_spire_count || enemy_mutalisk_count) && my_goliath_count + my_wraith_count >= 3) desired_valkyrie_count += 2;
 			if (my_tank_count >= 12) desired_valkyrie_count += 3;
@@ -136,13 +136,11 @@ struct strat_tvz {
 							});
 						});
 					};
-					if (my_tank_count >= 1) {
-						int goliath_count = count_units_plus_production(st, unit_types::goliath);
-						if (goliath_count < desired_goliath_count) {
-							army = [army](state&st) {
-								return maxprod(st, unit_types::goliath, army);
-							};
-						}
+					int valkyrie_count = count_units_plus_production(st, unit_types::valkyrie);
+					if (valkyrie_count < desired_valkyrie_count) {
+						army = [army](state&st) {
+							return nodelay(st, unit_types::valkyrie, army);
+						};
 					}
 					int wraith_count = count_units_plus_production(st, unit_types::wraith);
 					if (wraith_count < desired_wraith_count) {
@@ -150,10 +148,10 @@ struct strat_tvz {
 							return nodelay(st, unit_types::wraith, army);
 						};
 					}
-					int valkyrie_count = count_units_plus_production(st, unit_types::valkyrie);
-					if (valkyrie_count < desired_valkyrie_count) {
+					int goliath_count = count_units_plus_production(st, unit_types::goliath);
+					if (goliath_count < desired_goliath_count) {
 						army = [army](state&st) {
-							return nodelay(st, unit_types::valkyrie, army);
+							return maxprod(st, unit_types::goliath, army);
 						};
 					}
 					int science_vessel_count = count_units_plus_production(st, unit_types::science_vessel);
@@ -168,13 +166,8 @@ struct strat_tvz {
 							return nodelay(st, unit_types::medic, army);
 						};
 					}
-// 						if (count_units_plus_production(st, unit_types::missile_turret)) built_missile_turret = true;
-// 						if (lurkers_are_coming && count_units_plus_production(st, unit_types::missile_turret) == 0 && !built_missile_turret) {
-// 							army = [army](state&st) {
-// 								return nodelay(st, unit_types::missile_turret, army);
-// 							};
-// 						}
-					if (count_units_plus_production(st, unit_types::barracks) < 2 && !lurkers_are_coming) {
+
+					if (count_units_plus_production(st, unit_types::barracks) < 2 && current_used_total_supply >= 70) {
 						return nodelay(st, unit_types::barracks, army);
 					}
 
@@ -182,7 +175,7 @@ struct strat_tvz {
 				});
 			};
 
-			auto is_long_distance_mining = [&]() {
+			auto long_distance_miners = [&]() {
 				int count = 0;
 				for (auto&g : resource_gathering::live_gatherers) {
 					if (!g.resource) continue;
@@ -200,11 +193,12 @@ struct strat_tvz {
 					}
 					if (rs) ++count;
 				}
-				return count >= 8;
+				return count;
 			};
 			auto can_expand = [&]() {
+				if (long_distance_miners() >= 20) return true;
 				if (buildpred::get_my_current_state().bases.size() == 2 && combat::no_aggressive_groups) return false;
-				return is_long_distance_mining();
+				return long_distance_miners() >= 8;
 			};
 
 			execute_build(can_expand(), build);
