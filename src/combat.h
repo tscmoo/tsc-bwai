@@ -676,7 +676,8 @@ void update_groups() {
 
 	a_unordered_map<combat_unit*, a_unordered_set<group_t*>> can_reach_group;
 	for (auto*c : available_units) {
-		//if (c->u->is_flying || c->u->is_loaded) continue;
+		auto&c_can_reach = can_reach_group[c];
+		int reachable_non_defensive_groups = 0;
 		for (auto&g : new_groups) {
 			bool okay = true;
 			size_t count = 0;
@@ -723,11 +724,16 @@ void update_groups() {
 				if (d > 32 * 20) {
 					okay = true;
 				}
-			}
+			} else if (okay) ++reachable_non_defensive_groups;
 			//if (okay) log("%s can reach %d\n", c->u->type->name, g.idx);
 			//else log("%s can not reach %d\n", c->u->type->name, g.idx);
-			if (okay) can_reach_group[c].insert(&g);
+			if (okay) c_can_reach.insert(&g);
 			multitasking::yield_point();
+		}
+		if (reachable_non_defensive_groups == 0) {
+			for (auto&g : new_groups) {
+				c_can_reach.insert(&g);
+			}
 		}
 	}
 
