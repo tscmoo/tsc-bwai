@@ -261,26 +261,9 @@ void update_combat_units() {
 	for (unit*u : my_units) {
 		if (u->building) continue;
 		if (!u->is_completed) continue;
-// 		if (u->type->is_worker && !u->force_combat_unit) {
-// 			if (u->controller->action == unit_controller::action_build) continue;
-// 			if (u->controller->action == unit_controller::action_scout) continue;
-// 		}
 		if (u->controller->action == unit_controller::action_build) continue;
 		if (u->controller->action == unit_controller::action_scout) continue;
 		if (u->type->is_non_usable) continue;
-		//if (worker_count > 1 && u->type->is_worker && !u->force_combat_unit) continue;
-		if (u->type->is_worker) ++worker_count;
-		bool skip = false;
-		if (u->type->is_worker && worker_count > std::min((size_t)6, my_workers.size() - 2)) skip = true;
-		if (u->type->is_worker && current_used_total_supply >= 70) skip = true;
-		if (skip) {
-			bool dont_reset = false;
-			dont_reset |= u->controller->action == unit_controller::action_idle;
-			dont_reset |= u->controller->action == unit_controller::action_gather;
-			dont_reset |= u->controller->action == unit_controller::action_build;
-			if (!dont_reset) u->controller->action = unit_controller::action_idle;
-			continue;
-		}
 		combat_unit&c = combat_unit_map[u];
 		if (!c.u) c.u = u;
 		live_combat_units.push_back(&c);
@@ -732,14 +715,6 @@ void update_groups() {
 
 	for (auto i = available_units.begin(); i != available_units.end();) {
 		auto*cu = *i;
-// 		if (cu->u->type->is_worker) {
-// 			++i;
-// 			continue;
-// 		}
-		if (!cu->u->type->is_worker) {
-			++i;
-			continue;
-		}
 		size_t index = grid::build_square_index(cu->u->pos);
 		group_t*inside_group = nullptr;
 		for (auto&g : new_groups) {
@@ -765,55 +740,11 @@ void update_groups() {
 					++i;
 					continue;
 				}
-				int worker_count = 0;
-				for (auto*a : inside_group->allies) {
-					if (a->u->type->is_worker) ++worker_count;
-				}
-				if (worker_count >= 6) {
-					++i;
-					continue;
-				}
 			}
 			inside_group->allies.push_back(cu);
 			i = available_units.erase(i);
 		} else ++i;
 	}
-// 	for (auto&g : new_groups) {
-// 		combat_eval::eval eval;
-// 		auto addu = [&](unit*u, int team) {
-// 			auto&c = eval.add_unit(u, team);
-// 		};
-// 		for (auto*a : g.allies) addu(a->u, 0);
-// 		for (unit*e : g.enemies) addu(e, 1);
-// 		eval.run();
-// 		bool won = eval.teams[0].end_supply > eval.teams[1].end_supply;
-// 		if (!won) {
-// 			for (auto i = g.allies.begin(); i != g.allies.end();) {
-// 				auto*c = *i;
-// 				if (c->u->type->is_worker) {
-// 					i = g.allies.erase(i);
-// 					available_units.insert(c);
-// 				} else ++i;
-// 			}
-// 		}
-// 	}
-
-// 	size_t avail_workers = 0;
-// 	for (auto i = available_units.begin(); i != available_units.end();) {
-// 		auto*c = *i;
-// 		if (c->u->type->is_worker) {
-// 			if (++avail_workers >= (my_workers.size() + 9) / 10) {
-// 				if (c->action != combat_unit::action_idle || c->subaction != combat_unit::subaction_idle) {
-// 					c->action = combat_unit::action_idle;
-// 					c->subaction = combat_unit::subaction_idle;
-// 					c->u->controller->action = unit_controller::action_idle;
-// 				}
-// 				i = available_units.erase(i);
-// 				continue;
-// 			}
-// 		}
-// 		++i;
-// 	}
 
 	for (auto&g : new_groups) {
 		bool is_attacking = false;
@@ -847,17 +778,7 @@ void update_groups() {
 				auto score = std::make_tuple(is_combat_unit, done, val);
 				return score;
 			};
-// 			for (auto*c : available_units) {
-// 				if (!c->u->stats->ground_weapon && !c->u->stats->air_weapon) continue;
-// 				if (!c->u->is_loaded && !square_pathing::unit_can_reach(c->u, c->u->pos, g.enemies.front()->pos)) continue;
-// 				size_t index = grid::build_square_index(c->u->pos);
-// 				if (g.threat_area.test(index) && !entire_threat_area.test(index)) continue;
-// 				auto score = get_score_for(c);
-// 				if (!best_unit || score > best_score) {
-// 					best_score = score;
-// 					best_unit = c;
-// 				}
-// 			}
+
 			bool aggressive_valkyries = my_completed_units_of_type[unit_types::valkyrie].size() >= 4;
 			a_unordered_set<combat_unit*> blacklist;
 			auto get_nearest_unit = [&]() {
@@ -869,15 +790,12 @@ void update_groups() {
 					if (!c->u->stats->ground_weapon && !c->u->stats->air_weapon) return std::numeric_limits<double>::infinity();
 					if (is_just_one_worker && !is_attacking && c->u->type->is_worker) return std::numeric_limits<double>::infinity();
 					if (c->u->type->is_worker && !c->u->force_combat_unit && !is_base_defence) return std::numeric_limits<double>::infinity();
-					//if (c->u->type->is_worker) return std::numeric_limits<double>::infinity();
-					//if (!c->u->is_loaded && !square_pathing::unit_can_reach(c->u, c->u->pos, g.enemies.front()->pos)) return std::numeric_limits<double>::infinity();
 					if (blacklist.count(c)) return std::numeric_limits<double>::infinity();
 					if (!can_reach_group[c].count(&g)) return std::numeric_limits<double>::infinity();;
 					double d;
 					if (c->u->is_loaded) d = diag_distance(g.enemies.front()->pos - c->u->pos);
 					else d = units_pathing_distance(c->u, g.enemies.front());
-					if (c->u->type->is_worker && !c->u->force_combat_unit && d >= 32 * 12 && current_used_total_supply > 30) return std::numeric_limits<double>::infinity();
-					if (c->u->type->is_worker && !c->u->force_combat_unit && worker_count >= 6) return std::numeric_limits<double>::infinity();
+					if (c->u->type->is_worker && !c->u->force_combat_unit && d >= 32 * 20 && current_used_total_supply > 30) return std::numeric_limits<double>::infinity();
 					if (is_just_one_worker && !is_attacking && d >= 32 * 15) return std::numeric_limits<double>::infinity();
 					if (c->u->type->is_worker && !c->u->force_combat_unit && is_just_one_worker && !g.allies.empty()) return std::numeric_limits<double>::infinity();
 					return d;
@@ -2344,7 +2262,7 @@ void fight() {
 			}
 
 			bool has_siege_mode = players::my_player->upgrades.count(upgrade_types::siege_mode) != 0;
-			auto add = [&](combat_eval::eval&eval, unit*u, int team, bool special) -> combat_eval::combatant& {
+			auto add = [&](combat_eval::eval&eval, unit*u, int team) -> combat_eval::combatant& {
 				//log("add %s to team %d\n", u->type->name, team);
 				if (u->type == unit_types::bunker && u->is_completed) {
 					for (int i = 0; i < u->marines_loaded; ++i) {
@@ -2353,23 +2271,6 @@ void fight() {
 				}
 				auto*st = u->stats;
 				int cooldown_override = 0;
-// 				if (team == 0) {
-// 					if (special) {
-// 						if (u->type == unit_types::siege_tank_tank_mode && has_siege_mode) {
-// 							st = units::get_unit_stats(unit_types::siege_tank_siege_mode, u->owner);
-// 							cooldown_override = 120;
-// 						}
-// 					} else {
-// 						if (u->type == unit_types::siege_tank_siege_mode) {
-// 							st = units::get_unit_stats(unit_types::siege_tank_tank_mode, u->owner);
-// 							cooldown_override = 120;
-// 						}
-// 					}
-// 				}
-				if (u->game_order == BWAPI::Orders::Sieging || u->game_order == BWAPI::Orders::Unsieging) {
-					//cooldown_override = u->game_unit->getOrderTimer();
-					//cooldown_override = 45;
-				}
 				if (!u->visible) cooldown_override = 0;
 				if (u->type->requires_pylon && !u->is_powered) cooldown_override = 15 * 60;
 				auto&c = eval.add_unit(st, team);
@@ -2386,30 +2287,36 @@ void fight() {
 			int eval_frames = 15 * 60;
 			combat_eval::eval eval;
 			eval.max_frames = eval_frames;
-			for (unit*a : nearby_allies) add(eval, a, 0, false);
-			for (unit*e : nearby_enemies) add(eval, e, 1, false);
+			int worker_count = 0;
+			for (unit*a : nearby_allies) {
+				if (a->type->is_worker && worker_count++ >= 6) continue;
+				add(eval, a, 0);
+			}
+			for (unit*e : nearby_enemies) add(eval, e, 1);
 			eval.run();
 
 			combat_eval::eval ground_eval;
 			ground_eval.max_frames = eval_frames;
+			worker_count = 0;
 			for (unit*a : nearby_allies) {
-				if (!a->is_flying) add(ground_eval, a, 0, false);
+				if (a->type->is_worker && worker_count++ >= 6) continue;
+				if (!a->is_flying) add(ground_eval, a, 0);
 			}
-			for (unit*e : nearby_enemies) add(ground_eval, e, 1, false);
+			for (unit*e : nearby_enemies) add(ground_eval, e, 1);
 			ground_eval.run();
 
-			//bool ground_fight = (ground_eval.teams[0].start_supply - ground_eval.teams[0].end_supply) < (ground_eval.teams[1].start_supply - ground_eval.teams[1].end_supply);
 			bool ground_fight = ground_eval.teams[0].score > ground_eval.teams[1].score;
 
 			combat_eval::eval air_eval;
 			air_eval.max_frames = eval_frames;
+			worker_count = 0;
 			for (unit*a : nearby_allies) {
-				if (a->is_flying) add(air_eval, a, 0, false);
+				if (a->type->is_worker && worker_count++ >= 6) continue;
+				if (a->is_flying) add(air_eval, a, 0);
 			}
-			for (unit*e : nearby_enemies) add(air_eval, e, 1, false);
+			for (unit*e : nearby_enemies) add(air_eval, e, 1);
 			air_eval.run();
 
-			//bool air_fight = (air_eval.teams[0].start_supply - air_eval.teams[0].end_supply) < (air_eval.teams[1].start_supply - air_eval.teams[1].end_supply);
 			bool air_fight = ground_eval.teams[0].score > ground_eval.teams[1].score;
 
 			if (true) {
@@ -2424,27 +2331,6 @@ void fight() {
 				if (my_valkyrie_count >= 2 && op_muta_count >= 4 && op_muta_count < my_valkyrie_count * 5) air_fight = true;
 			}
 
-			bool has_siege_tanks = test_pred(nearby_allies, [&](unit*u) {
-				return u->type == unit_types::siege_tank_siege_mode || u->type == unit_types::siege_tank_tank_mode;
-			});
-			bool is_sp = false;
-			if (false) {
-				combat_eval::eval sp_eval;
-				sp_eval.max_frames = eval_frames;
-				for (unit*a : nearby_allies) add(sp_eval, a, 0, true);
-				for (unit*e : nearby_enemies) add(sp_eval, e, 1, false);
-				sp_eval.run();
-
-				log("sp result: supply %g %g  damage %g %g  in %d frames\n", sp_eval.teams[0].end_supply, sp_eval.teams[1].end_supply, sp_eval.teams[0].damage_dealt, sp_eval.teams[1].damage_dealt, sp_eval.total_frames);
-
-				double reg_score = eval.teams[0].score - eval.teams[1].score;
-				double sp_score = sp_eval.teams[0].score - sp_eval.teams[1].score;
-				log("sp: score %g vs %g\n", sp_score, reg_score);
-				if (sp_score > reg_score + 50) {
-					eval = sp_eval;
-					is_sp = true;
-				}
-			}
 			bool has_dropship = false;
 			for (unit*u : nearby_allies) {
 				if (u->type == unit_types::dropship) has_dropship = true;
@@ -2481,9 +2367,11 @@ void fight() {
 						dropships[u] = pickup_time;
 					}
 				}
+				worker_count = 0;
 				for (unit*a : nearby_allies) {
+					if (a->type->is_worker && worker_count++ >= 6) continue;
 					if (loaded_units.find(a) != loaded_units.end()) continue;
-					auto&c = add(sp_eval, a, 0, false);
+					auto&c = add(sp_eval, a, 0);
 					if (dropships.find(a) != dropships.end()) {
 						c.force_target = true;
 						dropships[a] += (int)(c.move / a->stats->max_speed);
@@ -2491,12 +2379,12 @@ void fight() {
 				}
 				a_unordered_map<unit*,int> loaded_unit_count;
 				for (auto&v : loaded_units) {
-					auto&c = add(sp_eval, std::get<0>(v), 0, false);
+					auto&c = add(sp_eval, std::get<0>(v), 0);
 					c.move = -1000;
 					c.loaded_until = dropships[std::get<1>(v)] + (loaded_unit_count[std::get<1>(v)]++ * 15);
 					//c.loaded_until = dropships[std::get<1>(v)];
 				}
-				for (unit*e : nearby_enemies) add(sp_eval, e, 1, false);
+				for (unit*e : nearby_enemies) add(sp_eval, e, 1);
 				sp_eval.run();
 
 				log("drop result: supply %g %g  damage %g %g  in %d frames\n", sp_eval.teams[0].end_supply, sp_eval.teams[1].end_supply, sp_eval.teams[0].damage_dealt, sp_eval.teams[1].damage_dealt, sp_eval.total_frames);
@@ -2523,23 +2411,12 @@ void fight() {
 				log("result: supply %g %g  damage %g %g  in %d frames\n", eval.teams[0].end_supply, eval.teams[1].end_supply, eval.teams[0].damage_dealt, eval.teams[1].damage_dealt, eval.total_frames);
 			}
 
-			//bool fight = eval.teams[0].damage_dealt > eval.teams[1].damage_dealt*0.75;
 			double fact = 1.0;
-			//if (current_frame - cu->last_fight <= 40) fact = 0.5;
 			bool already_fighting = test_pred(nearby_combat_units, [&](combat_unit*cu) {
 				return current_frame - cu->last_fight <= 60 && current_frame - cu->last_run > 60;
 			});
 			if (already_fighting) fact = 0.5;
-			//bool fight = eval.teams[0].end_supply > eval.teams[1].end_supply * fact;
-// 			double my_killed = eval.teams[1].start_supply - eval.teams[1].end_supply;
-// 			double op_killed = eval.teams[0].start_supply - eval.teams[0].end_supply;
-// 			bool fight = my_killed > op_killed*fact;
-// 			//bool fight = false;
-// 			//fight |= eval.teams[0].end_supply > eval.teams[1].end_supply*fact;
-// 			//fight |= eval.teams[0].score > eval.teams[1].score*fact;
-// 			//fight |= eval.teams[0].damage_dealt > eval.teams[1].damage_dealt*fact;
-// 			fight |= eval.teams[1].end_supply == 0;
-// 			fight &= eval.teams[0].end_supply >= 1;
+
 			bool fight = eval.teams[0].score >= eval.teams[1].score;
 			log("scores: %g %g\n", eval.teams[0].score, eval.teams[1].score);
 			if (is_base_defence) {
@@ -2553,21 +2430,6 @@ void fight() {
 			}
 			if (ground_fight) log("ground fight!\n");
 			if (air_fight) log("air fight!\n");
-
-			bool quick_fight = false;
-// 			if (!fight) {
-// 				combat_eval::eval quick_eval;
-// 				quick_eval.max_frames = 15 * 2;
-// 				for (unit*a : nearby_allies) add(quick_eval, a, 0, false);
-// 				for (unit*e : nearby_enemies) add(quick_eval, e, 1, false);
-// 				quick_eval.run();
-// 				log("quick result: supply %g %g  damage %g %g  in %d frames\n", quick_eval.teams[0].end_supply, quick_eval.teams[1].end_supply, quick_eval.teams[0].damage_dealt, quick_eval.teams[1].damage_dealt, quick_eval.total_frames);
-// 				if (quick_eval.teams[0].damage_dealt > quick_eval.teams[1].damage_dealt*fact) {
-// 					log("quick fight!\n");
-// 					fight = true;
-// 					quick_fight = true;
-// 				}
-// 			}
 
 			unit*defensive_matrix_target = nullptr;
 			if (!fight && !ground_fight && !air_fight) {
@@ -2585,8 +2447,10 @@ void fight() {
 					unit*target = nullptr;
 					size_t target_idx = 0;
 					size_t idx = 0;
+					worker_count = 0;
 					for (unit*a : nearby_allies) {
-						auto&c = add(sp_eval, a, 0, true);
+						if (a->type->is_worker && worker_count++ >= 6) continue;
+						auto&c = add(sp_eval, a, 0);
 						if (c.move < lowest_move) {
 							lowest_move = c.move;
 							target = a;
@@ -2594,18 +2458,13 @@ void fight() {
 						}
 						++idx;
 					}
-					for (unit*e : nearby_enemies) add(sp_eval, e, 1, false);
+					for (unit*e : nearby_enemies) add(sp_eval, e, 1);
 					if (target) {
 						sp_eval.teams[0].units[target_idx].hp += 250;
 						sp_eval.run();
 
 						log("defensive matrix result: supply %g %g  damage %g %g  in %d frames\n", sp_eval.teams[0].end_supply, sp_eval.teams[1].end_supply, sp_eval.teams[0].damage_dealt, sp_eval.teams[1].damage_dealt, sp_eval.total_frames);
 
-// 						double my_killed = sp_eval.teams[1].start_supply - sp_eval.teams[1].end_supply;
-// 						double op_killed = sp_eval.teams[0].start_supply - sp_eval.teams[0].end_supply;
-// 						bool fight = my_killed > op_killed*fact;
-// 						fight |= sp_eval.teams[1].end_supply == 0;
-// 						fight &= sp_eval.teams[0].end_supply >= 1;
 						bool fight = sp_eval.teams[0].score >= sp_eval.teams[1].score;
 						if (fight) {
 							defensive_matrix_target = target;
@@ -2614,19 +2473,6 @@ void fight() {
 				}
 			}
 
-			bool ignore = false;
-			//if (eval.teams[1].damage_dealt < eval.teams[0].damage_dealt / 10) {
-// 			if (eval.teams[1].damage_dealt == 0) {
-// 				if (diag_distance(cu->u->pos - cu->goal_pos) >= 32 * 15) {
-// 					if (eval.total_frames > 15 * 15) {
-// 						ignore = true;
-// 					}
-// 				}
-// 			}
-			size_t gone_count = 0; // .... i probably meant invisible_count
-			for (unit*e : nearby_enemies) {
-				if (e->gone) ++gone_count;
-			}
 			size_t my_siege_tank_count = 0;
 			size_t my_sieged_tank_count = 0;
 			size_t my_unsieged_tank_count = 0;
@@ -2644,10 +2490,6 @@ void fight() {
 				if (u->type == unit_types::siege_tank_siege_mode) ++op_sieged_tank_count;
 			}
 
-// 			bool some_are_unloading = false;
-// 			for (auto&v : dropships) {
-// 				some_are_unloading |= v.second <= 15 * 3;
-// 			}
 			bool some_are_attacking = false;
 			for (unit*u : nearby_allies) {
 				if (current_frame - u->last_attacked < 60) some_are_attacking = true;
@@ -2668,138 +2510,105 @@ void fight() {
 				else ++op_ground_units;
 			}
 
-			if (!ignore) {
-				for (auto*a : nearby_combat_units) {
-					if (!quick_fight) a->last_fight = current_frame;
-					a->last_processed_fight = current_frame;
-					bool attack = fight;
-					attack |= a->u->is_flying && air_fight;
-					attack |= !a->u->is_flying && ground_fight;
-					//if (my_sieged_tank_count>my_unsieged_tank_count)
-					if (attack) {
-						/*if (is_sp) {
-							if (a->u->type == unit_types::siege_tank_tank_mode && has_siege_mode) {
-								if (siege_count < max_siege_count) {
-									++siege_count;
-									if (current_frame >= a->u->controller->noorder_until && a->u->game_unit->siege()) {
-										a->u->controller->noorder_until = current_frame + 15 * 8;
-									}
-								}
+			for (auto*a : nearby_combat_units) {
+				a->last_fight = current_frame;
+				a->last_processed_fight = current_frame;
+				bool attack = fight;
+				attack |= a->u->is_flying && air_fight;
+				attack |= !a->u->is_flying && ground_fight;
+				if (attack) {
+					bool dont_attack = false;
+					/*bool unload = true;
+					if (is_drop) {
+						auto lui = loaded_units.find(a->u);
+						if (lui != loaded_units.end()) {
+							if (dropships[lui->second] > 15 * 1) {
+								a->subaction = combat_unit::subaction_move;
+								a->target_pos = lui->second->pos;
+								dont_attack = true;
 							}
-							if (a->u->type == unit_types::siege_tank_siege_mode && unsiege_count < max_sieged_tanks) {
-								if (current_frame - a->u->last_attacked >= 120) {
-									++unsiege_count;
-									if (a->u->game_unit->unsiege() && current_frame >= a->u->controller->noorder_until) {
-										a->u->controller->noorder_until = current_frame + 8;
-									}
-								}
-							}
-						} else */
-						bool dont_attack = false;
-						/*bool unload = true;
-						if (is_drop) {
-							auto lui = loaded_units.find(a->u);
-							if (lui != loaded_units.end()) {
-								if (dropships[lui->second] > 15 * 1) {
-									a->subaction = combat_unit::subaction_move;
-									a->target_pos = lui->second->pos;
-									dont_attack = true;
-								}
-							}
-							auto di = dropships.find(a->u);
-							if (di != dropships.end()) {
-								unload = di->second <= 15 * 1;
-								if (!unload) {
-									bool loaded_any = false;
-									for (auto&v : loaded_units) {
-										if (v.second == a->u) {
-											unit*lu = v.first;
-											if (!lu->is_loaded) {
-												a->subaction = combat_unit::subaction_move;
-												a->target_pos = lu->pos;
-												if (diag_distance(lu->pos - a->u->pos) <= 32 * 4) {
-													a->subaction = combat_unit::subaction_idle;
-													a->u->controller->action = unit_controller::action_idle;
-													if (current_frame >= a->u->controller->noorder_until) {
-														loaded_any = true;
-														lu->game_unit->rightClick(a->u->game_unit);
-														//a->u->game_unit->load(lu->game_unit);
-														lu->controller->noorder_until = current_frame + 15;
-													}
+						}
+						auto di = dropships.find(a->u);
+						if (di != dropships.end()) {
+							unload = di->second <= 15 * 1;
+							if (!unload) {
+								bool loaded_any = false;
+								for (auto&v : loaded_units) {
+									if (v.second == a->u) {
+										unit*lu = v.first;
+										if (!lu->is_loaded) {
+											a->subaction = combat_unit::subaction_move;
+											a->target_pos = lu->pos;
+											if (diag_distance(lu->pos - a->u->pos) <= 32 * 4) {
+												a->subaction = combat_unit::subaction_idle;
+												a->u->controller->action = unit_controller::action_idle;
+												if (current_frame >= a->u->controller->noorder_until) {
+													loaded_any = true;
+													lu->game_unit->rightClick(a->u->game_unit);
+													//a->u->game_unit->load(lu->game_unit);
+													lu->controller->noorder_until = current_frame + 15;
 												}
-												dont_attack = true;
 											}
+											dont_attack = true;
 										}
 									}
-									if (loaded_any) a->u->controller->noorder_until = current_frame + 4;
 								}
+								if (loaded_any) a->u->controller->noorder_until = current_frame + 4;
 							}
 						}
-						if (!a->u->loaded_units.empty() && unload) {
-							dont_attack = true;
-							a->subaction = combat_unit::subaction_idle;
-							a->u->controller->action = unit_controller::action_idle;
-							if (current_frame >= a->u->controller->noorder_until) {
-								a->u->game_unit->unload(a->u->loaded_units.front()->game_unit);
-								a->u->controller->noorder_until = current_frame + 4;
-							}
-						}*/
-						
-						if (!dont_attack) {
-							if (a->u->type == unit_types::dropship && a->u->loaded_units.empty()) {
-								//do_run(a, nearby_enemies);
-								//dont_attack = true;
-							}
-						}
-						if (!dont_attack) {
-							if (is_drop && some_are_not_loaded_yet && !some_are_attacking) do_run(a, nearby_enemies);
-							else do_attack(a, nearby_allies, nearby_enemies);
-						}
-					} else {
-						a->last_run = current_frame;
-						bool run = true;
-						if (a->u == defensive_matrix_vessel) {
-							a->subaction = combat_unit::subaction_use_ability;
-							a->ability = upgrade_types::defensive_matrix;
-							a->target = defensive_matrix_target;
-							run = false;
-						}
-						if (run) {
-							if (my_siege_tank_count >= 1 && players::my_player->has_upgrade(upgrade_types::siege_mode)) {
-								bool okay = true;
-								if (a->u->type == unit_types::siege_tank_tank_mode || a->u->type == unit_types::siege_tank_siege_mode) okay = true;
-								//okay &= my_sieged_tank_count >= op_sieged_tank_count && op_sieged_tank_count < 4;
-								okay &= op_ground_units > op_air_units;
-								if (!a->u->is_flying && okay) {
-									double r = get_best_score_value(nearby_allies, [&](unit*u) {
-										if (u->type != unit_types::siege_tank_tank_mode && u->type != unit_types::siege_tank_siege_mode) return std::numeric_limits<double>::infinity();
-										return diag_distance(u->pos - a->u->pos);
-									}, std::numeric_limits<double>::infinity());
-									if (r <= 32 * 15) {
-										do_attack(a, nearby_allies, nearby_enemies);
-										run = false;
-									}
-								}
-							}
-						}
-						if (run) do_run(a, nearby_enemies);
 					}
-					multitasking::yield_point();
+					if (!a->u->loaded_units.empty() && unload) {
+						dont_attack = true;
+						a->subaction = combat_unit::subaction_idle;
+						a->u->controller->action = unit_controller::action_idle;
+						if (current_frame >= a->u->controller->noorder_until) {
+							a->u->game_unit->unload(a->u->loaded_units.front()->game_unit);
+							a->u->controller->noorder_until = current_frame + 4;
+						}
+					}*/
+						
+					if (!dont_attack) {
+						if (a->u->type == unit_types::dropship && a->u->loaded_units.empty()) {
+							//do_run(a, nearby_enemies);
+							//dont_attack = true;
+						}
+					}
+					if (!dont_attack) {
+						if (is_drop && some_are_not_loaded_yet && !some_are_attacking) do_run(a, nearby_enemies);
+						else do_attack(a, nearby_allies, nearby_enemies);
+					}
+				} else {
+					a->last_run = current_frame;
+					bool run = true;
+					if (a->u == defensive_matrix_vessel) {
+						a->subaction = combat_unit::subaction_use_ability;
+						a->ability = upgrade_types::defensive_matrix;
+						a->target = defensive_matrix_target;
+						run = false;
+					}
+					if (run) {
+						if (my_siege_tank_count >= 1 && players::my_player->has_upgrade(upgrade_types::siege_mode)) {
+							bool okay = true;
+							if (a->u->type == unit_types::siege_tank_tank_mode || a->u->type == unit_types::siege_tank_siege_mode) okay = true;
+							//okay &= my_sieged_tank_count >= op_sieged_tank_count && op_sieged_tank_count < 4;
+							okay &= op_ground_units > op_air_units;
+							if (!a->u->is_flying && okay) {
+								double r = get_best_score_value(nearby_allies, [&](unit*u) {
+									if (u->type != unit_types::siege_tank_tank_mode && u->type != unit_types::siege_tank_siege_mode) return std::numeric_limits<double>::infinity();
+									return diag_distance(u->pos - a->u->pos);
+								}, std::numeric_limits<double>::infinity());
+								if (r <= 32 * 15) {
+									do_attack(a, nearby_allies, nearby_enemies);
+									run = false;
+								}
+							}
+						}
+					}
+					if (run) do_run(a, nearby_enemies);
 				}
-			} else {
-				for (auto*a : nearby_combat_units) {
-					a->last_processed_fight = current_frame;
-				}
+				multitasking::yield_point();
 			}
 
-		} else {
-			for (auto*a : nearby_combat_units) {
-				//visited.insert(a);
-			}
-// 			cu->action = combat_unit::action_idle;
-
-// 			cu->subaction = combat_unit::subaction_move;
-// 			cu->target_pos = cu->u->pos;
 		}
 	}
 
