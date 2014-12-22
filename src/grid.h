@@ -76,7 +76,7 @@ int build_grid_width, build_grid_height;
 size_t build_grid_last_x, build_grid_last_y;
 
 struct build_grid_indexer {
-	size_t operator()(xy pos) {
+	size_t operator()(xy pos) const {
 		return (unsigned)pos.x/32 + (unsigned)pos.y/32 * build_grid_width;
 	}
 };
