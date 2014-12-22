@@ -529,9 +529,9 @@ void update_groups() {
 			double max_d = 32 * 15;
 			if (e->type == unit_types::bunker) max_d = 32 * 5;
 			if (d >= max_d) continue;
-			unit_type*ut = e->type;
-			if (ut->is_building) ut = unit_types::scv;
-			if (!square_pathing::unit_can_reach(ut, e->pos, ne->pos)) continue;
+// 			unit_type*ut = e->type;
+// 			if (ut->is_building) ut = unit_types::scv;
+// 			if (!square_pathing::unit_can_reach(ut, e->pos, ne->pos)) continue;
 			g = &v;
 			break;
 		}
