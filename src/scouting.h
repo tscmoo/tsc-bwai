@@ -71,18 +71,22 @@ void scout::process() {
 	last_scouted[&*dst_s] = current_frame;
 
 	if (dst_s_seen != -1) {
-		scout_unit->controller->action = unit_controller::action_scout;
-		scout_unit->controller->go_to = dst_s->cc_build_pos;
-		if (!scout_resources) {
-			if (grid::is_visible(dst_s->cc_build_pos, 4, 3)) scout_resources = true;
+		if (!square_pathing::unit_can_reach(scout_unit, scout_unit->pos, dst_s->cc_build_pos, square_pathing::pathing_map_index::no_enemy_buildings)) {
+			dst_s = nullptr;
 		} else {
-			auto*r = get_best_score_p(dst_s->resources, [&](const resource_spots::resource_t*r) {
-				double age = current_frame - r->u->last_seen;
-				if (age <= 15 * 10) return std::numeric_limits<double>::infinity();
-				return -age;
-			}, std::numeric_limits<double>::infinity());
-			if (!r) dst_s_seen = -1;
-			else scout_unit->controller->go_to = r->u->pos;
+			scout_unit->controller->action = unit_controller::action_scout;
+			scout_unit->controller->go_to = dst_s->cc_build_pos;
+			if (!scout_resources) {
+				if (grid::is_visible(dst_s->cc_build_pos, 4, 3)) scout_resources = true;
+			} else {
+				auto*r = get_best_score_p(dst_s->resources, [&](const resource_spots::resource_t*r) {
+					double age = current_frame - r->u->last_seen;
+					if (age <= 15 * 10) return std::numeric_limits<double>::infinity();
+					return -age;
+				}, std::numeric_limits<double>::infinity());
+				if (!r) dst_s_seen = -1;
+				else scout_unit->controller->go_to = r->u->pos;
+			}
 		}
 	} else {
 		dst_s = nullptr;
