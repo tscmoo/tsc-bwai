@@ -248,6 +248,7 @@ struct combat_unit {
 	int last_find_siege_pos = 0;
 	bool siege_up_close = false;
 	a_deque<xy> path;
+	int last_find_path = 0;
 	int strategy_busy_until = 0;
 };
 a_unordered_map<unit*, combat_unit> combat_unit_map;
@@ -461,6 +462,9 @@ a_deque<xy> find_bigstep_path(unit_type*ut, xy from, xy to) {
 bool no_aggressive_groups = false;
 bool aggressive_wraiths = false;
 
+
+bool search_and_destroy = false;
+
 void update_groups() {
 
 	a_vector<group_t> new_groups;
@@ -474,6 +478,20 @@ void update_groups() {
 		sorted_enemy_units.emplace_back(d, e);
 	}
 	std::sort(sorted_enemy_units.begin(), sorted_enemy_units.end());
+
+	search_and_destroy = false;
+	if (current_used_total_supply >= 50) {
+		int enemy_non_building_units = 0;
+		int enemy_building_units = 0;
+		for (unit*e : enemy_units) {
+			if (e->gone) continue;
+			if (current_frame - e->last_seen >= 15 * 60 * 5) continue;
+			if (e->building) ++enemy_building_units;
+			else ++enemy_non_building_units;
+		}
+		if (enemy_non_building_units == 0) no_aggressive_groups = false;
+		if (enemy_building_units == 0) search_and_destroy = true;
+	}
 
 	log("no_aggressive_groups is %d\n", no_aggressive_groups);
 	unit*first_enemy_building = nullptr;
@@ -1325,6 +1343,44 @@ void finish_attack() {
 		}
 	}
 
+	auto scout_around = [&](combat_unit*a) {
+		bool find_new_path = false;
+		if (current_frame - a->last_find_path >= 15 * 60) find_new_path = true;
+		if (a->path.empty()) find_new_path = true;
+		for (xy p : a->path) {
+			if (entire_threat_area.test(grid::build_square_index(p))) {
+				find_new_path = true;
+				break;
+			}
+		}
+		if (find_new_path) {
+			a->last_find_path = current_frame;
+			struct node_data_t {
+				double len = 0;
+			};
+			int iterations = 0;
+			a_deque<xy> path = find_path<node_data_t>(a->u->type, a->u->pos, [&](xy pos, xy npos, node_data_t&n) {
+				if (++iterations % 1024 == 0) multitasking::yield_point();
+				if (entire_threat_area.test(grid::build_square_index(npos))) return false;
+				n.len += diag_distance(npos - pos);
+				return true;
+			}, [&](xy pos, xy npos, const node_data_t&n) {
+				return 0.0;
+			}, [&](xy pos, const node_data_t&n) {
+				if (n.len >= 32 * 60) return true;
+				return current_frame - grid::get_build_square(pos).last_seen >= 15 * 60;
+			});
+			log("found new path - %d nodes\n", path.size());
+			a->path = std::move(path);
+		}
+		while (!a->path.empty() && diag_distance(a->u->pos - a->path.front()) <= 32 * 3) a->path.pop_front();
+		if (!a->path.empty()) {
+			xy move_to = square_pathing::get_go_to_along_path(a->u, a->path);
+			a->subaction = combat_unit::subaction_move;
+			a->target_pos = move_to;
+		}
+	};
+
 	if (no_aggressive_groups) {
 		for (auto&g : groups) {
 			if (!g.is_aggressive_group) continue;
@@ -1335,43 +1391,16 @@ void finish_attack() {
 			if (!buildings) continue;
 			for (auto*a : g.allies) {
 				if (current_frame - a->last_fight < 15 * 3 && current_frame - a->last_run >= 15 * 3) continue;
- 				if (current_frame - a->last_run >= 15 * 20) continue;
+				if (current_frame - a->last_run >= 15 * 20) continue;
 				if (a->subaction != combat_unit::subaction_move && a->subaction != combat_unit::subaction_idle) continue;
-				bool find_new_path = false;
-				if (a->path.empty()) find_new_path = true;
-				for (xy p : a->path) {
-					if (entire_threat_area.test(grid::build_square_index(p))) {
-						find_new_path = true;
-						break;
-					}
-				}
-				if (find_new_path) {
-					struct node_data_t {
-						double len = 0;
-					};
-					int iterations = 0;
-					a_deque<xy> path = find_path<node_data_t>(a->u->type, a->u->pos, [&](xy pos, xy npos, node_data_t&n) {
-						if (++iterations % 1024 == 0) multitasking::yield_point();
-						if (entire_threat_area.test(grid::build_square_index(npos))) return false;
-						n.len += diag_distance(npos - pos);
-						return true;
-					}, [&](xy pos, xy npos, const node_data_t&n) {
-						return 0.0;
-						//return current_frame - grid::get_build_square(npos).last_seen;
-					}, [&](xy pos, const node_data_t&n) {
-						return current_frame - grid::get_build_square(pos).last_seen >= 15 * 60;
-						//return n.len >= 32 * 30;
-					});
-					log("found new path - %d nodes\n", path.size());
-					a->path = std::move(path);
-				}
-				while (!a->path.empty() && diag_distance(a->u->pos - a->path.front()) <= 32 * 3) a->path.pop_front();
-				if (!a->path.empty()) {
-					xy move_to = square_pathing::get_go_to_along_path(a->u, a->path);
-					a->subaction = combat_unit::subaction_move;
-					a->target_pos = move_to;
-				}
+				scout_around(a);
 			}
+		}
+	}
+
+	if (search_and_destroy) {
+		for (auto*a : live_combat_units) {
+			scout_around(a);
 		}
 	}
 
