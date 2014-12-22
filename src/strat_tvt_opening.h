@@ -56,7 +56,7 @@ struct strat_tvt_opening {
 
 			int vulture_count = my_completed_units_of_type[unit_types::vulture].size();
 			int marine_count = my_completed_units_of_type[unit_types::marine].size();
-			bool defence_ok = marine_count + vulture_count * 2 >= proxy_marine_count + proxy_scv_count + 4;
+			bool defence_ok = marine_count + vulture_count * 2 >= proxy_marine_count + proxy_scv_count + 4 && marine_count + vulture_count * 2 >= 10;
 
 			bool defend_proxy = (proxy_barracks_count || proxy_marine_count || proxy_scv_count >= 4 || enemy_barracks_count >= 2) && !defence_ok;
 
