@@ -485,12 +485,12 @@ void update_groups() {
 		int enemy_building_units = 0;
 		for (unit*e : enemy_units) {
 			if (e->gone) continue;
-			if (current_frame - e->last_seen >= 15 * 60 * 5) continue;
+			if (current_frame - e->last_seen >= 15 * 60 * 10) continue;
 			if (e->building) ++enemy_building_units;
 			else ++enemy_non_building_units;
 		}
 		if (enemy_non_building_units == 0) no_aggressive_groups = false;
-		if (enemy_building_units == 0) search_and_destroy = true;
+		if (enemy_non_building_units == 0 && enemy_building_units == 0) search_and_destroy = true;
 	}
 
 	log("no_aggressive_groups is %d\n", no_aggressive_groups);
