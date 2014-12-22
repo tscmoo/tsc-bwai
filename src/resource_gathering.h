@@ -125,7 +125,7 @@ void process(resource_t&r) {
 	//if (!resource_depots.empty()) depot = resource_depots.front();
 	if (!resource_depots.empty()) {
 		depot = get_best_score(resource_depots, [&](unit*u) {
-			return units_pathing_distance(r.u, u);
+			return units_pathing_distance(unit_types::scv, r.u, u);
 		});
 	}
 	bool depot_changed = false;
