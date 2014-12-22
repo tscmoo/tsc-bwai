@@ -1833,6 +1833,24 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 
 }
 
+bool worker_is_safe(combat_unit*a, const a_vector<unit*>&enemies) {
+	if (a->u->controller->action == unit_controller::action_gather && a->u->controller->target) {
+		double gd = units_pathing_distance(a->u, a->u->controller->target);
+		unit*ne = get_best_score(enemies, [&](unit*e) {
+			weapon_stats*w = a->u->is_flying ? e->stats->air_weapon : e->stats->ground_weapon;
+			if (!w) return std::numeric_limits<double>::infinity();
+			return diag_distance(e->pos - a->u->pos);
+		}, std::numeric_limits<double>::infinity());
+		if (ne) {
+			weapon_stats*w = a->u->is_flying ? ne->stats->air_weapon : ne->stats->ground_weapon;
+			double ned = units_pathing_distance(a->u, ne);
+			if (ned <= 32 * 15 && ned < gd) return false;
+			if (ned <= w->max_range + 64) return false;
+		}
+	}
+	return true;
+}
+
 tsc::dynamic_bitset run_spot_taken;
 void prepare_run() {
 	run_spot_taken.resize(grid::build_grid_width*grid::build_grid_height);
@@ -1843,13 +1861,7 @@ void do_run(combat_unit*a, const a_vector<unit*>&enemies) {
 	a->defend_spot = xy();
 	a->subaction = combat_unit::subaction_move;
 	a->target_pos = xy(grid::map_width / 2, grid::map_height / 2);
-	unit*nb = get_best_score(my_buildings, [&](unit*u) {
-		return diag_distance(a->u->pos - u->pos);
-	});
-	if (nb) a->target_pos = nb->pos;
 	
-	//if (a->u->type == unit_types::vulture || a->u->type == unit_types::marine) {
-	//if (!a->u->is_flying && a->u->stats->ground_weapon) {
 	if (true) {
 		unit*ne = get_best_score(enemies, [&](unit*e) {
 			weapon_stats*w = e->is_flying ? a->u->stats->air_weapon : a->u->stats->ground_weapon;
@@ -1898,11 +1910,13 @@ void do_run(combat_unit*a, const a_vector<unit*>&enemies) {
 	}
 
 	if (a->u->type->is_worker) {
-		a->subaction = combat_unit::subaction_idle;
-		if (a->u->controller->action != unit_controller::action_gather && a->u->controller->action != unit_controller::action_build) {
-			a->u->controller->action = unit_controller::action_idle;
+		if (worker_is_safe(a, enemies)) {
+			a->subaction = combat_unit::subaction_idle;
+			if (a->u->controller->action != unit_controller::action_gather && a->u->controller->action != unit_controller::action_build) {
+				a->u->controller->action = unit_controller::action_idle;
+			}
+			return;
 		}
-		return;
 	}
 
 	unit*u = a->u;
@@ -1927,8 +1941,6 @@ void do_run(combat_unit*a, const a_vector<unit*>&enemies) {
 		return entire_threat_area_edge.test(index) && !run_spot_taken.test(index);
 	});
 
-	//a->target_pos = best_pos;
-	//a->target_pos = square_pathing::get_go_to_along_path(u, path);
 	a->target_pos = path.empty() ? a->goal_pos : path.back();
 	a->target_pos.x = a->target_pos.x&-32 + 16;
 	a->target_pos.y = a->target_pos.y&-32 + 16;
@@ -2510,6 +2522,7 @@ void fight() {
 				else ++op_ground_units;
 			}
 
+			worker_count = 0;
 			for (auto*a : nearby_combat_units) {
 				a->last_fight = current_frame;
 				a->last_processed_fight = current_frame;
@@ -2566,7 +2579,11 @@ void fight() {
 							a->u->controller->noorder_until = current_frame + 4;
 						}
 					}*/
-						
+					
+					if (a->u->type->is_worker && worker_count++ >= 6) {
+						dont_attack = worker_is_safe(a, nearby_enemies);
+					}
+					
 					if (!dont_attack) {
 						if (a->u->type == unit_types::dropship && a->u->loaded_units.empty()) {
 							//do_run(a, nearby_enemies);
