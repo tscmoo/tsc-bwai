@@ -754,30 +754,8 @@ void update_groups() {
 			if (current_frame - e->last_attacked <= 15 * 10) is_attacking = true;
 			if (!is_base_defence) is_base_defence = my_base.test(grid::build_square_index(e->pos));
 		}
-		int worker_count = 0;
 		while (true) {
 			multitasking::yield_point();
-			std::tuple<bool, bool, double> best_score;
-			combat_unit*best_unit = nullptr;
-			auto get_score_for = [&](combat_unit*c) {
-				combat_eval::eval eval;
-				auto addu = [&](unit*u, int team) {
-					auto&c = eval.add_unit(u, team);
-				};
-				for (auto*a : g.allies) addu(a->u, 0);
-				for (unit*e : g.enemies) addu(e, 1);
-				addu(c->u, 0);
-				eval.run();
-				bool done = eval.teams[1].end_supply == 0 && eval.teams[0].end_supply >= eval.teams[0].start_supply / 2 + 4;
-				double val = eval.teams[0].score - eval.teams[1].score;
-				if (g.threat_area.test(grid::build_square_index(c->u->pos))) val += 1000;
-				bool is_combat_unit = !(c->u->type->is_worker && !c->u->force_combat_unit);
-				// 				if (!is_combat_unit) {
-				// 					done = eval.teams[0].start_supply >= eval.teams[0].start_supply;
-				// 				}
-				auto score = std::make_tuple(is_combat_unit, done, val);
-				return score;
-			};
 
 			bool aggressive_valkyries = my_completed_units_of_type[unit_types::valkyrie].size() >= 4;
 			a_unordered_set<combat_unit*> blacklist;
@@ -820,28 +798,25 @@ void update_groups() {
 				blacklist.insert(nearest_unit);
 				nearest_unit = get_nearest_unit();
 			}
-			if (nearest_unit) {
-				best_unit = nearest_unit;
-				best_score = get_score_for(best_unit);
+			if (!nearest_unit) {
+				log("failed to find unit for group %d\n", g.idx);
+				break;
 			}
-			if (!best_unit) log("failed to find unit for group %d\n", g.idx);
-// 			if (!best_unit) {
-// 				for (auto*c : g.allies) {
-// 					available_units.insert(c);
-// 				}
-// 				g.allies.clear();
-// 			}
-			if (!best_unit) break;
-// 			if (best_unit->u->type->is_worker && !best_unit->u->force_combat_unit && !is_base_defence) break;
-// 			if (best_unit->u->type->is_worker && !best_unit->u->force_combat_unit && !is_attacking) break;
-// 			//if (best_unit->u->type->is_worker && !best_unit->u->force_combat_unit && std::get<2>(best_score) >= 0) break;
-			//log("add %s to group %d with score %d %g\n", best_unit->u->type->name, g.idx, std::get<0>(best_score), std::get<1>(best_score));
-			g.allies.push_back(best_unit);
-			available_units.erase(best_unit);
-			if (std::get<1>(best_score)) break;
-			//if (!std::get<0>(best_score)) break;
+
+			combat_eval::eval eval;
+			auto addu = [&](unit*u, int team) {
+				auto&c = eval.add_unit(u, team);
+			};
+			for (auto*a : g.allies) addu(a->u, 0);
+			for (unit*e : g.enemies) addu(e, 1);
+			addu(nearest_unit->u, 0);
+			eval.run();
+			bool done = eval.teams[0].score > eval.teams[1].score*1.5;
+
+			g.allies.push_back(nearest_unit);
+			available_units.erase(nearest_unit);
+			if (done) break;
 			if (is_just_one_worker) break;
-			if (best_unit->u->type->is_worker && !best_unit->u->force_combat_unit) ++worker_count;
 		}
 		log("group %d: %d allies %d enemies\n", g.idx, g.allies.size(), g.enemies.size());
 	}
@@ -1834,8 +1809,15 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 }
 
 bool worker_is_safe(combat_unit*a, const a_vector<unit*>&enemies) {
-	if (a->u->controller->action == unit_controller::action_gather && a->u->controller->target) {
-		double gd = units_pathing_distance(a->u, a->u->controller->target);
+	unit*res = nullptr;
+	if (a->u->controller->action == unit_controller::action_gather) res = a->u->controller->target;
+	else {
+		res = get_best_score(resource_units, [&](unit*u) {
+			return units_pathing_distance(a->u, u);
+		});
+	}
+	if (res) {
+		double gd = units_pathing_distance(a->u, res);
 		unit*ne = get_best_score(enemies, [&](unit*e) {
 			weapon_stats*w = a->u->is_flying ? e->stats->air_weapon : e->stats->ground_weapon;
 			if (!w) return std::numeric_limits<double>::infinity();
