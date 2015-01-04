@@ -1790,7 +1790,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 				}
 			}
 		}
-		if (a->subaction == combat_unit::subaction_fight) {
+		if ((target->type == unit_types::zergling || target->type == unit_types::zealot) && a->subaction == combat_unit::subaction_fight) {
 			if (allies.size() < 15) {
 				int workers = 0;
 				unit*nearest_worker = nullptr;
@@ -2191,7 +2191,6 @@ void update_defence_choke() {
 			}
 
 			if (defence_is_scared) {
-				log("defence is scared!\n");
 				xy scvs_pos;
 				int count = 0;
 				for (unit*u : my_workers) {
