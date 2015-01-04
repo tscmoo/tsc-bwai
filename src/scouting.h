@@ -238,10 +238,10 @@ int last_scout = 0;
 int last_vulture_scout = 0;
 
 void process_scouts() {
-
+	
 	if (all_scouts.empty()) {
 		if (last_scout == 0 || current_frame - last_scout >= 15 * 60 * 3 || current_used_total_supply >= 100) {
-			if (my_workers.size() < 10) return;
+			if (my_workers.size() < 8) return;
 			unit*scout_unit = nullptr;
 			if (my_completed_units_of_type[unit_types::vulture].size() >= 15 && current_frame - last_vulture_scout >= 15 * 60 * 2) {
 				last_vulture_scout = current_frame;
