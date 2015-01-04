@@ -525,7 +525,7 @@ bool set_build_pos(build_task*t, xy pos) {
 
 void unset_build_pos(build_task*t) {
 	auto&b = *t;
-	if (b.build_pos != xy()) {
+	if (b.build_pos != xy() && !b.type->unit->is_refinery) {
 		grid::unreserve_build_squares(b.build_pos, b.type->unit);
 	}
 	b.build_pos = xy();
@@ -792,10 +792,10 @@ void execute_build(build_task&b) {
 			if (u->is_carrying_minerals_or_gas && u->controller->flag != &b) f += 15 * 4;
 			return f;
 		};
-		if (b.build_frame && b.build_frame-current_frame<=15*30 && (!b.built_unit || !builds_on_its_own)) {
-			if ((!builder || current_frame-b.last_look_for_builder>=15*8) && current_frame-b.last_look_for_builder>=15*2) {
+		if ((b.build_frame && b.build_frame - current_frame <= 15 * 30 || b.built_unit) && (!b.built_unit || !builds_on_its_own)) {
+			if ((!builder || current_frame - b.last_look_for_builder >= 15 * 8) && current_frame - b.last_look_for_builder >= 15 * 2) {
 				b.last_look_for_builder = current_frame;
-				builder = get_best_score(my_units_of_type[b.type->unit->builder_type],builder_score,std::numeric_limits<double>::infinity());
+				builder = get_best_score(my_units_of_type[b.type->unit->builder_type], builder_score, std::numeric_limits<double>::infinity());
 			}
 		}
 		if (!b.built_unit && b.build_frame-current_frame>=15*45) builder = nullptr;
@@ -1125,6 +1125,7 @@ void execute_build_task() {
 				if (b.builder->dead || b.builder->type!=b.type->builder || b.builder->owner!=players::my_player) {
 					log("build task %s lost its builder\n",b.type->name);
 					b.builder = nullptr;
+					unset_build_pos(&b);
 				}
 			}
 			if (b.dead && b.reference_count==0) {
@@ -1138,22 +1139,6 @@ void execute_build_task() {
 			if (b.dead) continue;
 			if (b.build_frame==0 && !b.built_unit) continue;
 			execute_build(b);
-		}
-
-		for (unit*u : my_buildings) {
-			if (!u->is_completed) {
-				bool found = false;
-				for (build_task&b : build_tasks) {
-					if (b.built_unit == u) {
-						found = true;
-						break;
-					}
-				}
-				if (!found) {
-					u->game_unit->cancelConstruction();
-				}
-				if (!u->game_unit->getBuildUnit()) u->game_unit->cancelConstruction();
-			}
 		}
 
 		for (unit*u : my_workers) {
