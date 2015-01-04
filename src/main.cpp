@@ -308,6 +308,8 @@ struct module : BWAPI::AIModule {
 
 		if (!game->self()) return;
 
+		game->sendText("tsc-bwai v0.2.0 dev");
+
 		init();
 
 		game->setLocalSpeed(0);
