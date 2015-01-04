@@ -9,6 +9,9 @@ struct strat_tvt_opening {
 		using namespace buildpred;
 
 		auto build = [&](state&st) {
+			int scv_count = count_units_plus_production(st, unit_types::scv);
+			if (scv_count >= 11 && count_units_plus_production(st, unit_types::barracks) == 0) return depbuild(st, state(st), unit_types::barracks);
+			if (scv_count >= 12 && count_units_plus_production(st, unit_types::refinery) == 0) return depbuild(st, state(st), unit_types::refinery);
 			if (count_units_plus_production(st, unit_types::siege_tank_tank_mode) + count_units_plus_production(st, unit_types::siege_tank_siege_mode) == 0) {
 				if (!my_completed_units_of_type[unit_types::machine_shop].empty()) {
 					return depbuild(st, state(st), unit_types::siege_tank_tank_mode);
@@ -107,6 +110,7 @@ struct strat_tvt_opening {
 			}
 
 			if (defend_proxy) {
+				combat::defence_is_scared = true;
 				if (my_units_of_type[unit_types::factory].empty()) {
 					if (!built_bunker && marine_count >= 2 && proxy_marine_count > marine_count) {
 						built_bunker = true;
