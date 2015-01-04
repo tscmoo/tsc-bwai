@@ -106,32 +106,32 @@ struct strat_tvz_opening {
 			if (!my_completed_units_of_type[unit_types::wraith].empty()) break;
 			execute_build(false, build);
 
-			if (combat::defence_choke.center != xy()) {
-				if (wall_calculated < 2) {
-					++wall_calculated;
-
-					wall = wall_in::wall_builder();
-
-					wall.spot = wall_in::find_wall_spot_from_to(unit_types::zealot, combat::my_closest_base, combat::defence_choke.outside, false);
-					wall.spot.outside = combat::defence_choke.outside;
-
-					wall.against(wall_calculated == 1 ? unit_types::zergling : unit_types::zealot);
-					wall.add_building(unit_types::supply_depot);
-					wall.add_building(unit_types::barracks);
-					has_wall = true;
-					if (wall_calculated == 1) has_zergling_tight_wall = true;
-					if (!wall.find()) {
-						wall.add_building(unit_types::supply_depot);
-						if (!wall.find()) {
-							log("failed to find wall in :(\n");
-							has_wall = false;
-							if (wall_calculated == 1) has_zergling_tight_wall = false;
-						}
-					}
-					if (has_wall) wall_calculated = 2;
-				}
-			}
-			if (has_wall) wall.build();
+// 			if (combat::defence_choke.center != xy()) {
+// 				if (wall_calculated < 2) {
+// 					++wall_calculated;
+// 
+// 					wall = wall_in::wall_builder();
+// 
+// 					wall.spot = wall_in::find_wall_spot_from_to(unit_types::zealot, combat::my_closest_base, combat::defence_choke.outside, false);
+// 					wall.spot.outside = combat::defence_choke.outside;
+// 
+// 					wall.against(wall_calculated == 1 ? unit_types::zergling : unit_types::zealot);
+// 					wall.add_building(unit_types::supply_depot);
+// 					wall.add_building(unit_types::barracks);
+// 					has_wall = true;
+// 					if (wall_calculated == 1) has_zergling_tight_wall = true;
+// 					if (!wall.find()) {
+// 						wall.add_building(unit_types::supply_depot);
+// 						if (!wall.find()) {
+// 							log("failed to find wall in :(\n");
+// 							has_wall = false;
+// 							if (wall_calculated == 1) has_zergling_tight_wall = false;
+// 						}
+// 					}
+// 					if (has_wall) wall_calculated = 2;
+// 				}
+// 			}
+// 			if (has_wall) wall.build();
 
 			multitasking::sleep(15 * 5);
 		}
