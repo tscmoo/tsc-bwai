@@ -113,7 +113,8 @@ namespace combat_eval {
 				}
 			}
 			while (true) {
-				++total_frames;
+				int frame_resolution = 8;
+				total_frames += frame_resolution;
 				if (max_frames && total_frames >= max_frames) break;
 				int target_count = 0;
 				for (int i = 0; i < 2; ++i) {
@@ -125,8 +126,8 @@ namespace combat_eval {
 						if (c.st->type == unit_types::spider_mine) continue;
 						if (c.hp <= 0) continue;
 						//if (acc_width >= max_width) continue;
-						if (c.energy < c.st->energy) c.energy += 8.0 / 256;
-						if (c.st->type->race == race_zerg && c.hp < c.st->hp) c.hp += 4.0 / 256;
+						if (c.energy < c.st->energy) c.energy += 8.0 / 256 * frame_resolution;
+						if (c.st->type->race == race_zerg && c.hp < c.st->hp) c.hp += 4.0 / 256 * frame_resolution;
 						if (c.st->type->is_worker && acc_width >= max_width) continue;
 						if (c.loaded_until > total_frames) {
 							++target_count;
@@ -143,9 +144,9 @@ namespace combat_eval {
 										if (ac.heal_frame == total_frames) continue;
 										if (ac.hp >= ac.st->hp) continue;
 										ac.heal_frame = total_frames;
-										ac.hp += 200.0 / 256;
-										my_team.damage_taken -= 200.0 / 256;
-										c.energy -= 100.0 / 256;
+										ac.hp += 200.0 / 256 * frame_resolution;
+										my_team.damage_taken -= 200.0 / 256 * frame_resolution;
+										c.energy -= 100.0 / 256 * frame_resolution;
 										c.move = ac.move;
 										break;
 									}
@@ -180,7 +181,7 @@ namespace combat_eval {
 							}
 							c.target = target;
 						}
-						if (c.cooldown) --c.cooldown;
+						if (c.cooldown) c.cooldown -= frame_resolution;
 						//if (c.st->type == unit_types::dropship) log("frame %d: %s: target is %p (force_target %d)\n", total_frames, c.st->type->name, target, c.force_target);
 						if (target) {
 							weapon_stats*w = target->st->type->is_flyer ? c.st->air_weapon : c.st->ground_weapon;
@@ -188,8 +189,8 @@ namespace combat_eval {
 							if (!w) {
 								if (c.st->max_speed > 0 && c.move > 0) {
 									++target_count;
-									c.move -= c.st->max_speed;
-									my_team.score += c.st->max_speed / 1000.0;
+									c.move -= c.st->max_speed * frame_resolution;
+									my_team.score += c.st->max_speed / 1000.0 * frame_resolution;
 								}
 							} else if (c.move + target->move > (use_spider_mine ? 0 : w->max_range)) {
 							//} else if (c.move > w->max_range) {
@@ -199,12 +200,12 @@ namespace combat_eval {
 								if (c.st->type == unit_types::interceptor && c.move <= 0) speed = 0;
 								if (speed > 0) {
 									++target_count;
-									c.move -= c.st->max_speed;
-									my_team.score += c.st->max_speed / 1000.0;
+									c.move -= c.st->max_speed * frame_resolution;
+									my_team.score += c.st->max_speed / 1000.0 * frame_resolution;
 								}
 							} else {
 								++target_count;
-								if (c.cooldown == 0) {
+								if (c.cooldown <= 0) {
 									int hits = w == c.st->ground_weapon ? c.st->ground_weapon_hits : c.st->air_weapon_hits;
 									//if (target->move > c.move) target->move = c.move;
 									auto attack = [&](combatant*target, double damage_mult) {
@@ -214,6 +215,8 @@ namespace combat_eval {
 										if (damage <= 0) damage = 1.0;
 										damage *= hits;
 										damage *= damage_mult;
+										if (target->move + c.move < w->min_range) damage /= 2;
+										damage *= frame_resolution;
 										if (target->shields > 0) {
 											target->shields -= damage;
 											if (target->shields < 0) {
@@ -221,7 +224,6 @@ namespace combat_eval {
 												target->shields = 0.0;
 											}
 										} else target->hp -= damage;
-										if (target->move + c.move < w->min_range) damage /= 2;
 										//if (target->move) damage /= 2;
 										double damage_dealt = target->hp < 0 ? damage + target->hp : damage;
 										//log("%s dealt %g damage to %s\n", c.st->type->name, damage_dealt, target->st->type->name);
@@ -237,7 +239,7 @@ namespace combat_eval {
 // 											}
 										}
 										if (c.stim_pack_timer) cooldown /= 2;
-										c.cooldown = cooldown;
+										c.cooldown += cooldown;
 										my_team.score += damage_dealt / 100;
 										if (target->hp <= 0) {
 											double value = target->st->type->total_minerals_cost + target->st->type->total_gas_cost;
