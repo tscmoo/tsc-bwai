@@ -154,7 +154,7 @@ struct strat_tvt_opening {
 				expand = false;
 				if (my_workers.size() <= 20) resource_gathering::max_gas = 1.0;
 				auto proxy_defence_build = [&](state&st) {
-					auto marines = [&](state&st) {
+					std::function<bool(state&)> build = [&](state&st) {
 						if (my_units_of_type[unit_types::marine].size()>my_units_of_type[unit_types::scv].size()) {
 							return maxprod(st, unit_types::scv, [&](state&st) {
 								return nodelay(st, unit_types::marine, [&](state&st) {
@@ -169,10 +169,15 @@ struct strat_tvt_opening {
 							});
 						}
 					};
-					if (!my_completed_units_of_type[unit_types::factory].empty()) {
-						return nodelay(st, unit_types::vulture, marines);
+					if (my_workers.size() < 8) {
+						build = [build](state&st) {
+							return maxprod(st, unit_types::scv, build);
+						};
 					}
-					return marines(st);
+					if (!my_completed_units_of_type[unit_types::factory].empty()) {
+						return nodelay(st, unit_types::vulture, build);
+					}
+					return build(st);
 				};
 				execute_build(expand, proxy_defence_build);
 			} else execute_build(expand, build);
