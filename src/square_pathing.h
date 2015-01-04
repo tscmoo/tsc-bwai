@@ -55,6 +55,16 @@ struct pathing_map {
 	a_vector<path_node*> nearest_path_node;
 	bool path_nodes_requires_update = false;
 	bool update_path_nodes = false;
+	int update_path_nodes_frame = 0;
+	int last_update_path_nodes_frame = 0;
+
+	struct cached_distance_hash {
+		size_t operator()(const std::tuple<path_node*, path_node*>&v) const {
+			return std::hash<path_node*>()(std::get<0>(v)) ^ std::hash<path_node*>()(std::get<1>(v));
+		}
+	};
+
+	a_unordered_map<std::tuple<path_node*, path_node*>, std::tuple<path_node*, path_node*, double>, cached_distance_hash> cached_distance;
 
 	size_t path_node_index(path_node&n) {
 		return &n - path_nodes.data();
@@ -179,6 +189,8 @@ void generate_path_nodes(pathing_map&map) {
 
 	tsc::high_resolution_timer ht;
 	double elapsed = 0.0;
+
+	map.cached_distance.clear();
 
 	auto dims = map.dimensions;
 
@@ -359,7 +371,10 @@ void generate_path_nodes(pathing_map&map) {
 }
 
 path_node*get_nearest_path_node(pathing_map&map, xy pos) {
-	if (map.path_nodes_requires_update) map.update_path_nodes = true;
+	if (map.path_nodes_requires_update && !map.update_path_nodes) {
+		map.update_path_nodes = true;
+		map.update_path_nodes_frame = current_frame;
+	}
 	if (pos.x < 0) pos.x = 0;
 	if (pos.x >= grid::map_width) pos.x = grid::map_width - 1;
 	if (pos.y < 0) pos.y = 0;
@@ -392,6 +407,7 @@ bool unit_can_reach(unit*u, xy from, xy to, pathing_map_index index = pathing_ma
 struct closed_t {
 	closed_t*prev;
 	path_node*node;
+	double distance;
 };
 struct open_t {
 	closed_t*prev;
@@ -424,7 +440,7 @@ void find_path(pathing_map&map, path_node*from, path_node*to, xy from_pos, xy to
 		}
 		open.pop();
 
-		closed.push_back({ cur.prev, cur.node });
+		closed.push_back({ cur.prev, cur.node, cur.distance });
 		closed_t&closed_node = closed.back();
 
 		for (auto*n : cur.node->neighbors) {
@@ -454,9 +470,41 @@ double get_distance(pathing_map&map, xy from_pos, xy to_pos) {
 	if (from->root_index != to->root_index) return r;
 	if (from == to) return diag_distance(to_pos - from_pos);
 
+	auto it = map.cached_distance.find(std::make_tuple(from, to));
+	if (it != map.cached_distance.end()) {
+		double d;
+		std::tie(from, to, d) = it->second;
+		if (from) d += diag_distance(from->pos - from_pos);
+		if (to) d += diag_distance(to->pos - to_pos);
+		double r = d;
+		//log("distance (cached) from %d %d to %d %d returning %g\n", from_pos.x, from_pos.y, to_pos.x, to_pos.y, r);
+		return r;
+	}
+
+	bool is_first = true;
+	path_node*first_node = nullptr;
+	path_node*next_to_last_node = nullptr;
+	double first_distance = 0;
+	double next_to_last_distance = 0;
+	path_node*prev_node = nullptr;
 	find_path(map, from, to, from_pos, to_pos, [&](open_t&cur) {
+		if (cur.prev) {
+			next_to_last_node = cur.prev->node;
+			next_to_last_distance = cur.prev->distance;
+		}
+		for (closed_t*n = cur.prev; n && n->prev; n = n->prev) {
+			if (n->node != from) {
+				first_node = n->node;
+				first_distance = n->distance;
+			}
+		}
 		r = cur.distance;
 	});
+
+	if (map.cached_distance.size() >= 0x100) map.cached_distance.clear();
+	map.cached_distance[std::make_tuple(from, to)] = std::make_tuple(first_node, next_to_last_node, next_to_last_distance - first_distance);
+
+	//log("saving cached distance %g - first_node %p, next_to_last_node %p, distance %g\n", r, first_node, next_to_last_node, next_to_last_distance - first_distance);
 
 	return r;
 }
@@ -740,7 +788,8 @@ void square_pathing_update_maps_task() {
 				update_map(map, from, to);
 				updated = true;
 			}
-			if (map.update_path_nodes) {
+			if (map.update_path_nodes && (current_frame - map.update_path_nodes_frame >= 15 * 5 && current_frame - map.last_update_path_nodes_frame >= 15 * 10) || current_frame < 15 * 60) {
+				map.last_update_path_nodes_frame = current_frame;
 				map.update_path_nodes = false;
 				map.path_nodes_requires_update = false;
 				generate_path_nodes(map);
