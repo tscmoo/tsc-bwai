@@ -55,13 +55,13 @@ struct strat_tvt {
 			if (current_used_total_supply >= 180.0 && desired_bc_count < 4) desired_bc_count = 4;
 			int desired_goliath_count = 1 + enemy_wraith_count + enemy_bc_count * 3;
 			int desired_wraith_count = 1 + enemy_wraith_count + enemy_bc_count * 3 - enemy_goliath_count;
-			int desired_tank_count = 2 + enemy_tank_count + enemy_bc_count * 3;
+			int desired_tank_count = 2 + enemy_tank_count;
 			int desired_valkyrie_count = 0;
 			if (enemy_wraith_count >= 8) desired_valkyrie_count = enemy_wraith_count / 3;
 			int desired_science_vessel_count = my_tank_count / 4;
 			if (enemy_wraith_count >= 6 && desired_science_vessel_count<1) desired_science_vessel_count = 1;
 
-			if (my_tank_count >= 12 || my_tank_count > enemy_tank_count + 4 || my_goliath_count >= 8) combat::no_aggressive_groups = false;
+			if (my_tank_count >= 12 || (my_tank_count > enemy_tank_count + 4 && my_tank_count >= 8) || my_goliath_count >= 8) combat::no_aggressive_groups = false;
 			if (my_tank_count + my_goliath_count < 6 && my_tank_count <= enemy_tank_count / 2) combat::no_aggressive_groups = true;
 			if (my_vulture_count >= 50 || current_minerals >= 8000) combat::no_aggressive_groups = false;
 
