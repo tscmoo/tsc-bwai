@@ -1141,6 +1141,21 @@ void execute_build_task() {
 			execute_build(b);
 		}
 
+		for (unit*u : my_buildings) {
+			if (!u->is_completed) {
+				bool found = false;
+				for (build_task&b : build_tasks) {
+					if (b.built_unit == u) {
+						found = true;
+						break;
+					}
+				}
+				if (!found) {
+					u->game_unit->cancelConstruction();
+				}
+			}
+		}
+
 		for (unit*u : my_workers) {
 			if (u->controller->action == unit_controller::action_build) {
 				bool found = false;
