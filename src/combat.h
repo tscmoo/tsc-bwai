@@ -784,8 +784,9 @@ void update_groups() {
 
 			bool aggressive_valkyries = my_completed_units_of_type[unit_types::valkyrie].size() >= 4;
 			a_unordered_set<combat_unit*> blacklist;
-			auto get_nearest_unit = [&]() {
+			auto get_nearest_unit = [&](bool allow_worker) {
 				return get_best_score(available_units, [&](combat_unit*c) {
+					if (c->u->type->is_worker && !c->u->force_combat_unit && !allow_worker) return std::numeric_limits<double>::infinity();
 					if (no_aggressive_groups && c->u->type != unit_types::vulture && (c->u->type != unit_types::wraith || !aggressive_wraiths) && (c->u->type!=unit_types::valkyrie || !aggressive_valkyries)) {
 						if (g.is_aggressive_group) return std::numeric_limits<double>::infinity();
 					} else if (g.is_defensive_group) return std::numeric_limits<double>::infinity();
@@ -799,6 +800,7 @@ void update_groups() {
 					if (c->u->is_loaded) d = diag_distance(g.enemies.front()->pos - c->u->pos);
 					else d = units_pathing_distance(c->u, g.enemies.front());
 					//if (c->u->type->is_worker && !c->u->force_combat_unit && d >= 32 * 20 && current_used_total_supply > 30) return std::numeric_limits<double>::infinity();
+					if (c->u->type->is_worker && !c->u->force_combat_unit && d >= 32 * 10 && current_used_total_supply > 70) return std::numeric_limits<double>::infinity();
 					if (is_just_one_worker && !is_attacking && d >= 32 * 15) return std::numeric_limits<double>::infinity();
 					if (c->u->type->is_worker && !c->u->force_combat_unit && is_just_one_worker && !g.allies.empty()) return std::numeric_limits<double>::infinity();
 					return d;
@@ -813,7 +815,8 @@ void update_groups() {
 				}
 				return false;
 			};
-			combat_unit*nearest_unit = get_nearest_unit();
+			combat_unit*nearest_unit = get_nearest_unit(false);
+			if (!nearest_unit) nearest_unit = get_nearest_unit(true);
 			while (nearest_unit && !is_useful(nearest_unit)) {
 				//log("%p (%s) -> %p is not useful\n", nearest_unit, nearest_unit->u->type->name, &g);
 				if (blacklist.count(nearest_unit)) {
@@ -821,7 +824,8 @@ void update_groups() {
 					break;
 				}
 				blacklist.insert(nearest_unit);
-				nearest_unit = get_nearest_unit();
+				nearest_unit = get_nearest_unit(true);
+				if (!nearest_unit) nearest_unit = get_nearest_unit(true);
 			}
 			if (!nearest_unit) {
 				log("failed to find unit for group %d\n", g.idx);
@@ -1820,13 +1824,13 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 		weapon_stats*w = a->u->is_flying ? target->stats->air_weapon : target->stats->ground_weapon;
 		if (target->stats->ground_weapon) {
 			double damage = w->damage;
-			if (target->shields <= 0) damage *= combat_eval::get_damage_type_modifier(w->damage_type, target->stats->type->size);
+			if (target->shields <= 0) damage *= combat_eval::get_damage_type_modifier(w->damage_type, a->u->stats->type->size);
 			damage -= a->u->stats->armor;
 			if (damage <= 0) damage = 1.0;
 			damage *= w == target->stats->ground_weapon ? target->stats->ground_weapon_hits : target->stats->air_weapon_hits;
 			double dps = damage * (15.0 / w->cooldown);
 			log("%p: %g vs %g (or %g)\n", a->u, a->u->hp, damage, dps * 2);
-			if ((a->u->hp <= damage || a->u->hp <= dps * 2) && units_distance(a->u, target) <= w->max_range + 64) {
+			if (a->u->hp < a->u->stats->hp && (a->u->hp <= damage || a->u->hp <= dps * 2) && units_distance(a->u, target) <= w->max_range + 64) {
 				unit*nr = get_best_score(resource_units, [&](unit*r) {
 					if (!r->visible) return std::numeric_limits<double>::infinity();
 					return diag_distance(a->u->pos - r->pos);
