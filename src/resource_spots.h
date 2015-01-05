@@ -92,7 +92,7 @@ void update_spots_pos() {
 					//double d = (bs.pos-pos).length();
 					double d = 0.0;
 					for (auto&r : s.resources) {
-						d += diag_distance(r.u->pos - bs.pos + xy(16, 16));
+						d += diag_distance(r.u->pos - (bs.pos + xy(16 * 4, 16 * 3)));
 					}
 					if (bs.building && bs.building->type->is_resource_depot && bs.building->building->build_pos == bs.pos && diag_distance(bs.pos - pos) < 32 * 10) {
 						d /= 100;
@@ -215,6 +215,27 @@ void update_spots() {
 	static int last_update = 0;
 	if (moves || current_frame-last_update>=90 || current_frame<8) {
 		if (true) {
+
+			if (true) {
+				auto&map = square_pathing::get_pathing_map(unit_types::scv);
+				square_pathing::get_nearest_path_node(map, xy());
+				if (!map.path_nodes.empty()) {
+					for (auto&r : live_resources) {
+						bool bad = false;
+						for (auto&r2 : r.s->resources) {
+							if (&r == &r2) continue;
+							if (!square_pathing::unit_can_reach(unit_types::scv, r.u->pos, r2.u->pos)) {
+								bad = true;
+								break;
+							}
+						}
+						if (bad) {
+							spots.emplace_back();
+							move(&r, &spots.back());
+						}
+					}
+				}
+			}
 
 			a_vector<resource_t*> vec;
 			for (auto&r : live_resources) vec.push_back(&r);
