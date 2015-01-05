@@ -216,7 +216,6 @@ namespace combat_eval {
 										damage *= hits;
 										damage *= damage_mult;
 										if (target->move + c.move < w->min_range) damage /= 2;
-										damage *= frame_resolution;
 										if (target->shields > 0) {
 											target->shields -= damage;
 											if (target->shields < 0) {
