@@ -1959,7 +1959,7 @@ void do_run(combat_unit*a, const a_vector<unit*>&enemies) {
 			bool too_close = net_d <= margin;
 			if (d - wr < net_d - net_wr - margin && !too_close) {
 				if (move_close_if_unreachable(a, ne)) return;
-				if (a->u->weapon_cooldown <= frames_to_reach(a->u, d - wr) + latency_frames) {
+				if (a->u->weapon_cooldown <= frames_to_reach(a->u, d - wr) + latency_frames || (!net || net->building)) {
 					a->subaction = combat_unit::subaction_fight;
 					a->target = ne;
 				}
