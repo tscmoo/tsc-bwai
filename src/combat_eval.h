@@ -51,7 +51,7 @@ namespace combat_eval {
 		int max_frames = 0;
 
 		eval() {
-			max_frames = 15 * 60;
+			max_frames = 15 * 20;
 			teams[0].has_stim = players::my_player->has_upgrade(upgrade_types::stim_packs);
 			teams[1].has_stim = players::opponent_player->has_upgrade(upgrade_types::stim_packs);
 			teams[0].has_spider_mines = players::my_player->has_upgrade(upgrade_types::spider_mines);
@@ -223,6 +223,7 @@ namespace combat_eval {
 												target->shields = 0.0;
 											}
 										} else target->hp -= damage;
+										if (c.st->type == unit_types::mutalisk) damage /= 2;
 										//if (target->move) damage /= 2;
 										double damage_dealt = target->hp < 0 ? damage + target->hp : damage;
 										//log("%s dealt %g damage to %s\n", c.st->type->name, damage_dealt, target->st->type->name);
