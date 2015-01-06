@@ -281,7 +281,7 @@ void update_spots() {
 								return;
 							}
 							n_spot = s;
-							if (depth < 5) open.emplace_back(nbs, depth + 1);
+							if (depth < 7) open.emplace_back(nbs, depth + 1);
 						};
 						add(0);
 						add(1);
