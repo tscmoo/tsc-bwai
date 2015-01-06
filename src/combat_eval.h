@@ -45,6 +45,7 @@ namespace combat_eval {
 			bool has_spider_mines = false;
 			weapon_stats*spider_mine_weapon;
 			int bunker_count = 0;
+			bool has_static_defence = false;
 		};
 		std::array<team_t, 2> teams;
 		int total_frames = 0;
@@ -106,11 +107,14 @@ namespace combat_eval {
 					return am < bm;
 				});
 				t.start_supply = 0;
+				int static_defence_count = 0;
 				for (auto&v : t.units) {
 					if (v.hp <= 0) continue;
 					t.start_supply += v.st->type->required_supply;
 					if (v.st->type == unit_types::bunker) ++t.bunker_count;
+					if (v.st->type == unit_types::bunker || v.st->type == unit_types::photon_cannon || v.st->type == unit_types::sunken_colony) ++static_defence_count;
 				}
+				t.has_static_defence = static_defence_count >= 2;
 			}
 			while (true) {
 				int frame_resolution = 8;
@@ -189,7 +193,8 @@ namespace combat_eval {
 							if (!w) {
 								if (c.st->max_speed > 0 && c.move > 0) {
 									++target_count;
-									c.move -= c.st->max_speed * frame_resolution;
+									if (teams[i].has_static_defence) c.move -= c.st->max_speed * frame_resolution / 4;
+									else c.move -= c.st->max_speed * frame_resolution;
 									my_team.score += c.st->max_speed / 1000.0 * frame_resolution;
 								}
 							} else if (c.move + target->move > (use_spider_mine ? 0 : w->max_range)) {
@@ -200,7 +205,8 @@ namespace combat_eval {
 								if (c.st->type == unit_types::interceptor && c.move <= 0) speed = 0;
 								if (speed > 0) {
 									++target_count;
-									c.move -= c.st->max_speed * frame_resolution;
+									if (teams[i].has_static_defence) c.move -= c.st->max_speed * frame_resolution / 4;
+									else c.move -= c.st->max_speed * frame_resolution;
 									my_team.score += c.st->max_speed / 1000.0 * frame_resolution;
 								}
 							} else {
