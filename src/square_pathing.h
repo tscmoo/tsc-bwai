@@ -641,13 +641,16 @@ a_deque<xy> find_square_path(pathing_map&map, xy from, pred_T&&pred, est_dist_T&
 }
 
 // Brood war is too picky about what can be the final destination for a path
-xy get_go_to_along_path(unit*u, const a_deque<xy>&path, unit**wall_building = nullptr) {
+xy get_go_to_along_path(unit*u, const a_deque<xy>&path, unit**wall_building = nullptr, xy preferred_go_to = xy()) {
 	if (path.empty()) return u->pos;
 	double dis = 0.0;
 	xy lpos = path.front();
 	for (xy pos : path) {
+		can_fit_at(pos, u->type->dimensions, true, false, wall_building);
 		dis += diag_distance(pos - lpos);
-		if (dis >= 32 * 4) {
+		bool close_to_preferred = dis >= 32 * 4 && diag_distance(pos - preferred_go_to) <= 32 * 2;
+		if (close_to_preferred) pos = preferred_go_to;
+		if (close_to_preferred || dis >= 32 * 10) {
 			auto&dims = u->type->dimensions;
 			auto test = [&](xy npos) {
 				if (!can_fit_at(npos, dims, true, false, wall_building)) return false;
@@ -657,7 +660,7 @@ xy get_go_to_along_path(unit*u, const a_deque<xy>&path, unit**wall_building = nu
 			xy apos = pos / 32 * 32;
 			apos += xy(16, 16);
 			if (test(apos)) return apos;
-			if (test(apos + xy(32,0))) return apos + xy(32,0);
+			if (test(apos + xy(32, 0))) return apos + xy(32, 0);
 			if (test(apos + xy(0, 32))) return apos + xy(32, 32);
 			if (test(apos + xy(-32, 0))) return apos + xy(-32, 0);
 			if (test(apos + xy(0, -32))) return apos + xy(0, -32);
@@ -668,9 +671,9 @@ xy get_go_to_along_path(unit*u, const a_deque<xy>&path, unit**wall_building = nu
 	return path.back();
 }
 
-xy get_go_to_along_path_and_lift_wall(unit*u, const a_deque<xy>&path) {
+xy get_go_to_along_path_and_lift_wall(unit*u, const a_deque<xy>&path, xy preferred_go_to = xy()) {
 	unit*wall_building = nullptr;
-	xy r = get_go_to_along_path(u, path, &wall_building);
+	xy r = get_go_to_along_path(u, path, &wall_building, preferred_go_to);
 	if (wall_building) wall_in::lift_please(wall_building);
 	return r;
 }
@@ -686,7 +689,7 @@ size_t force_field_index(xy pos) {
 a_deque<xy> render_node_path;
 a_deque<xy> render_path;
 
-xy get_move_to(unit*u, xy goal, int priority) {
+xy get_move_to(unit*u, xy goal, int priority, xy last_move_to_pos) {
 
 	auto&map = get_pathing_map(u->type);
 	path_node*from_node = get_nearest_path_node(map, u->pos);
@@ -751,7 +754,7 @@ xy get_move_to(unit*u, xy goal, int priority) {
 		if (std::get<0>(final_ff) >= current_frame) {
 			final_ff = std::make_tuple(current_frame, priority, angle, u);
 		}
-		return get_go_to_along_path_and_lift_wall(u, escape_path);
+		return get_go_to_along_path_and_lift_wall(u, escape_path, last_move_to_pos);
 	}
 	if (next_node != to_node) {
 		for (xy pos : square_path) {
@@ -759,7 +762,7 @@ xy get_move_to(unit*u, xy goal, int priority) {
 			ff = std::make_tuple(current_frame, priority, angle, nullptr);
 		}
 	} else return goal;
-	return get_go_to_along_path_and_lift_wall(u, square_path);
+	return get_go_to_along_path_and_lift_wall(u, square_path, last_move_to_pos);
 }
 
 void square_pathing_update_maps_task() {
@@ -788,7 +791,7 @@ void square_pathing_update_maps_task() {
 				update_map(map, from, to);
 				updated = true;
 			}
-			if (map.update_path_nodes && (current_frame - map.update_path_nodes_frame >= 15 * 5 && current_frame - map.last_update_path_nodes_frame >= 15 * 10) || current_frame < 15 * 60) {
+			if (map.update_path_nodes && ((current_frame - map.update_path_nodes_frame >= 15 * 5 && current_frame - map.last_update_path_nodes_frame >= 15 * 10) || current_frame < 15 * 60)) {
 				map.last_update_path_nodes_frame = current_frame;
 				map.update_path_nodes = false;
 				map.path_nodes_requires_update = false;

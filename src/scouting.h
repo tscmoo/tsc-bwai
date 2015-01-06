@@ -238,7 +238,7 @@ int last_scout = 0;
 int last_vulture_scout = 0;
 
 void process_scouts() {
-	
+
 	if (all_scouts.empty()) {
 		if (last_scout == 0 || current_frame - last_scout >= 15 * 60 * 3 || current_used_total_supply >= 100) {
 			if (my_workers.size() < 8) return;

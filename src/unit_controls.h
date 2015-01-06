@@ -61,7 +61,7 @@ void move(unit_controller*c) {
 
 	} else {
 
-		move_to = square_pathing::get_move_to(u, c->go_to, c->last_reached_go_to);
+		move_to = square_pathing::get_move_to(u, c->go_to, c->last_reached_go_to, c->last_move_to_pos);
 
 		xy pos = square_pathing::get_pos_in_square(move_to, u->type);
 		//if (pos == xy()) log(" !! move: get_pos_in_square for %s failed\n", u->type->name);
