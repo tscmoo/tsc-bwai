@@ -27,6 +27,7 @@ struct strat_tvp {
 			int enemy_arbiter_count = 0;
 			int enemy_corsair_count = 0;
 			int enemy_cannon_count = 0;
+			int enemy_dt_count = 0;
 			for (unit*e : enemy_units) {
 				if (e->type == unit_types::zealot) ++enemy_zealot_count;
 				if (e->type == unit_types::dragoon) ++enemy_dragoon_count;
@@ -37,6 +38,7 @@ struct strat_tvp {
 				if (e->type == unit_types::arbiter) ++enemy_arbiter_count;
 				if (e->type == unit_types::corsair) ++enemy_corsair_count;
 				if (e->type == unit_types::photon_cannon) ++enemy_cannon_count;
+				if (e->type == unit_types::dark_templar) ++enemy_dt_count;
 			}
 			
 			if (my_tank_count >= 12 || my_tank_count + my_goliath_count >= 20) combat::no_aggressive_groups = false;
@@ -50,7 +52,8 @@ struct strat_tvp {
 				if (current_used_total_supply < 100.0) maxed_out_aggression = false;
 			}
 
-			int desired_science_vessel_count = enemy_arbiter_count;
+			int desired_science_vessel_count = enemy_arbiter_count + (enemy_dt_count + 2) / 3;
+			if (current_used_total_supply >= 80 && desired_science_vessel_count == 0) desired_science_vessel_count = 1;
 			int desired_goliath_count = enemy_carrier_count * 4;
 			desired_goliath_count += (enemy_shuttle_count + enemy_observer_count + 1) / 2;
 			desired_goliath_count += enemy_scout_count + enemy_arbiter_count + enemy_corsair_count;
@@ -111,6 +114,7 @@ struct strat_tvp {
 				return count;
 			};
 			auto can_expand = [&]() {
+				if (!players::my_player->has_upgrade(upgrade_types::siege_mode)) return false;
 				if (long_distance_miners() >= 20) return true;
 				if (buildpred::get_my_current_state().bases.size() == 2 && (my_tank_count < 12 && my_goliath_count < 8 && my_vulture_count < 30)) return false;
 				return long_distance_miners() >= 8;
