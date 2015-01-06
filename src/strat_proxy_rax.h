@@ -203,7 +203,7 @@ struct proxy_rax {
 				if (!enemy_units.empty()) {
 					scv[0]->force_combat_unit = true;
 					scv[1]->force_combat_unit = true;
-					buildpred::attack_now = true;
+					//buildpred::attack_now = true;
 				}
 			}
 			

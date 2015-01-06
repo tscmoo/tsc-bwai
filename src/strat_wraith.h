@@ -21,7 +21,7 @@ struct wraith {
 				});
 			});
 
-			if (my_completed_units_of_type[unit_types::wraith].size() >= 2) buildpred::attack_now = true;
+			//if (my_completed_units_of_type[unit_types::wraith].size() >= 2) buildpred::attack_now = true;
 
 			multitasking::sleep(10);
 		}

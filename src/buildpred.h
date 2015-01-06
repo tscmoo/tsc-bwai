@@ -442,7 +442,7 @@ void run(a_vector<state>&all_states, ruleset rules, bool is_for_me) {
 				res += r.u->resources;
 				if (r.u->type->is_gas) has_gas = true;
 			}
-			score -= (has_gas ? res : res / 2) / 100;
+			score -= (has_gas ? res : res / 2) / 10;
 			//if (d == std::numeric_limits<double>::infinity()) d = 10000.0 + diag_distance(s->pos - st.bases.front().s->cc_build_pos);
 			return score;
 		}, std::numeric_limits<double>::infinity());
@@ -1174,197 +1174,6 @@ a_vector<state> run_opponent_builds(int end_frame) {
 	return r;
 }
 
-bool attack_now = false;
-
-void run_buildpred(const state&my_current_state) {
-
-	{
-		auto&st = my_current_state;
-		log("min %g gas %g supply %g/%g  bases %d\n", st.minerals, st.gas, st.used_supply[st.race], st.max_supply[st.race], st.bases.size());
-		log("my current state (frame %d)--- \n", st.frame);
-		for (auto&v : st.units) {
-			if (!v.first || !v.second.size()) continue;
-			log(" %dx%s", v.second.size(), short_type_name(v.first));
-		}
-		log("\n");
-	}
-	
-	if (opponent_states.empty()) {
-		log("opponent_states is empty :(\n");
-		return;
-	}
-
-	a_vector<state> all_states;
-	state my_end_state;
-	state op_end_state;
-
-	struct result_t {
-		size_t my_idx;
-		double score;
-		state my_st;
-		state op_st;
-		bool operator<(const result_t&n) {
-			return score > n.score;
-		}
-	};
-	a_vector<result_t> results_ordered, results_unordered;
-
-	a_unordered_set<size_t> invalid_idx;
-
-	auto try_defend = [&](int my_frame_offset, int op_frame_offset) {
-
-		a_vector<state> my_states, op_states;
-		for (auto&var : variants) {
-			all_states.clear();
-			all_states.push_back(my_current_state);
-			int end_frame = current_frame + my_frame_offset;
-			run(all_states, rules_from_variant(all_states.back(), var, end_frame), true);
-			if (all_states.size() > 1 && all_states.back().frame > end_frame) all_states.pop_back();
-			my_states.push_back(std::move(all_states.back()));
-		}
-		for (auto&v : opponent_states) {
-			all_states.clear();
-			all_states.push_back(std::get<1>(v));
-			int end_frame = current_frame + op_frame_offset;
-			run(all_states, rules_from_variant(all_states.back(), std::get<0>(v), end_frame), false);
-			if (all_states.size() > 1 && all_states.back().frame > end_frame) all_states.pop_back();
-			op_states.push_back(all_states.back());
-		}
-
-		results_unordered.clear();
-		
-		for (size_t my_idx = 0; my_idx < my_states.size(); ++my_idx) {
-			auto&mys = my_states[my_idx];
-			if (invalid_idx.find(my_idx) != invalid_idx.end()) {
-				results_unordered.push_back({ my_idx, -std::numeric_limits<double>::infinity(), mys, op_states[my_idx] });
-				continue;
-			}
-			
-			double op_best_score = std::numeric_limits<double>::infinity();
-			state*op_best_state = nullptr;
-			for (auto&ops : op_states) {
-				multitasking::yield_point();
-
-				combat_eval::eval eval;
-				for (auto&v : mys.units) {
-					if (!v.first || !v.second.size()) continue;
-					if (v.first->is_building) continue;
-					if (v.first->is_worker) continue;
-					for (size_t i = 0; i < v.second.size(); ++i) eval.add_unit(units::get_unit_stats(v.first, players::opponent_player), 0);
-				}
-				for (auto&v : ops.units) {
-					if (!v.first || !v.second.size()) continue;
-					if (v.first->is_building) continue;
-					if (v.first->is_worker) continue;
-					for (size_t i = 0; i < v.second.size(); ++i) eval.add_unit(units::get_unit_stats(v.first, players::my_player), 1);
-				}
-				eval.run();
-
-				double my_supply_left = eval.teams[0].end_supply;
-				double op_supply_left = eval.teams[1].end_supply;
-
-				double score = my_supply_left - op_supply_left;
-				if (score < op_best_score) {
-					op_best_score = score;
-					op_best_state = &ops;
-				}
-			}
-			results_unordered.push_back({ my_idx, op_best_score, mys, *op_best_state });
-		}
-		results_ordered = results_unordered;
-		std::sort(results_ordered.begin(), results_ordered.end());
-
-		return results_ordered.front().score > 0;
-	};
-
-	try_defend(15 * 60 * 10, 15 * 60 * 10);
-	auto preference = results_ordered;
-	{
-		log(" -- preference --\n");
-		size_t n = 0;
-		for (auto&v : preference) {
-			auto&my_state = v.my_st;
-			log("-- idx %d - score %g\n", v.my_idx, v.score);
-			log("-- --- frame %d  min %g gas %g supply %g/%g bases %d\n", my_state.frame, my_state.minerals, my_state.gas, my_state.used_supply[my_state.race], my_state.max_supply[my_state.race], my_state.bases.size());
-			for (auto&v : my_state.units) {
-				if (!v.first || !v.second.size()) continue;
-				log(" %dx%s", v.second.size(), short_type_name(v.first));
-			}
-			log("\n");
-
-			if (v.score <= 0) invalid_idx.insert(v.my_idx);
-		}
-	}
-	attack_now = false;
-	bool can_expand = my_current_state.bases.size() == 1;
-	if (try_defend(0, 15 * 60 * 0)) {
-		log("0 minute attack ok\n");
-		attack_now = true;
-		can_expand = true;
-	} else {
-		if (try_defend(15 * 60 * 4, 15 * 60 * 4)) {
-			log("4 minute engagement ok\n");
-			can_expand = true;
-		} else {
-			if (try_defend(15 * 60 * 4, 0)) {
-				log("4 minute defence ok\n");
-			} else {
-				log("I'm fucked :(\n");
-			}
-		}
-	}
-	{
-		log(" -- results ordered --\n");
-		for (auto&v : results_ordered) {
-			auto&my_state = v.my_st;
-			log("-- idx %d - score %g\n", v.my_idx, v.score);
-			log("-- --- frame %d  min %g gas %g supply %g/%g bases %d\n", my_state.frame, my_state.minerals, my_state.gas, my_state.used_supply[my_state.race], my_state.max_supply[my_state.race], my_state.bases.size());
-			for (auto&v : my_state.units) {
-				if (!v.first || !v.second.size()) continue;
-				log(" %dx%s", v.second.size(), short_type_name(v.first));
-			}
-			log("\n");
-		}
-	}
-	bool found = false;
-	for (auto&v : preference) {
-		if (results_unordered[v.my_idx].my_st.bases.size() > my_current_state.bases.size() && !can_expand) continue;
-		if (results_unordered[v.my_idx].score > 0) {
-			my_end_state = v.my_st;
-			op_end_state = v.op_st;
-			found = true;
-			break;
-		}
-	}
-	if (!found) {
-		for (auto&v : preference) {
-			if (v.my_st.bases.size() > my_current_state.bases.size()) continue;
-			my_end_state = v.my_st;
-			op_end_state = v.op_st;
-			break;
-		}
-	}
-
-	{
-		auto&my_state = my_end_state;
-		log("-- my state --- frame %d  min %g gas %g supply %g/%g bases %d\n", my_state.frame, my_state.minerals, my_state.gas, my_state.used_supply[my_state.race], my_state.max_supply[my_state.race], my_state.bases.size());
-		for (auto&v : my_state.units) {
-			if (!v.first || !v.second.size()) continue;
-			log(" %dx%s", v.second.size(), short_type_name(v.first));
-		}
-		log("\n");
-		auto&op_state = op_end_state;
-		log("-- op best build --- frame %d  min %g gas %g supply %g/%g bases %d\n", op_state.frame, op_state.minerals, op_state.gas, op_state.used_supply[op_state.race], op_state.max_supply[op_state.race], op_state.bases.size());
-		for (auto&v : op_state.units) {
-			if (!v.first || !v.second.size()) continue;
-			log(" %dx%s", v.second.size(), short_type_name(v.first));
-		}
-		log("\n");
-	}
-
-	add_builds(my_end_state);
-
-}
 
 state get_my_current_state() {
 	state initial_state;
@@ -1476,9 +1285,6 @@ void buildpred_task() {
 
 		state initial_state = get_my_current_state();
 		log("%d bases, %d units\n", initial_state.bases.size(), initial_state.units.size());
-		if (!initial_state.bases.empty()) {
-			//run_buildpred(initial_state);
-		}
 		if (!opponent_states.empty()) {
 			auto&op_st = std::get<1>(opponent_states.front());
  			op_total_minerals_gathered = op_st.total_minerals_gathered;
@@ -1515,8 +1321,6 @@ void buildpred_task() {
 
 		multitasking::sleep(15);
 
-// 		static int count = 0;
-// 		if (++count >= 4) multitasking::sleep(15 * 30);
 	}
 
 }
