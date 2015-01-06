@@ -206,7 +206,7 @@ namespace unit_types {
 	unit_type_pointer spider_mine, nuclear_missile;
 	unit_type_pointer nexus, pylon, gateway, photon_cannon, robotics_facility;
 	unit_type_pointer probe;
-	unit_type_pointer zealot, dragoon;
+	unit_type_pointer zealot, dragoon, dark_templar, high_templar, reaver;
 	unit_type_pointer archon, dark_archon;
 	unit_type_pointer observer, shuttle, scout, carrier, interceptor, arbiter, corsair;
 	unit_type_pointer hatchery, lair, hive, creep_colony, sunken_colony, spore_colony, nydus_canal, spawning_pool, evolution_chamber;
@@ -267,6 +267,9 @@ namespace unit_types {
 		get(probe, BWAPI::UnitTypes::Protoss_Probe);
 		get(zealot, BWAPI::UnitTypes::Protoss_Zealot);
 		get(dragoon, BWAPI::UnitTypes::Protoss_Dragoon);
+		get(dark_templar, BWAPI::UnitTypes::Protoss_Dark_Templar);
+		get(high_templar, BWAPI::UnitTypes::Protoss_High_Templar);
+		get(reaver, BWAPI::UnitTypes::Protoss_Reaver);
 		get(archon, BWAPI::UnitTypes::Protoss_Archon);
 		get(dark_archon, BWAPI::UnitTypes::Protoss_Dark_Archon);
 
