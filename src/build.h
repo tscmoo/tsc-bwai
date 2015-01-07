@@ -1083,6 +1083,10 @@ void on_create_unit(unit*u) {
 	bool found = match_new_unit(u);
 	if (!found) {
 		log("created unit %s does not have a corresponding build task\n",u->type->name);
+		if (u->build_unit && u->build_unit->controller->action == unit_controller::action_build) {
+			u->build_unit->controller->action = unit_controller::action_idle;
+			u->build_unit->controller->flag = nullptr;
+		}
 	}
 }
 void on_morph_unit(unit*u) {
