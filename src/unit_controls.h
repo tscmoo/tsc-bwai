@@ -1,7 +1,7 @@
 
 struct unit_controller {
 	unit*u = nullptr;
-	enum { action_idle, action_move, action_gather, action_build, action_attack, action_scout, action_move_directly, action_use_ability, action_repair };
+	enum { action_idle, action_move, action_gather, action_build, action_attack, action_scout, action_move_directly, action_use_ability, action_repair, action_building_movement };
 	int action = action_idle;
 	xy go_to;
 	unit*target = nullptr;
@@ -25,6 +25,8 @@ struct unit_controller {
 	int at_go_to_counter = 0;
 	int last_siege = 0;
 	int last_return_cargo = 0;
+	bool lift = false;
+	int timeout = 0;
 };
 
 namespace unit_controls {
@@ -145,7 +147,7 @@ void process(a_vector<unit_controller*>&controllers) {
 	for (auto*c : controllers) {
 
 		unit*u = c->u;
-		if (u->building) continue;
+		if (u->building && c->action!=unit_controller::action_building_movement) continue;
 
 		if (current_frame < c->noorder_until) continue;
 
@@ -278,7 +280,14 @@ void process(a_vector<unit_controller*>&controllers) {
 					//log("build!\n");
 					bool enough_minerals = c->target_type->minerals_cost==0 || current_minerals>=c->target_type->minerals_cost;
 					bool enough_gas = c->target_type->gas_cost == 0 || current_gas >= c->target_type->gas_cost;
-					if (enough_minerals && enough_gas) {
+					bool prereq_ok = true;
+					for (auto*ut : c->target_type->required_units) {
+						if (my_completed_units_of_type[ut].empty()) {
+							prereq_ok = false;
+							break;
+						}
+					}
+					if (enough_minerals && enough_gas && prereq_ok) {
 						bwapi_call_build(u->game_unit, c->target_type->game_unit_type, BWAPI::TilePosition(build_pos.x / 32, build_pos.y / 32));
 						bool something_in_the_way = false;
 						for (unit*nu : my_units) {
@@ -329,7 +338,8 @@ void process(a_vector<unit_controller*>&controllers) {
 
 		if (c->action == unit_controller::action_attack && c->target) {
 
-			if (u->order_target != c->target || u->game_order != BWAPI::Orders::AttackUnit) {
+			if (c->target->dead) c->action = unit_controller::action_idle;
+			else if (u->order_target != c->target || u->game_order != BWAPI::Orders::AttackUnit) {
 				if (c->target == nullptr) xcept("attack null unit");
 				weapon_stats*w = c->target->is_flying ? u->stats->air_weapon : u->stats->ground_weapon;
 				weapon_stats*ew = u->is_flying ? c->target->stats->air_weapon : c->target->stats->ground_weapon;
@@ -368,6 +378,32 @@ void process(a_vector<unit_controller*>&controllers) {
 		if (c->action == unit_controller::action_scout && c->can_move && current_frame - c->last_move >= move_resolution) {
 			c->last_move = current_frame;
 			move(c);
+		}
+
+		if (c->action == unit_controller::action_building_movement) {
+			u->building->nobuild_until = current_frame + 15 * 4;
+			if (current_frame >= c->timeout) {
+				if (u->type == unit_types::cc) {
+					c->lift = false;
+					c->target_pos = get_nearest_available_cc_build_pos(u->pos);
+				}
+			}
+			if (c->lift || (!u->building->is_lifted && u->building->build_pos != c->target_pos)) {
+				if (!u->building->is_lifted) {
+					u->game_unit->lift();
+					c->noorder_until = current_frame + 30;
+				}
+			} else {
+				if (u->building->is_lifted) {
+					if (diag_distance(c->target_pos - u->pos) >= 64) {
+						u->game_unit->move(BWAPI::Position(c->target_pos.x, c->target_pos.y));
+						c->noorder_until = current_frame + 15;
+					} else {
+						u->game_unit->land(BWAPI::TilePosition(c->target_pos.x / 32, c->target_pos.y / 32));
+						c->noorder_until = current_frame + 15;
+					}
+				} else c->action = unit_controller::action_idle;
+			}
 		}
 
 	}
@@ -411,6 +447,7 @@ void render() {
 		if (c->action == unit_controller::action_move_directly) s = "move directly";
 		if (c->action == unit_controller::action_use_ability) s = "use ability";
 		if (c->action == unit_controller::action_repair) s = "repair";
+		if (c->action == unit_controller::action_building_movement) s = "building movement";
 
 		game->drawTextMap(u->pos.x-8,u->pos.y+8,"%s",s.c_str());
 		
