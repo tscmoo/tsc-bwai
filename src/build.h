@@ -250,6 +250,7 @@ void add_build_sum(double priority, unit_type*type, int count) {
 void add_build_sum(double priority, upgrade_type*type, int count) {
 	int sum = 0;
 	for (build::build_task&b : build::build_tasks) {
+		if (b.dead) continue;
 		if (b.type->upgrade == type) ++sum;
 	}
 	for (; sum < count; ++sum) add_build_task(priority, type);
@@ -305,35 +306,26 @@ void generate_build_order_task() {
 	const int resolution = 15;
 	const int max_time = resource_gathering::max_predicted_frames / resolution;
 
-	std::array<double,max_time> minerals_at;
-	std::array<double,max_time> gas_at;
-	std::array<std::array<double,max_time>,3> supply_at;
-	a_map<void*,a_map<int,int>> build_busy_frames;
+	std::array<double, max_time> minerals_at;
+	std::array<double, max_time> gas_at;
+	a_unordered_map<unit*, int> build_busy;
 
 	while (true) {
 		minerals_at.fill(current_minerals);
 		gas_at.fill(current_gas);
 		for (auto&v : resource_gathering::predicted_mineral_delivery) {
-			int f = (v.first-current_frame)/resolution;
-			if (f<0) f = 0;
-			else if (f>=max_time) f = max_time-1;
-			for (int i=f;i<max_time;++i) minerals_at[i] += v.second;
+			int f = (v.first - current_frame) / resolution;
+			if (f < 0) f = 0;
+			else if (f >= max_time) f = max_time - 1;
+			for (int i = f; i < max_time; ++i) minerals_at[i] += v.second;
 		}
 		for (auto&v : resource_gathering::predicted_gas_delivery) {
-			int f = (v.first-current_frame)/resolution;
-			if (f<0) f = 0;
-			else if (f>=max_time) f = max_time-1;
-			for (int i=f;i<max_time;++i) gas_at[i] += v.second;
+			int f = (v.first - current_frame) / resolution;
+			if (f < 0) f = 0;
+			else if (f >= max_time) f = max_time - 1;
+			for (int i = f; i < max_time; ++i) gas_at[i] += v.second;
 		}
-		for (int n=0;n<3;++n) {
-			for (int i=0;i<max_time;++i) supply_at[n][i] = current_max_supply[n] - current_used_supply[n];
-			//log("current_max_supply[n] - current_used_supply[n] is %g\n",current_max_supply[n] - current_used_supply[n]);
-		}
-		build_busy_frames.clear();
-
-// 		build_tasks.sort([&](const build_task&a,const build_task&b) {
-// 			return a.priority<b.priority;
-// 		});
+		build_busy.clear();
 
 		for (build_task&b : build_tasks) {
 			update_prerequisites(&b);
@@ -344,128 +336,53 @@ void generate_build_order_task() {
 		for (build_task&b : build_tasks) {
 			b.build_frame = 0;
 		}
-		int total_mc = 0, total_gc = 0;
+		double total_minerals_spent = 0;
+		double total_gas_spent = 0;
+//		bool min_2 = false;
 		for (auto&v : priority_groups) {
-// 			log("priority %g - \n",v.first);
-// 			log("%d elements\n",v.second.size());
+			// 			log("priority %g - \n",v.first);
+			// 			log("%d elements\n",v.second.size());
+// 			auto list = v.second;
+// 			std::sort(list.begin(), list.end(), [&](const build_task&a, const build_task&b) {
+// 				return std::find(b.prerequisite_for.begin(), b.prerequisite_for.end(), &a) != b.prerequisite_for.end();
+// 			});
 			auto&list = v.second;
-			for (size_t n = 0;n<list.size();++n) {
-				build_task*best = nullptr;
-				void*best_builder = nullptr;
-				int best_idx = std::numeric_limits<int>::max();
-				int best_mc = 0, best_gc = 0;
-
-				for (build_task&b : list) {
-					if (b.dead) continue;
-					if (b.build_frame) continue;
-					if (b.built_unit) continue;
-					if (b.upgrade_done_frame) continue;
-					void*builder_prereq = nullptr;
-					int latest_prereq = 0;
-					for (auto*p : b.prerequisites) {
-						if (p->built_unit) {
-							int f = p->built_unit->remaining_build_time / resolution;
-							if (f<0) f = 0;
-							else if (f>=max_time) f = max_time-1;
-							if (f>latest_prereq) latest_prereq = f;
-							continue;
-						}
-						if (p->build_frame==0) {
-							latest_prereq = -1;
-							break;
-						}
-						int f = p->build_frame - current_frame;
-						f += p->type->build_time;
-						f /= resolution;
-						if (f<0) f = 0;
-						else if (f>=max_time) f = max_time-1;
-						if (p->type->unit && p->type->unit==b.type->builder) builder_prereq = p;
-						if (f<latest_prereq) continue;
-						latest_prereq = f;
-					}
-					//log("latest_prereq for %s is %d\n",b.type->name,latest_prereq);
-					if (latest_prereq==-1) continue;
-					int idx = max_time-1;
-					int mc = 0, gc = 0;
-					double supply_req = 0;
-					for (int i=latest_prereq;i<max_time;++i) {
-						bool m = minerals_at[i]>=b.type->minerals_cost;
-						bool g = gas_at[i]>=b.type->gas_cost;
-						if (!m) ++mc;
-						if (!g) ++gc;
-						if (m && g) {
-							/*auto get_build_frame_for = [&](void*builder) {
-								auto&bm = build_busy_frames[builder];
-								auto it = bm.lower_bound(i);
-								if (it==bm.end()) return i;
-								auto prev = it--;
-								if (prev->second>=i) {
-									it = prev;
-								}
-								for (;it!=bm.end();++it) {
-									auto next = it++;
-									if (next==bm.end()) return it->second;
-									if (next->first-it->second>=b.type->build_time) return it->second;
-								}
-								xcept("unreachable");
-								return 0;
-							};
-							void*builder = get_best_score(my_units_of_type[b.type->builder],[&](unit*u) {
-								return get_build_frame_for(u);
-							},max_time);*/
-
-// 							if (b.type->unit) {
-// 								if (b.type->unit->required_supply) {
-// 									double s = supply_at[b.type->unit->race][i];
-// 									double rs = b.type->unit->required_supply - s;
-// 									log("at %d, s is %g rs is %g\n",i,s,rs);
-// 									if (rs>supply_req) supply_req = rs;
-// 								}
-// 							}
-							bool okay = true;
-							for (int i2=i+1;i2<max_time;++i2) {
-								if (minerals_at[i2]<b.type->minerals_cost || gas_at[i2]<b.type->gas_cost) {
-									okay = false;
-									break;
-								}
-							}
-							if (!okay) continue;
-							//log("minerals_at[%d] is %g, gas_at[%d] is %g\n",i,minerals_at[i],i,gas_at[i]);
-							idx = i;
-							break;
-						}
-					}
-					if (supply_req || b.supply_req) log("%s supply req is %g\n",b.type->name,supply_req);
-					b.supply_req = supply_req;
-					if (idx==-1) continue;
-					if (idx<best_idx) {
-						best = &b;
-						best_idx = idx;
-						best_mc = mc;
-						best_gc = gc;
+			for (build_task&b : list) {
+				if (b.dead) continue;
+				if (b.build_frame) continue;
+				if (b.built_unit) continue;
+				if (b.upgrade_done_frame) continue;
+				void*builder_prereq = nullptr;
+				int latest_prereq = 0;
+				int idx = max_time - 1;
+				int mc = 0, gc = 0;
+				double supply_req = 0;
+				for (int i = latest_prereq; i<max_time; ++i) {
+					bool m = minerals_at[i] >= b.type->minerals_cost;
+					bool g = gas_at[i] >= b.type->gas_cost;
+					if (m && g) {
+						//log("minerals_at[%d] is %g, gas_at[%d] is %g\n",i,minerals_at[i],i,gas_at[i]);
+						idx = i;
+						break;
 					}
 				}
-				if (!best) break;
-				best->build_frame = current_frame + best_idx*resolution;
-				build_order.push_back(*best);
-				total_mc += best_mc;
-				total_gc += best_gc;
+				b.build_frame = current_frame + idx*resolution;
+				build_order.push_back(b);
+				total_minerals_spent += b.type->minerals_cost;
+				total_gas_spent += b.type->gas_cost;
 
-				double s = 0;
-				if (best->type->unit) s += best->type->unit->provided_supply - best->type->unit->required_supply;
-				for (int i=best_idx;i<max_time;++i) {
-					minerals_at[i] -= best->type->minerals_cost;
-					gas_at[i] -= best->type->gas_cost;
-					if (s) supply_at[best->type->unit->race][i] += s;
+				for (int i = 0; i < max_time; ++i) {
+					minerals_at[i] -= b.type->minerals_cost;
+					gas_at[i] -= b.type->gas_cost;
 				}
 			}
 
 		}
 		for (build_task&b : build_tasks) {
-			if (b.build_frame==0) build_order.push_back(b);
+			if (b.build_frame == 0) build_order.push_back(b);
 		}
-		log("total mc is %d, total gc is %d\n",total_mc,total_gc);
-		resource_gathering::minerals_to_gas_weight = (double)std::max(total_mc,1) / (double)std::max(total_gc,1);
+		log("total minerals spent is %g, total gas spent is %g\n", total_minerals_spent, total_gas_spent);
+		resource_gathering::minerals_to_gas_weight = std::max(total_minerals_spent, 1.0) / std::max(total_gas_spent, 1.0);
 		//log("resource_gathering::minerals_to_gas_weight is %g\n",resource_gathering::minerals_to_gas_weight);
 
 		multitasking::sleep(8);
@@ -531,6 +448,8 @@ void unset_build_pos(build_task*t) {
 	b.build_pos = xy();
 }
 
+int last_find_default_build_pos = 0;
+
 void execute_build(build_task&b) {
 	refcounter<build_task> rc(b);
 	if (b.built_unit && b.type->unit && b.type->unit->is_building) {
@@ -580,13 +499,29 @@ void execute_build(build_task&b) {
 		//if (b.build_pos==xy() && current_frame-b.last_find_build_pos>=15*2) {
 		if (b.build_pos==xy()) {
 			b.last_find_build_pos = current_frame;
-			if (default_build_pos==xy()) {
-				if (!my_buildings.empty()) {
-					default_build_pos = get_best_score(my_buildings,[&](unit*u) -> double {
-						double r = 0;
-						for (unit*w : my_workers) r += units_pathing_distance(u,w);
-						return u->type->is_resource_depot ? r/2 : r;
-					})->building->build_pos;
+			if (default_build_pos == xy() || current_frame - last_find_default_build_pos >= 15 * 15) {
+				last_find_default_build_pos = current_frame;
+				auto is_safe = [&](xy pos) {
+					int threat_count = 0;
+					for (unit*e : enemy_units) {
+						if (!e->stats->ground_weapon) continue;
+						if (e->type->is_worker) continue;
+						if (diag_distance(pos - e->pos) <= 32 * 15) ++threat_count;
+					}
+					return threat_count < 15;
+				};
+				if (default_build_pos == xy() || !is_safe(default_build_pos)) {
+					if (!my_buildings.empty()) {
+						default_build_pos = get_best_score(my_buildings, [&](unit*u) -> double {
+							double r = 0;
+							for (unit*w : my_workers) {
+								double d = units_pathing_distance(u, w);
+								if (d != std::numeric_limits<double>::infinity()) r += d;
+							}
+							if (!is_safe(u->building->build_pos)) r += 100000;
+							return u->type->is_resource_depot ? r / 2 : r;
+						})->building->build_pos;
+					}
 				}
 			}
 			if (!b.type->unit->is_refinery) {
@@ -844,7 +779,7 @@ void execute_build(build_task&b) {
 		if (current_frame - building->building_addon_frame <= 15) wait = true;
 		if (building->is_lifted) {
 			wait = true;
-			if (current_frame - building->building_addon_frame >= 30 && !building->is_liftable_wall) {
+			if (current_frame - building->building_addon_frame >= 30 && !building->is_liftable_wall && current_frame >= building->nobuild_until) {
 				auto pred = [&](grid::build_square&bs) {
 					return build_full_check(bs, builder->type);
 				};
@@ -864,7 +799,7 @@ void execute_build(build_task&b) {
 				}
 				if (pos != xy()) {
 					xy move_to = pos + xy(builder->type->tile_width * 16, builder->type->tile_height * 16);
-					if (diag_distance(move_to - builder->pos) >= 64) {
+					if (diag_distance(move_to - builder->pos) >= 128) {
 						builder->game_unit->move(BWAPI::Position(move_to.x, move_to.y));
 						builder->controller->noorder_until = current_frame + 15;
 					} else {
@@ -903,7 +838,9 @@ void execute_build(build_task&b) {
 							if (u->building && u->building->is_lifted) cost = 15 * 5;
 							if (u->building && current_frame - u->building->building_addon_frame <= 15) return std::numeric_limits<double>::infinity();
 							if (u->building && grid::get_build_square(u->building->build_pos).reserved.first) return std::numeric_limits<double>::infinity();
+							if (!requires_addon && u->addon) cost += 15 * 5;
 						}
+						if (u->building && current_frame < u->building->nobuild_until) return std::numeric_limits<double>::infinity();
 						if (u->controller->noorder_until > current_frame) return std::numeric_limits<double>::infinity();
 						if (b.type->unit == unit_types::nuclear_missile && u->has_nuke) return std::numeric_limits<double>::infinity();
 						return (double)u->remaining_whatever_time + cost;
@@ -982,7 +919,7 @@ void execute_build(build_task&b) {
 											} else {
 												xy move_to = pos + xy(builder->type->tile_width * 16, builder->type->tile_height * 16);
 												//log(" -- move to %d %d ?\n", move_to.x, move_to.y);
-												if (diag_distance(move_to - builder->pos) >= 64) {
+												if (diag_distance(move_to - builder->pos) >= 128) {
 													//log(" -- move!\n");
 													builder->game_unit->move(BWAPI::Position(move_to.x, move_to.y));
 													builder->controller->noorder_until = current_frame + 15;
@@ -1053,6 +990,10 @@ bool match_new_unit(unit*u) {
 	for (build_task&b : build_tasks) {
 		if (b.built_unit) continue;
 		if (b.type->unit != u->type) continue;
+		if (u->build_unit == b.builder) {
+			b.built_unit = u;
+			return true;
+		}
 		if (b.build_pos!=xy()) {
 			if (u->building && u->building->build_pos==b.build_pos) {
 				b.built_unit = u;
