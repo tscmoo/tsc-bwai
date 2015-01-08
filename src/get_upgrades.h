@@ -49,6 +49,7 @@ void get_upgrades() {
 		if (sum >= val*1.5) {
 			bool already_upgrading = false;
 			for (build::build_task&b : build::build_tasks) {
+				if (b.dead) continue;
 				if (b.type->upgrade == &upg) {
 					already_upgrading = true;
 					break;
@@ -57,13 +58,15 @@ void get_upgrades() {
 			if (!already_upgrading) {
 				bool builder_found = false;
 				for (unit*u : my_units_of_type[upg.builder_type]) {
-					if (u->remaining_whatever_time) continue;
+					if (u->remaining_whatever_time >= 15 * 20) continue;
 					builder_found = true;
 					break;
 				}
 				double prio = val / 1000.0;
 				if (builder_found) {
-					build::add_build_sum(prio, &upg, 1);
+					if (current_minerals < 600 || current_gas >= upg.gas_cost) {
+						build::add_build_sum(prio, &upg, 1);
+					}
 					break;
 				} else {
 					if (sum >= val * 3 && !no_auto_upgrades) {
