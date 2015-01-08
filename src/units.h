@@ -96,6 +96,7 @@ struct unit_building {
 	xy last_registered_pos;
 	int building_addon_frame;
 	bool is_liftable_wall;
+	int nobuild_until;
 };
 
 struct unit;
@@ -204,7 +205,7 @@ namespace unit_types {
 	unit_type_pointer medic, ghost;
 	unit_type_pointer wraith, battlecruiser, dropship, science_vessel, valkyrie;
 	unit_type_pointer spider_mine, nuclear_missile;
-	unit_type_pointer nexus, pylon, gateway, photon_cannon, robotics_facility;
+	unit_type_pointer nexus, pylon, gateway, photon_cannon, robotics_facility, stargate, forge, citadel_of_adun, templar_archives, fleet_beacon;
 	unit_type_pointer probe;
 	unit_type_pointer zealot, dragoon, dark_templar, high_templar, reaver;
 	unit_type_pointer archon, dark_archon;
@@ -263,6 +264,11 @@ namespace unit_types {
 		get(gateway, BWAPI::UnitTypes::Protoss_Gateway);
 		get(photon_cannon, BWAPI::UnitTypes::Protoss_Photon_Cannon);
 		get(robotics_facility, BWAPI::UnitTypes::Protoss_Robotics_Facility);
+		get(stargate, BWAPI::UnitTypes::Protoss_Stargate);
+		get(forge, BWAPI::UnitTypes::Protoss_Forge);
+		get(citadel_of_adun, BWAPI::UnitTypes::Protoss_Citadel_of_Adun);
+		get(templar_archives, BWAPI::UnitTypes::Protoss_Templar_Archives);
+		get(fleet_beacon, BWAPI::UnitTypes::Protoss_Fleet_Beacon);
 
 		get(probe, BWAPI::UnitTypes::Protoss_Probe);
 		get(zealot, BWAPI::UnitTypes::Protoss_Zealot);
@@ -516,6 +522,7 @@ void update_unit_type(unit*u) {
 			u->building->u = u;
 			u->building->building_addon_frame = 0;
 			u->building->is_liftable_wall = false;
+			u->building->nobuild_until = 0;
 		}
 	} else u->building = 0;
 }
