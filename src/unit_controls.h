@@ -152,6 +152,7 @@ void process(a_vector<unit_controller*>&controllers) {
 		if (current_frame < c->noorder_until) continue;
 
 		if (current_frame < c->move_away_until) {
+			if (u->game_unit->isSieged()) u->game_unit->unsiege();
 			move_away(c);
 			continue;
 		}
