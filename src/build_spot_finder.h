@@ -178,18 +178,27 @@ xy find_best(starts_T&&starts,int max_count,pred_T&pred,score_T&score,bool only_
 
 template<typename starts_T,typename pred_T>
 xy find(starts_T&&starts,unit_type*ut,pred_T&&pred,bool only_walkable=true) {
-	return find_best(std::forward<starts_T>(starts),32,[&](grid::build_square&bs) {
-		return can_build_at(ut,bs) && pred(bs);
-	},[&](xy pos) {
+	int max_count = 128;
+	return find_best(std::forward<starts_T>(starts), max_count, [&](grid::build_square&bs) {
+		return can_build_at(ut, bs) && pred(bs);
+	}, [&](xy pos) {
 		double r = 0;
-		r += get_best_score_value(my_workers, [&](unit*w) {
-			return diag_distance(w->pos - pos);
-		});
-		if (ut != unit_types::bunker) {
+		if (ut == unit_types::missile_turret) {
+			r -= get_best_score_value(my_units_of_type[unit_types::missile_turret], [&](unit*w) {
+				return diag_distance(w->pos - pos);
+			});
+		} else if (ut != unit_types::bunker) {
+			r += get_best_score_value(my_workers, [&](unit*w) {
+				return diag_distance(w->pos - pos);
+			});
 			r -= get_best_score_value(enemy_units, [&](unit*u) {
 				if (u->type->is_non_usable || !u->stats->ground_weapon) return std::numeric_limits<double>::infinity();
 				return diag_distance(u->pos - pos);
 			}, std::numeric_limits<double>::infinity());
+		}
+		for (unit*u : enemy_units) {
+			if (u->type->is_non_usable || !u->stats->ground_weapon) continue;
+			if (diag_distance(u->pos - pos) <= u->stats->ground_weapon->max_range + 32 * 6) r += 10000;
 		}
 		return r;
 	}, only_walkable);
