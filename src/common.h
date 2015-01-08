@@ -372,3 +372,15 @@ bool test_pred(cont_T&cont, pred_T&&pred) {
 	}
 	return false;
 }
+
+template<int=0>
+xy get_nearest_available_cc_build_pos(xy pos) {
+	resource_spots::spot*s = get_best_score_p(resource_spots::spots, [&](resource_spots::spot*s) {
+		if (grid::get_build_square(s->cc_build_pos).building) return std::numeric_limits<double>::infinity();
+		double d = unit_pathing_distance(unit_types::scv, pos, s->cc_build_pos);
+		if (d == std::numeric_limits<double>::infinity()) d = diag_distance(pos - s->cc_build_pos) + 100000;
+		return d;
+	}, std::numeric_limits<double>::infinity());
+	if (s) return s->cc_build_pos;
+	return pos;
+}
