@@ -253,7 +253,10 @@ void process(resource_t&r) {
 				if (r.gatherers.size()>=g.resource->gatherers.size() && inc_weighted>=next_income_weighted) continue;
 // 				if (inc>=next_income*0.9375 && g.resource->u->resources/200>r.u->resources/200) continue;
 // 				if (inc>=next_income*1.0625) continue;
-				if (inc_weighted>=next_income_weighted*0.9375) continue;
+				if (inc_weighted >= next_income_weighted*0.9375) continue;
+				if (diag_distance(r.u->pos - g.resource->u->pos) >= 32 * 8 && diag_distance(g.u->pos - g.resource->u->pos) < 32 * 8) {
+					if (inc_weighted >= next_income_weighted*0.75) continue;
+				}
 // 				double dist2 = units_pathing_distance(g.u,g.resource->u) + units_pathing_distance(g.u->type,g.resource->u,g.resource->depot);
 // 				//if (inc*(dist/dist2)>=next_income) continue;
 // 				if (dist>=dist2) continue;
