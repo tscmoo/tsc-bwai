@@ -202,7 +202,7 @@ namespace unit_types {
 	unit_type_pointer missile_turret, academy, comsat_station, starport, control_tower, engineering_bay, armory;
 	unit_type_pointer spell_scanner_sweep;
 	unit_type_pointer scv, marine, vulture, siege_tank_tank_mode, siege_tank_siege_mode, goliath;
-	unit_type_pointer medic, ghost;
+	unit_type_pointer medic, ghost, firebat;
 	unit_type_pointer wraith, battlecruiser, dropship, science_vessel, valkyrie;
 	unit_type_pointer spider_mine, nuclear_missile;
 	unit_type_pointer nexus, pylon, gateway, photon_cannon, robotics_facility, stargate, forge, citadel_of_adun, templar_archives, fleet_beacon;
@@ -245,6 +245,7 @@ namespace unit_types {
 		get(marine, BWAPI::UnitTypes::Terran_Marine);
 		get(medic, BWAPI::UnitTypes::Terran_Medic);
 		get(ghost, BWAPI::UnitTypes::Terran_Ghost);
+		get(firebat, BWAPI::UnitTypes::Terran_Firebat);
 		get(vulture, BWAPI::UnitTypes::Terran_Vulture);
 		get(siege_tank_tank_mode, BWAPI::UnitTypes::Terran_Siege_Tank_Tank_Mode);
 		get(siege_tank_siege_mode, BWAPI::UnitTypes::Terran_Siege_Tank_Siege_Mode);
