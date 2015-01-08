@@ -11,6 +11,11 @@ struct scout {
 	int dst_s_seen = 0;
 	bool scout_resources = false;
 	xy scout_location;
+	a_deque<xy> path;
+	int timer = 0;
+
+	xy left, right, origin;
+	xy a, b;
 
 	void process();
 };
@@ -28,6 +33,54 @@ void scout::process() {
 	}
 
 	if (!scout_unit) return;
+
+	if (current_used_total_supply < 30) {
+		bool found_them = test_pred(enemy_buildings, [&](unit*e) {
+			return e->type->is_resource_depot;
+		});
+		if (found_them && combat::my_closest_base != xy() && combat::op_closest_base != xy()) {
+			if (timer <= current_frame || (current_frame-timer<=20 && diag_distance(scout_unit->pos - scout_unit->controller->go_to) <= 32 * 2)) {
+				timer = current_frame + 15 * 2;
+				path = combat::find_bigstep_path(scout_unit->type, combat::my_closest_base, combat::op_closest_base, square_pathing::pathing_map_index::no_enemy_buildings);
+				if (path.size() > 8) {
+					xy a = path[path.size() / 3];
+					xy b = path[path.size() / 3 + 4];
+					xy rel = b - a;
+					double ang = std::atan2(rel.y, rel.x);
+					ang += PI / 2;
+					xy origin = path[path.size() / 3 + 2];
+					auto look = [&](double mult) {
+						xy pos = origin;
+						for (double dist = 0; dist < 32 * 20; dist += 32) {
+							xy r = origin;
+							r.x += (int)(std::cos(ang)*dist*mult);
+							r.y += (int)(std::sin(ang)*dist*mult);
+							if (unit_pathing_distance(scout_unit->type, origin, r) >= 32 * 40) break;
+							pos = r;
+						}
+						return square_pathing::get_nearest_node_pos(scout_unit->type, pos);
+					};
+					xy left = look(-1);
+					xy right = look(1);
+					this->a = a;
+					this->b = b;
+					this->origin = origin;
+					this->left = left;
+					this->right = right;
+					scout_unit->controller->action = unit_controller::action_scout;
+					if (scout_unit->controller->go_to != left && scout_unit->controller->go_to != right) {
+						scout_unit->controller->go_to = left;
+					} else {
+						if (diag_distance(scout_unit->pos - scout_unit->controller->go_to) <= 32 * 2) {
+							if (scout_unit->controller->go_to == left) scout_unit->controller->go_to = right;
+							else scout_unit->controller->go_to = left;
+						}
+					}
+				}
+			}
+			return;
+		}
+	}
 
 	if (!dst_s) {
 		dst_s = get_best_score_p(resource_spots::spots, [&](resource_spots::spot*s) {
@@ -279,7 +332,7 @@ void scouting_task() {
 
 		process_scouts();
 
-		if (current_used_total_supply >= comsat_supply || !my_completed_units_of_type[unit_types::academy].empty()) {
+		if (current_used_total_supply >= comsat_supply || (!my_completed_units_of_type[unit_types::academy].empty() && current_used_total_supply >= 40)) {
 			if (!my_units_of_type[unit_types::cc].empty()) {
 				if (my_units_of_type[unit_types::academy].empty()) {
 					build::add_build_sum(0, unit_types::academy, 1);
@@ -294,6 +347,7 @@ void scouting_task() {
 					if (!is_building_nuclear_silo) {
 						for (unit*cc : my_units_of_type[unit_types::cc]) {
 							if (cc->addon) continue;
+							if (cc->building->is_lifted) continue;
 							//if (cc->game_unit->canBuildAddon(unit_types::comsat_station->game_unit_type)) {
 							if (true) {
 								if (my_units_of_type[unit_types::refinery].empty()) {
@@ -328,6 +382,19 @@ void render() {
 		if (v.scout_unit) {
 			if (v.dst_s) game->drawLineMap(v.scout_unit->pos.x, v.scout_unit->pos.y, v.dst_s->pos.x, v.dst_s->pos.y, BWAPI::Colors::Blue);
 		}
+
+		if (!v.path.empty()) {
+			xy lp;
+			for (xy p : v.path) {
+				if (lp != xy()) {
+					game->drawLineMap(lp.x, lp.y, p.x, p.y, BWAPI::Colors::Blue);
+				}
+				lp = p;
+			}
+		}
+		game->drawLineMap(v.a.x, v.a.y, v.b.x, v.b.y, BWAPI::Colors::Red);
+		game->drawCircleMap(v.origin.x, v.origin.y, 24, BWAPI::Colors::Green);
+		game->drawLineMap(v.left.x, v.left.y, v.right.x, v.right.y, BWAPI::Colors::Green);
 	}
 
 	auto*scan_st = units::get_unit_stats(unit_types::spell_scanner_sweep, players::my_player);
