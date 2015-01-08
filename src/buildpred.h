@@ -442,7 +442,7 @@ void run(a_vector<state>&all_states, ruleset rules, bool is_for_me) {
 				res += r.u->resources;
 				if (r.u->type->is_gas) has_gas = true;
 			}
-			score -= (has_gas ? res : res / 2) / 10;
+			score -= (has_gas ? res : res / 4) / 10;
 			//if (d == std::numeric_limits<double>::infinity()) d = 10000.0 + diag_distance(s->pos - st.bases.front().s->cc_build_pos);
 			return score;
 		}, std::numeric_limits<double>::infinity());
@@ -1185,6 +1185,7 @@ state get_my_current_state() {
 
 	for (auto&s : resource_spots::spots) {
 		for (unit*u : my_resource_depots) {
+			if (u->building->is_lifted) continue;
 			if (diag_distance(u->building->build_pos - s.cc_build_pos) <= 32 * 4) {
 				add_base(initial_state, s).verified = true;
 				break;
