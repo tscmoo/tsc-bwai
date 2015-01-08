@@ -388,14 +388,15 @@ void process(a_vector<unit_controller*>&controllers) {
 					c->target_pos = get_nearest_available_cc_build_pos(u->pos);
 				}
 			}
-			if (c->lift || (!u->building->is_lifted && u->building->build_pos != c->target_pos)) {
+			//if (c->lift || (!u->building->is_lifted && u->building->build_pos != c->target_pos)) {
+			if (c->lift) {
 				if (!u->building->is_lifted) {
 					u->game_unit->lift();
 					c->noorder_until = current_frame + 30;
 				}
 			} else {
 				if (u->building->is_lifted) {
-					if (diag_distance(c->target_pos - u->pos) >= 64) {
+					if (diag_distance(c->target_pos - u->pos) >= 128) {
 						u->game_unit->move(BWAPI::Position(c->target_pos.x, c->target_pos.y));
 						c->noorder_until = current_frame + 15;
 					} else {
