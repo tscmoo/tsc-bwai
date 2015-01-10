@@ -30,6 +30,7 @@ struct strat_tvz_opening {
 					if (enemy_zergling_count > my_marine_count && !being_zergling_rushed) {
 						log("waa being zergling rushed!\n");
 						being_zergling_rushed = true;
+						if (!scouting::all_scouts.empty()) scouting::rm_scout(scouting::all_scouts.front().scout_unit);
 					}
 					bool initial_marine = !st.units[unit_types::barracks].empty() && count_units_plus_production(st, unit_types::marine) == 0;
 					if ((being_zergling_rushed && my_marine_count < 5) || initial_marine) {
@@ -39,11 +40,6 @@ struct strat_tvz_opening {
 							});
 						});
 					}
-				} else {
-					if (count_units_plus_production(st, unit_types::starport) == 0) {
-						return depbuild(st, state(st), unit_types::starport);
-					}
-					if (count_units_plus_production(st, unit_types::vulture) < 2) return depbuild(st, state(st), unit_types::vulture);
 				}
 				int scv_count = count_units_plus_production(st, unit_types::scv);
 				if (scv_count >= 11 && count_units_plus_production(st, unit_types::barracks) == 0) return depbuild(st, state(st), unit_types::barracks);
@@ -57,6 +53,14 @@ struct strat_tvz_opening {
 					int vulture_count = count_units_plus_production(st, unit_types::vulture);
 					int siege_tank_count = count_units_plus_production(st, unit_types::siege_tank_tank_mode) + count_units_plus_production(st, unit_types::siege_tank_siege_mode);
 					int marine_count = count_units_plus_production(st, unit_types::marine);
+					if (count_units_plus_production(st, unit_types::starport) == 0) {
+						return depbuild(st, state(st), unit_types::starport);
+					}
+					if (!st.units[unit_types::starport].empty()) {
+						if (count_units_plus_production(st, unit_types::wraith) == 0) {
+							return nodelay(st, unit_types::wraith, backbone);
+						}
+					}
 					if (vulture_count < 2) {
 						return nodelay(st, unit_types::vulture, [&](state&st) {
 							return depbuild(st, state(st), unit_types::marine);
@@ -66,9 +70,6 @@ struct strat_tvz_opening {
 						return nodelay(st, unit_types::marine, backbone);
 					}
 					if (count_units_plus_production(st, unit_types::starport)) {
-						if (count_units_plus_production(st, unit_types::wraith) == 0) {
-							return nodelay(st, unit_types::wraith, backbone);
-						}
 						if (count_units_plus_production(st, unit_types::armory) == 0) {
 							return nodelay(st, unit_types::armory, backbone);
 						}
@@ -98,7 +99,7 @@ struct strat_tvz_opening {
 			auto my_st = get_my_current_state();
 			bool has_bunker = !my_units_of_type[unit_types::bunker].empty();
 			if (my_st.bases.size() > 1 && marine_count >= 1) combat::build_bunker_count = 1;
-			if (!has_zergling_tight_wall && !my_units_of_type[unit_types::barracks].empty()) {
+			if (!has_zergling_tight_wall && marine_count >= 4) {
 				combat::build_bunker_count = 1;
 			}
 			if (!my_units_of_type[unit_types::bunker].empty()) has_built_bunker = true;
