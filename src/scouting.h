@@ -6,6 +6,8 @@ double comsat_supply = 60.0;
 
 struct scout {
 	unit*scout_unit = nullptr;
+	enum { type_default, type_scout_proxy };
+	int type = type_default;
 
 	refcounted_ptr<resource_spots::spot> dst_s;
 	int dst_s_seen = 0;
@@ -33,6 +35,32 @@ void scout::process() {
 	}
 
 	if (!scout_unit) return;
+
+	if (type == type_scout_proxy) {
+
+		if (current_frame >= timer || diag_distance(scout_unit->pos - scout_location) <= 32 * 4) {
+			timer = current_frame + 30;
+			if (scout_location==xy()) scout_location = scout_unit->pos;
+			xy dst;
+			combat::find_nearby_entirely_walkable_tiles(scout_unit->pos, [&](xy pos) {
+				if (diag_distance(pos - scout_location) >= 32 * 30) return false;
+				if (dst != xy()) return false;
+				auto&bs = grid::get_build_square(pos);
+				if (bs.building) return false;
+				if (current_frame - bs.last_seen >= 15 * 60 * 3) dst = pos;
+				return true;
+			}, 32 * 40);
+			if (dst != xy()) {
+				scout_unit->controller->action = unit_controller::action_scout;
+				scout_unit->controller->go_to = dst;
+			} else {
+				scout_unit->controller->action = unit_controller::action_idle;
+				scout_unit = nullptr;
+			}
+		}
+
+		return;
+	}
 
 	if (current_used_total_supply < 30) {
 		bool found_them = test_pred(enemy_buildings, [&](unit*e) {
@@ -273,10 +301,11 @@ void scan() {
 
 a_vector<scout> all_scouts;
 
-void add_scout(unit*u) {
+scout&add_scout(unit*u) {
 	scout sc;
 	sc.scout_unit = u;
 	all_scouts.push_back(sc);
+	return all_scouts.back();
 }
 void rm_scout(unit*u) {
 	for (auto&v : all_scouts) {
@@ -289,6 +318,7 @@ void rm_scout(unit*u) {
 
 int last_scout = 0;
 int last_vulture_scout = 0;
+int last_proxy_scout = 0;
 
 void process_scouts() {
 
@@ -308,7 +338,17 @@ void process_scouts() {
 				}, std::numeric_limits<double>::infinity());
 			}
 			if (scout_unit) last_scout = current_frame;
-			add_scout(scout_unit);
+			if (scout_unit) add_scout(scout_unit);
+		}
+	}
+	if (current_frame <= 15 * 60 * 8 && my_completed_units_of_type[unit_types::marine].empty()) {
+		if (current_frame - last_proxy_scout >= 15 * 60 * 3) {
+			last_proxy_scout = current_frame;
+			unit*scout_unit = get_best_score(my_workers, [&](unit*u) {
+				if (u->controller->action != unit_controller::action_gather) return std::numeric_limits<double>::infinity();
+				return 0.0;
+			}, std::numeric_limits<double>::infinity());
+			if (scout_unit) add_scout(scout_unit).type = scout::type_scout_proxy;
 		}
 	}
 
