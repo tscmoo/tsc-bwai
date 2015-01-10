@@ -338,14 +338,7 @@ void generate_build_order_task() {
 		}
 		double total_minerals_spent = 0;
 		double total_gas_spent = 0;
-//		bool min_2 = false;
 		for (auto&v : priority_groups) {
-			// 			log("priority %g - \n",v.first);
-			// 			log("%d elements\n",v.second.size());
-// 			auto list = v.second;
-// 			std::sort(list.begin(), list.end(), [&](const build_task&a, const build_task&b) {
-// 				return std::find(b.prerequisite_for.begin(), b.prerequisite_for.end(), &a) != b.prerequisite_for.end();
-// 			});
 			auto&list = v.second;
 			for (build_task&b : list) {
 				if (b.dead) continue;
@@ -356,11 +349,47 @@ void generate_build_order_task() {
 				int latest_prereq = 0;
 				int idx = max_time - 1;
 				int mc = 0, gc = 0;
-				double supply_req = 0;
+				for (auto*p : b.prerequisites) {
+					if (p->built_unit) {
+						int f = p->built_unit->remaining_build_time / resolution;
+						if (f < 0) f = 0;
+						else if (f >= max_time) f = max_time - 1;
+						if (f > latest_prereq) latest_prereq = f;
+						continue;
+					}
+					if (p->build_frame == 0) {
+						latest_prereq = -1;
+						break;
+					}
+					int f = p->build_frame - current_frame;
+					f += p->type->build_time;
+					f /= resolution;
+					if (f < 0) f = 0;
+					else if (f >= max_time) f = max_time - 1;
+					if (p->type->unit && p->type->unit == b.type->builder) builder_prereq = p;
+					if (f < latest_prereq) continue;
+					latest_prereq = f;
+				}
+				if (latest_prereq == -1) continue;
+				int build_delay = -1;
+				for (unit*u : my_units_of_type[b.type->builder]) {
+					if (build_delay == -1 || u->remaining_whatever_time < build_delay) build_delay = u->remaining_whatever_time;
+				}
+				latest_prereq += build_delay / resolution;
+				if (latest_prereq < 0) latest_prereq = 0;
+				else if (latest_prereq >= max_time) latest_prereq = max_time - 1;
+				
 				for (int i = latest_prereq; i<max_time; ++i) {
 					bool m = minerals_at[i] >= b.type->minerals_cost;
 					bool g = gas_at[i] >= b.type->gas_cost;
 					if (m && g) {
+						bool okay = true;
+						for (int i2 = i; i2 < max_time; ++i2) {
+							if (minerals_at[i2] - b.type->minerals_cost < 0) okay = false;
+							if (gas_at[i2] - b.type->gas_cost < 0) okay = false;
+							if (!okay) break;
+						}
+						if (!okay) continue;
 						//log("minerals_at[%d] is %g, gas_at[%d] is %g\n",i,minerals_at[i],i,gas_at[i]);
 						idx = i;
 						break;
@@ -371,7 +400,7 @@ void generate_build_order_task() {
 				total_minerals_spent += b.type->minerals_cost;
 				total_gas_spent += b.type->gas_cost;
 
-				for (int i = 0; i < max_time; ++i) {
+				for (int i = idx; i < max_time; ++i) {
 					minerals_at[i] -= b.type->minerals_cost;
 					gas_at[i] -= b.type->gas_cost;
 				}
@@ -404,7 +433,9 @@ bool build_has_creep(grid::build_square&bs, unit_type*ut) {
 bool build_has_not_creep(grid::build_square&bs, unit_type*ut) {
 	for (int y = 0; y < ut->tile_height; ++y) {
 		for (int x = 0; x < ut->tile_width; ++x) {
-			if (creep::complete_creep_spread.test(grid::build_grid_indexer()(bs.pos + xy(x * 32, y * 32)))) return false;
+			xy pos = bs.pos + xy(x * 32, y * 32);
+			if (creep::complete_creep_spread.test(grid::build_grid_indexer()(pos))) return false;
+			if (grid::get_build_square(pos).has_creep) return false;
 		}
 	}
 	return true;
