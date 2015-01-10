@@ -369,12 +369,12 @@ void process(gatherer_t&g) {
 		g.resource = 0;
 	}
 	if (g.resource) {
-		if (u->controller->action == unit_controller::action_gather) {
+		if (u->controller->action == unit_controller::action_gather && current_frame >= 15 * 20) {
 			u->controller->target = g.resource->u;
 		}
 		if (!is_mining) u->controller->wait_until = g.resource->busy_until;
 	} else {
-		if (u->controller->action == unit_controller::action_gather) {
+		if (u->controller->action == unit_controller::action_gather && current_frame >= 15 * 20) {
 			u->controller->target = 0;
 		}
 		if (!u->is_carrying_minerals_or_gas) u->controller->depot = 0;
@@ -421,6 +421,8 @@ void process(gatherer_t&g) {
 
 void resource_gathering_task() {
 
+	a_unordered_set<unit*> initial_worker_mine_taken;
+
 	while (true) {
 
 		resource_depots.clear();
@@ -437,6 +439,18 @@ void resource_gathering_task() {
 				c->action = unit_controller::action_gather;
 				c->target = 0;
 				c->depot = 0;
+				if (current_frame < 15 * 20) {
+					unit*r = get_best_score(resource_units, [&](unit*u) {
+						if (u->type->is_gas) return std::numeric_limits<double>::infinity();
+						double d = units_distance(c->u, u);
+						if (initial_worker_mine_taken.count(u)) d += 32 * 8;
+						return d;
+					});
+					if (r) {
+						initial_worker_mine_taken.insert(r);
+						c->target = r;
+					}
+				}
 			}
 			if (c->action==unit_controller::action_gather) {
 				gatherer_t*&g = unit_gatherer_map[u];
