@@ -233,7 +233,7 @@ struct combat_unit {
 	unit*u = nullptr;
 	enum { action_idle, action_offence, action_tactic };
 	int action = action_idle;
-	enum { subaction_idle, subaction_move, subaction_fight, subaction_move_directly, subaction_use_ability, subaction_repair };
+	enum { subaction_idle, subaction_move, subaction_fight, subaction_kite, subaction_move_directly, subaction_use_ability, subaction_repair };
 	int subaction = subaction_idle;
 	xy defend_spot;
 	xy goal_pos;
@@ -467,6 +467,7 @@ a_deque<xy> find_bigstep_path(unit_type*ut, xy from, xy to, square_pathing::path
 bool no_aggressive_groups = false;
 bool aggressive_wraiths = false;
 bool aggressive_vultures = true;
+bool aggressive_valkyries = false;
 
 bool search_and_destroy = false;
 
@@ -476,6 +477,7 @@ void update_groups() {
 
 	a_vector<std::tuple<double, unit*>> sorted_enemy_units;
 	for (unit*e : enemy_units) {
+		if (e->gone) continue;
 		double d = get_best_score_value(my_units, [&](unit*u) {
 			if (u->type->is_non_usable) return std::numeric_limits<double>::infinity();
 			return diag_distance(e->pos - u->pos);
@@ -679,28 +681,29 @@ void update_groups() {
 		available_units.insert(c);
 	}
 
-	if (false) {
-		a_deque<std::tuple<double, combat_unit*>> workers;
-		for (auto*c : available_units) {
-			if (!c->u->type->is_worker || c->u->force_combat_unit) continue;
-			double d = get_best_score_value(enemy_units, [&](unit*e) {
-				if (e->type->is_non_usable) return std::numeric_limits<double>::infinity();
-				weapon_stats*w = c->u->is_flying ? e->stats->air_weapon : e->stats->ground_weapon;
-				if (!w) return std::numeric_limits<double>::infinity();
-				return diag_distance(c->u->pos - e->pos);
-			});
-			workers.emplace_back(d, c);
-		}
-		std::sort(workers.begin(), workers.end());
-		for (int i = 0; i < 8 && !workers.empty(); ++i) workers.pop_front();
-		for (auto&v : workers) {
-			auto*c = std::get<1>(v);
-			if (c->u->controller->action != unit_controller::action_gather && c->u->controller->action != unit_controller::action_build && c->u->controller->action != unit_controller::action_scout) {
-				c->u->controller->action = unit_controller::action_idle;
-			}
-			available_units.erase(c);
-		}
-	}
+// 	if (false) {
+// 		a_deque<std::tuple<double, combat_unit*>> workers;
+// 		for (auto*c : available_units) {
+// 			if (!c->u->type->is_worker || c->u->force_combat_unit) continue;
+// 			double d = get_best_score_value(enemy_units, [&](unit*e) {
+// 				if (e->gone) return std::numeric_limits<double>::infinity();
+// 				if (e->type->is_non_usable) return std::numeric_limits<double>::infinity();
+// 				weapon_stats*w = c->u->is_flying ? e->stats->air_weapon : e->stats->ground_weapon;
+// 				if (!w) return std::numeric_limits<double>::infinity();
+// 				return diag_distance(c->u->pos - e->pos);
+// 			});
+// 			workers.emplace_back(d, c);
+// 		}
+// 		std::sort(workers.begin(), workers.end());
+// 		for (int i = 0; i < 8 && !workers.empty(); ++i) workers.pop_front();
+// 		for (auto&v : workers) {
+// 			auto*c = std::get<1>(v);
+// 			if (c->u->controller->action != unit_controller::action_gather && c->u->controller->action != unit_controller::action_build && c->u->controller->action != unit_controller::action_scout) {
+// 				c->u->controller->action = unit_controller::action_idle;
+// 			}
+// 			available_units.erase(c);
+// 		}
+// 	}
 
 	a_unordered_map<combat_unit*, a_unordered_set<group_t*>> can_reach_group;
 	a_map<size_t, int> can_reach_count;
@@ -832,7 +835,6 @@ void update_groups() {
 		while (true) {
 			multitasking::yield_point();
 
-			bool aggressive_valkyries = my_completed_units_of_type[unit_types::valkyrie].size() >= 4;
 			a_unordered_set<combat_unit*> blacklist;
 			auto get_nearest_unit = [&](bool allow_worker) {
 				return get_best_score(available_units, [&](combat_unit*c) {
@@ -1465,11 +1467,12 @@ void finish_attack() {
 		if (!my_completed_units_of_type[unit_types::bunker].empty()) {
 			bunker = get_best_score(my_completed_units_of_type[unit_types::bunker], [&](unit*u) {
 				double ned = get_best_score_value(enemy_units, [&](unit*e) {
+					if (e->gone) return std::numeric_limits<double>::infinity();
 					if (!e->stats->ground_weapon) return std::numeric_limits<double>::infinity();
-					if (!e->type->is_worker) return std::numeric_limits<double>::infinity();
-					if (current_frame - e->last_seen >= 15 * 30) return std::numeric_limits<double>::infinity();
+					if (e->type->is_worker || e->type == unit_types::marine) return std::numeric_limits<double>::infinity();
+					if (current_frame - e->last_seen >= 15 * 20) return std::numeric_limits<double>::infinity();
 					return diag_distance(e->pos - u->pos);
-				}, std::numeric_limits<double>::infinity());
+				});
 				if (ned >= 32 * 30) return std::numeric_limits<double>::infinity();
 				double nm = get_best_score_value(my_units_of_type[unit_types::marine], [&](unit*m) {
 					return diag_distance(m->pos - u->pos);
@@ -1477,17 +1480,17 @@ void finish_attack() {
 				if (nm >= 32 * 25) return std::numeric_limits<double>::infinity();
 				return ned;
 			}, std::numeric_limits<double>::infinity());
-			if (bunker) {
-				std::sort(scvs.begin(), scvs.end(), [&](combat_unit*a, combat_unit*b) {
-					return diag_distance(a->u->pos - bunker->pos) < diag_distance(b->u->pos - bunker->pos);
-				});
-			}
+// 			if (bunker) {
+// 				std::sort(scvs.begin(), scvs.end(), [&](combat_unit*a, combat_unit*b) {
+// 					return diag_distance(a->u->pos - bunker->pos) < diag_distance(b->u->pos - bunker->pos);
+// 				});
+// 			}
 		}
 		if (!bunker) {
 			if ((int)scvs.size() > non_scv_count + 1) scvs.resize(non_scv_count + 1);
 			if (non_scv_count <= 2) scvs.clear();
 		}
-		if (scvs.size() / 4 + 2 < scvs.size()) scvs.resize(scvs.size() / 4 + 2);
+		//if (scvs.size() / 4 + 2 < scvs.size()) scvs.resize(scvs.size() / 4 + 2);
 		for (unit*u : my_workers) {
 			if (u->controller->action == unit_controller::action_repair) u->controller->action = unit_controller::action_idle;
 		}
@@ -1510,8 +1513,11 @@ void finish_attack() {
 			if (a->type == unit_types::bunker && b->type != unit_types::bunker) return true;
 			return a->minerals_value + a->gas_value > b->minerals_value + b->gas_value;
 		});
+		int scvs_assigned = 0;
+		int max_scvs_assigned = (int)scvs.size() / 4 + 2;
 		for (auto*u : wants_repair) {
 			if (scvs.empty()) break;
+			if (scvs_assigned >= max_scvs_assigned) break;
 			int max_n = 2;
 			if (u->type == unit_types::siege_tank_tank_mode || u->type == unit_types::siege_tank_siege_mode) max_n = 5;
 			if (u->building) max_n = 4;
@@ -1528,6 +1534,7 @@ void finish_attack() {
 				c->subaction = combat_unit::subaction_repair;
 				c->target = u;
 				find_and_erase(scvs, c);
+				++scvs_assigned;
 			}
 		}
 	}
@@ -1734,7 +1741,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 		if (e->type->requires_pylon && !e->is_powered) hits += 10;
 		//if (d > w->max_range) return std::make_tuple(std::numeric_limits<double>::infinity(), hits + (d - w->max_range) / a->u->stats->max_speed / 90, 0.0);
 		if (d > w->max_range) hits += (d - w->max_range) / a->u->stats->max_speed / 4;
-		else {
+		if (d < w->max_range || a->u->is_flying) {
 			if (e->type == unit_types::carrier) hits /= 10;
 			if (e->is_flying && e->type != unit_types::overlord) hits /= 10;
 			if (e->build_unit && e->build_unit->type->builder_type == e->type) hits /= 20;
@@ -1745,6 +1752,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 			if (is_attack_pylon) hits /= 20;
 			if (w->max_range <= 32 * 2) hits /= 10;
 			if (has_sieged_tanks && a->u->type != unit_types::siege_tank_siege_mode && e->type == unit_types::zealot) hits /= 2;
+			if (a->u->type == unit_types::wraith && e->type == unit_types::overlord) hits /= 20;
 		}
 		return std::make_tuple(hits, 0.0, 0.0);
 	};
@@ -1856,6 +1864,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 				if (bunker != a->u->loaded_into) unload = true;
 			}
 			if (d < 32 * 7) unload = false;
+			if (d > 32 * 7 && my_base.test(grid::build_square_index(target->pos))) unload = true;
 		} else unload = true;
 		//if (target && target->cloaked) unload = true;
 		if (unload) {
@@ -1978,7 +1987,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 		}
 	}
 
-	if (a->u->type == unit_types::marine && target && !a->u->is_loaded && !target->cloaked) {
+	if ((a->u->type == unit_types::marine || a->u->type == unit_types::firebat) && target && !a->u->is_loaded && !target->cloaked) {
 	//if (a->u->type == unit_types::marine && target && !a->u->is_loaded) {
 		unit*bunker = get_best_score(my_completed_units_of_type[unit_types::bunker], [&](unit*u) {
 			if (space_left[u] < a->u->type->space_required) return std::numeric_limits<double>::infinity();
@@ -1986,20 +1995,24 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 			if (d >= 32 * 40) return std::numeric_limits<double>::infinity();
 			return diag_distance(target->pos - u->pos);
 		}, std::numeric_limits<double>::infinity());
+		if (a->u->type == unit_types::firebat) {
+			if (target->stats->ground_weapon && target->stats->ground_weapon->max_range > 32 * 3) bunker = nullptr;
+		}
 		if (bunker) {
 			double d = units_distance(a->u, bunker);
 			bool run_to_bunker = true;
 			if (!target->stats->ground_weapon) run_to_bunker = false;
 			else {
-				if (units_distance(a->u, target)>32 * 3 && target->stats->ground_weapon->max_range < 32 * 2) run_to_bunker = false;
+				if (units_distance(a->u, target) > 32 * 3 && target->stats->ground_weapon->max_range < 32 * 2) run_to_bunker = false;
 			}
+			if (units_distance(bunker, target) > 32 * 7 && my_base.test(grid::build_square_index(target->pos))) run_to_bunker = false;
 			//if (units_distance(bunker, target) < 32 * 6 && d < units_distance(target, bunker)) {
 			if (units_distance(bunker, target) < 32 * 10 && d < 32 * 40 && run_to_bunker) {
 				if (units_distance(a->u, bunker) <= 32 * 3) space_left[bunker] -= a->u->type->space_required;
 				a->subaction = combat_unit::subaction_idle;
 				a->u->controller->action = unit_controller::action_idle;
 				if (current_frame >= a->u->controller->noorder_until || a->u->order_target != bunker) {
-					if (a->u->type == unit_types::marine && a->u->owner->has_upgrade(upgrade_types::stim_packs)) {
+					if ((a->u->type == unit_types::marine || a->u->type == unit_types::firebat) && a->u->owner->has_upgrade(upgrade_types::stim_packs)) {
 						if (a->u->game_unit->getStimTimer() <= latency_frames) {
 							a->u->game_unit->useTech(upgrade_types::stim_packs->game_tech_type);
 							a->u->controller->noorder_until = current_frame + latency_frames + 2;
@@ -2167,7 +2180,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 						return units_distance(u, target);
 					});
 					if (nearest == a->u) {
-						if (units_distance(a->u, target) < target->stats->ground_weapon->max_range + 64) {
+						if (a->u->stats->ground_weapon->cooldown > latency_frames && units_distance(a->u, target) < target->stats->ground_weapon->max_range + 64) {
 							do_run(a, enemies);
 							return;
 						}
@@ -2263,34 +2276,6 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 		}
 	}
 
-	if (target && a->subaction == combat_unit::subaction_fight && target->type != unit_types::interceptor && a->u->type != unit_types::siege_tank_siege_mode) {
-		weapon_stats*w = target->is_flying ? a->u->stats->air_weapon : a->u->stats->ground_weapon;
-		double d = units_distance(a->u, target);
-		if (w && d > w->max_range && target->speed > 4 && d < 32 * 20) {
-			double target_heading = std::atan2(target->vspeed, target->hspeed);
-			xy relpos = target->pos - a->u->pos;
-			double rel_angle = std::atan2(relpos.y, relpos.x);
-			double da = target_heading - rel_angle;
-			if (da < -PI) da += PI * 2;
-			if (da > PI) da -= PI * 2;
-			if (std::abs(da) <= PI) {
-				log("target is running away, intercepting...\n");
-				xy target_pos = target->pos;
-				double max_distance = diag_distance(target->pos - a->u->pos);
-				for (double distance = 0; distance < max_distance; distance += 32) {
-					xy pos = target->pos;
-					pos.x += (int)(std::cos(target_heading)*distance);
-					pos.y += (int)(std::sin(target_heading)*distance);
-					pos = square_pathing::get_pos_in_square(pos, target->type);
-					if (pos == xy()) break;
-					target_pos = pos;
-				}
-				a->subaction = combat_unit::subaction_move_directly;
-				a->target_pos = target_pos;
-			}
-		}
-	}
-
 }
 
 bool worker_is_safe(combat_unit*a, const a_vector<unit*>&enemies) {
@@ -2371,8 +2356,15 @@ void do_run(combat_unit*a, const a_vector<unit*>&enemies) {
 			bool too_close = net_d <= margin;
 			if (d - wr < net_d - net_wr - margin && !too_close) {
 				if (move_close_if_unreachable(a, ne)) return;
-				if (a->u->weapon_cooldown <= frames_to_reach(a->u, d - wr) + latency_frames || (!net || net->building)) {
+// 				if (a->u->weapon_cooldown <= frames_to_reach(a->u, d - wr) + latency_frames || (!net || net->building)) {
+// 					a->subaction = combat_unit::subaction_fight;
+// 					a->target = ne;
+// 				}
+				if (!net || net->building) {
 					a->subaction = combat_unit::subaction_fight;
+					a->target = ne;
+				} else {
+					a->subaction = combat_unit::subaction_kite;
 					a->target = ne;
 				}
 			}
@@ -2730,12 +2722,13 @@ void do_defence(const a_vector<combat_unit*>&allies) {
 		}
 		if (default_move) {
 			a->subaction = combat_unit::subaction_move;
-			if (a->target_pos == defence_choke.center || a->target_pos == defence_choke.inside) {
-				if (diag_distance(a->u->pos - a->target_pos) <= 32 * 3) {
-					if (a->target_pos == defence_choke.center) a->target_pos = defence_choke.inside;
-					else a->target_pos = defence_choke.center;
-				}
-			} else a->target_pos = defence_choke.center;
+// 			if (a->target_pos == defence_choke.center || a->target_pos == defence_choke.inside) {
+// 				if (diag_distance(a->u->pos - a->target_pos) <= 32 * 3) {
+// 					if (a->target_pos == defence_choke.center) a->target_pos = defence_choke.inside;
+// 					else a->target_pos = defence_choke.center;
+// 				}
+// 			} else a->target_pos = defence_choke.center;
+			a->target_pos = defence_choke.center;
 			if (wall_in::active_wall_count()) a->target_pos = defence_choke.inside;
 		}
 	}
@@ -2807,6 +2800,7 @@ void fight() {
 				int cooldown_override = 0;
 				if (!u->visible) cooldown_override = 0;
 				if (u->type->requires_pylon && !u->is_powered) cooldown_override = 15 * 60;
+				if (!u->is_completed) cooldown_override = u->remaining_whatever_time;
 				auto&c = eval.add_unit(st, team);
 				c.move = get_best_score(make_transform_filter(team ? nearby_allies : nearby_enemies, [&](unit*e) {
 					if (e->type->is_flyer && !c.st->ground_weapon) return std::numeric_limits<double>::infinity();
@@ -2853,17 +2847,17 @@ void fight() {
 
 			bool air_fight = ground_eval.teams[0].score > ground_eval.teams[1].score;
 
-			if (true) {
-				int my_valkyrie_count = 0;
-				int op_muta_count = 0;
-				for (unit*a : nearby_allies) {
-					if (a->type == unit_types::valkyrie) ++my_valkyrie_count;
-				}
-				for (unit*e : nearby_enemies) {
-					if (e->type == unit_types::mutalisk && current_frame - e->last_attacked <= 15 * 10) ++op_muta_count;
-				}
-				if (my_valkyrie_count >= 2 && op_muta_count >= 4 && op_muta_count < my_valkyrie_count * 5) air_fight = true;
-			}
+// 			if (true) {
+// 				int my_valkyrie_count = 0;
+// 				int op_muta_count = 0;
+// 				for (unit*a : nearby_allies) {
+// 					if (a->type == unit_types::valkyrie) ++my_valkyrie_count;
+// 				}
+// 				for (unit*e : nearby_enemies) {
+// 					if (e->type == unit_types::mutalisk && current_frame - e->last_attacked <= 15 * 10) ++op_muta_count;
+// 				}
+// 				if (my_valkyrie_count >= 2 && op_muta_count >= 4 && op_muta_count < my_valkyrie_count * 5) air_fight = true;
+// 			}
 
 			bool has_dropship = false;
 			for (unit*u : nearby_allies) {
@@ -3052,6 +3046,8 @@ void fight() {
 				bool attack = fight;
 				attack |= a->u->is_flying && air_fight;
 				attack |= !a->u->is_flying && ground_fight;
+				//if (a->u->type == unit_types::firebat) attack = true;
+				if (my_workers.size() == current_used_total_supply) attack = true;
 				if (attack) {
 					bool dont_attack = false;
 					/*bool unload = true;
@@ -3169,6 +3165,12 @@ void execute() {
 			cu->u->controller->action = unit_controller::action_attack;
 			cu->u->controller->target = cu->target;
 		}
+		if (cu->subaction == combat_unit::subaction_kite) {
+			if (cu->target && cu->target->dead) cu->subaction = combat_unit::subaction_idle;
+			cu->u->controller->action = unit_controller::action_kite;
+			cu->u->controller->target = cu->target;
+			cu->u->controller->target_pos = cu->target_pos;
+		}
 		if (cu->subaction == combat_unit::subaction_move) {
 			cu->u->controller->action = unit_controller::action_move;
 			cu->u->controller->go_to = cu->target_pos;
@@ -3246,7 +3248,7 @@ void update_defence_choke_task() {
 		// This does not belong here!
 		// Just a quick hack to build bunkers in a reasonable spot
 		static int flag;
-		if (current_used_total_supply < 100) {
+		if (current_used_total_supply < 75) {
 			int desired_bunkers = build_bunker_count;
 			if (desired_bunkers > (int)my_units_of_type[unit_types::marine].size() / 2 + 1) desired_bunkers = my_units_of_type[unit_types::marine].size() / 2 + 1;
 			int bunkers_in_production = 0;
@@ -3288,7 +3290,9 @@ void update_defence_choke_task() {
 						if (b.type->unit == unit_types::missile_turret) ++misile_turrets_in_production;
 					}
 					int missile_turret_count = my_completed_units_of_type[unit_types::missile_turret].size();
-					if (missile_turret_count + misile_turrets_in_production < desired_missile_turrets && misile_turrets_in_production <= 4) build::add_build_task(0, unit_types::missile_turret)->flag = &flag;
+					int max_inprod = 4;
+					if (my_completed_units_of_type[unit_types::engineering_bay].empty()) max_inprod = 1;
+					if (missile_turret_count + misile_turrets_in_production < desired_missile_turrets && misile_turrets_in_production <= max_inprod) build::add_build_task(0, unit_types::missile_turret)->flag = &flag;
 					int near_base = 0;
 					for (unit*u : my_units_of_type[unit_types::missile_turret]) {
 						bool near_building = test_pred(my_buildings, [&](unit*b) {
