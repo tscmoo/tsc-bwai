@@ -132,12 +132,12 @@ namespace combat_eval {
 						//if (acc_width >= max_width) continue;
 						if (c.energy < c.st->energy) c.energy += 8.0 / 256 * frame_resolution;
 						if (c.st->type->race == race_zerg && c.hp < c.st->hp) c.hp += 4.0 / 256 * frame_resolution;
-						if (c.st->type->is_worker && acc_width >= max_width) continue;
+						if ((c.st->type->is_worker || c.st->type == unit_types::zergling) && acc_width >= max_width) continue;
 						if (c.loaded_until > total_frames) {
 							++target_count;
 							continue;
 						}
-						acc_width += c.st->type->width;
+						if (!c.st->type->is_flyer) acc_width += c.st->type->width;
 						bool can_target = true;
 						if (c.st->type == unit_types::medic) {
 							can_target = false;
