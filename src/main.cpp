@@ -243,8 +243,8 @@ xy my_start_location;
 #include "stats.h"
 #include "render.h"
 #include "players.h"
-#include "upgrades.h"
 #include "units.h"
+#include "upgrades.h"
 #include "square_pathing.h"
 #include "flyer_pathing.h"
 #include "unit_controls.h"
@@ -273,8 +273,8 @@ void init() {
 	grid::init();
 	stats::init();
 	players::init();
-	upgrades::init();
 	units::init();
+	upgrades::init();
 	square_pathing::init();
 	unit_controls::init();
 	resource_gathering::init();
