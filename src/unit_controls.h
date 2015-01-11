@@ -196,6 +196,15 @@ void process(a_vector<unit_controller*>&controllers) {
 					if (w->max_range*1.5 >= ew->max_range && w->cooldown > ew->cooldown) use_patrol = true;
 				}
 			}
+			if (u->type == unit_types::vulture) {
+				double nearest_sieged_tank_distance = get_best_score_value(my_units_of_type[unit_types::siege_tank_siege_mode], [&](unit*u) {
+					return diag_distance(u->pos - c->u->pos);
+				});
+				double nearest_unsieged_tank_distance = get_best_score_value(my_units_of_type[unit_types::siege_tank_tank_mode], [&](unit*u) {
+					return diag_distance(u->pos - c->u->pos);
+				});
+				if (nearest_sieged_tank_distance < 32 * 8 || nearest_unsieged_tank_distance < 32 * 8) use_patrol = false;
+			}
 			xy upos = u->pos + xy((int)(u->hspeed*latency_frames), (int)(u->vspeed*latency_frames));
 			xy tpos = c->target->pos + xy((int)(c->target->hspeed*latency_frames), (int)(c->target->vspeed*latency_frames));
 			double d = units_distance(upos, u, tpos, c->target);
@@ -218,6 +227,13 @@ void process(a_vector<unit_controller*>&controllers) {
 				}
 				return r;
 			};
+
+			if (use_patrol && d < 32 * 10 && c->action != unit_controller::action_kite) {
+				xy rel = u->pos - c->target->pos;
+				double a = std::atan2(rel.y, rel.x);
+				xy dst = movedst(u->pos, a, 32 * 10);
+				if (diag_distance(u->pos - dst) <= 32 * 3) use_patrol = false;
+			}
 
 			bool valkyrie_method = u->type == unit_types::valkyrie;
 
@@ -448,7 +464,7 @@ void process(a_vector<unit_controller*>&controllers) {
 							if (upper_left.x > x2) continue;
 							if (upper_left.y > y2) continue;
 							something_in_the_way = true;
-							if (!nu->controller->can_move) {
+							if (!nu->controller->can_move && nu->type != unit_types::siege_tank_siege_mode) {
 								if (u->game_unit->attack(nu->game_unit)) {
 									c->noorder_until = current_frame + 15;
 									break;
