@@ -39,6 +39,15 @@ namespace upgrade_types {
 	upgrade_type_pointer spider_mines;
 	upgrade_type_pointer charon_boosters;
 	upgrade_type_pointer defensive_matrix, emp_shockwave, irradiate, titan_reactor;
+	upgrade_type_pointer cloaking_field;
+
+	upgrade_type_pointer zerg_melee_attacks_1, zerg_melee_attacks_2, zerg_melee_attacks_3;
+	upgrade_type_pointer zerg_missile_attacks_1, zerg_missile_attacks_2, zerg_missile_attacks_3;
+	upgrade_type_pointer zerg_carapace_1, zerg_carapace_2, zerg_carapace_3;
+	upgrade_type_pointer zerg_flyer_attacks_1, zerg_flyer_attacks_2, zerg_flyer_attacks_3;
+	upgrade_type_pointer zerg_flyer_carapace_1, zerg_flyer_carapace_2, zerg_flyer_carapace_3;
+
+	upgrade_type_pointer metabolic_boost, adrenal_glands;
 
 	void init() {
 		get(terran_infantry_weapons_1, BWAPI::UpgradeTypes::Terran_Infantry_Weapons, 1);
@@ -74,11 +83,30 @@ namespace upgrade_types {
 		get(nuclear_strike, BWAPI::TechTypes::Nuclear_Strike);
 		get(spider_mines, BWAPI::TechTypes::Spider_Mines);
 		get(charon_boosters, BWAPI::UpgradeTypes::Charon_Boosters);
-
 		get(defensive_matrix, BWAPI::TechTypes::Defensive_Matrix);
 		get(emp_shockwave, BWAPI::TechTypes::EMP_Shockwave);
 		get(irradiate, BWAPI::TechTypes::Irradiate);
 		get(titan_reactor, BWAPI::UpgradeTypes::Titan_Reactor);
+		get(cloaking_field, BWAPI::TechTypes::Cloaking_Field);
+
+		get(zerg_melee_attacks_1, BWAPI::UpgradeTypes::Zerg_Melee_Attacks, 1);
+		get(zerg_melee_attacks_2, BWAPI::UpgradeTypes::Zerg_Melee_Attacks, 2);
+		get(zerg_melee_attacks_3, BWAPI::UpgradeTypes::Zerg_Melee_Attacks, 3);
+		get(zerg_missile_attacks_1, BWAPI::UpgradeTypes::Zerg_Missile_Attacks, 1);
+		get(zerg_missile_attacks_2, BWAPI::UpgradeTypes::Zerg_Missile_Attacks, 2);
+		get(zerg_missile_attacks_3, BWAPI::UpgradeTypes::Zerg_Missile_Attacks, 3);
+		get(zerg_carapace_1, BWAPI::UpgradeTypes::Zerg_Carapace, 1);
+		get(zerg_carapace_2, BWAPI::UpgradeTypes::Zerg_Carapace, 2);
+		get(zerg_carapace_3, BWAPI::UpgradeTypes::Zerg_Carapace, 3);
+		get(zerg_flyer_attacks_1, BWAPI::UpgradeTypes::Zerg_Flyer_Attacks, 1);
+		get(zerg_flyer_attacks_1, BWAPI::UpgradeTypes::Zerg_Flyer_Attacks, 2);
+		get(zerg_flyer_attacks_1, BWAPI::UpgradeTypes::Zerg_Flyer_Attacks, 3);
+		get(zerg_flyer_carapace_1, BWAPI::UpgradeTypes::Zerg_Flyer_Carapace, 1);
+		get(zerg_flyer_carapace_2, BWAPI::UpgradeTypes::Zerg_Flyer_Carapace, 2);
+		get(zerg_flyer_carapace_3, BWAPI::UpgradeTypes::Zerg_Flyer_Carapace, 3);
+
+		get(metabolic_boost, BWAPI::UpgradeTypes::Metabolic_Boost);
+		get(adrenal_glands, BWAPI::UpgradeTypes::Adrenal_Glands);
 	}
 }
 
