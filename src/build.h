@@ -159,6 +159,7 @@ void update_prerequisites(build_task*t) {
 		}
 	};
 	for (build_type*pt : t->type->prerequisites) {
+		if (pt->unit == unit_types::larva) continue;
 		add(pt,true);
 	}
 	if (t->needs_pylon) add(get_build_type(unit_types::pylon),false);
@@ -372,12 +373,27 @@ void generate_build_order_task() {
 				}
 				if (latest_prereq == -1) continue;
 				int build_delay = -1;
-				for (unit*u : my_units_of_type[b.type->builder]) {
-					if (build_delay == -1 || u->remaining_whatever_time < build_delay) build_delay = u->remaining_whatever_time;
+				if (b.type->builder == unit_types::larva) {
+					for (int i = 0; i < 3 && build_delay != 0; ++i) {
+						for (unit*u : my_units_of_type[i == 0 ? unit_types::hive : i == 1 ? unit_types::lair : unit_types::hatchery]) {
+							if (!u->game_unit->getLarva().empty()) {
+								build_delay = 0;
+							} else {
+								if (build_delay == -1 || u->remaining_whatever_time < build_delay) build_delay = u->remaining_whatever_time;
+							}
+							if (build_delay == 0) break;
+						}
+					}
+				} else {
+					for (unit*u : my_units_of_type[b.type->builder]) {
+						if (build_delay == -1 || u->remaining_whatever_time < build_delay) build_delay = u->remaining_whatever_time;
+						if (build_delay == 0) break;
+					}
 				}
-				latest_prereq += build_delay / resolution;
-				if (latest_prereq < 0) latest_prereq = 0;
-				else if (latest_prereq >= max_time) latest_prereq = max_time - 1;
+				build_delay /= resolution;
+				if (build_delay < 0) build_delay = 0;
+				else if (build_delay >= max_time) build_delay = max_time - 1;
+				if (build_delay > latest_prereq) latest_prereq = build_delay;
 				
 				for (int i = latest_prereq; i<max_time; ++i) {
 					bool m = minerals_at[i] >= b.type->minerals_cost;
@@ -483,7 +499,7 @@ int last_find_default_build_pos = 0;
 
 void execute_build(build_task&b) {
 	refcounter<build_task> rc(b);
-	if (b.built_unit && b.type->unit && b.type->unit->is_building) {
+	if (b.built_unit && b.type->unit && b.type->unit->is_building && b.type->builder->is_worker) {
 		log("b.built_unit is %p, build_pos is %d %d\n",b.built_unit,b.build_pos.x,b.build_pos.y);
 		if (b.build_pos==xy() && !b.type->unit->is_refinery && !b.type->unit->is_addon) {
 			bool ok = true;
@@ -507,7 +523,7 @@ void execute_build(build_task&b) {
 	auto pred_not_creep = [&](grid::build_square&bs) {
 		return build_has_not_creep(bs, b.type->unit);
 	};
-	if (b.type->unit && b.type->unit->is_building && !b.built_unit && b.build_frame && current_frame-b.build_frame<=15*30 && !b.type->unit->is_addon) {
+	if (b.type->unit && b.type->unit->is_building && !b.built_unit && b.build_frame && current_frame - b.build_frame <= 15 * 30 && !b.type->unit->is_addon && b.type->builder->is_worker) {
 		bool is_pylon = b.type->unit == unit_types::pylon;
 		bool is_creep_colony = b.type->unit == unit_types::creep_colony;
 		bool is_creep = is_creep_colony || b.type->unit == unit_types::hatchery;
@@ -581,15 +597,7 @@ void execute_build(build_task&b) {
 				}
 				if (pos!=xy()) b.needs_pylon = false;
 				if (pos!=xy()) log("No longer needs pylon :D\n");
-			} else if (b.type->unit->requires_creep && !is_creep) {
-				/*pos = build_spot_finder::find(starts,b.type->unit,[&](grid::build_square&bs) {
-					for (int y=0;y<b.type->unit->tile_height;++y) {
-						for (int x=0;x<b.type->unit->tile_width;++x) {
-							if (!grid::get_build_square(bs.pos + xy(x*32,y*32)).has_creep) return false;
-						}
-					}
-					return true;
-				});*/
+			} else if (b.type->unit->requires_creep && (!is_creep || b.prerequisite_for.empty())) {
 				pos = build_spot_finder::find_best(starts,32,[&](grid::build_square&bs) {
 					if (!build_spot_finder::can_build_at(b.type->unit, bs)) return false;
 					return pred_creep(bs);
@@ -602,6 +610,7 @@ void execute_build(build_task&b) {
 					}
 					return -n;
 				});
+				log("find creep pos -> %d %d\n", pos.x, pos.y);
 				if (pos==xy() && !b.needs_creep) {
 					log("maybe need creep\n");
 					xy pos2 = build_spot_finder::find(starts,b.type->unit);
@@ -647,16 +656,8 @@ void execute_build(build_task&b) {
 					} else {
 						pos = build_spot_finder::find_best(starts,32,[&](grid::build_square&bs) {
 							if (!build_spot_finder::can_build_at(b.type->unit,bs)) return false;
+							if (is_creep_colony && !pred_creep(bs)) return false;
 							if (!ut) return true;
-							if (is_creep_colony) {
-								if (!pred_creep(bs)) return false;
-// 								for (int y=0;y<b.type->unit->tile_height;++y) {
-// 									for (int x=0;x<b.type->unit->tile_width;++x) {
-// 										if (creep::complete_creep_spread.test(grid::build_grid_indexer()(bs.pos + xy(x*32,y*32)))) continue;
-// 										//if (!grid::get_build_square(bs.pos + xy(x*32,y*32)).has_creep) return false;
-// 									}
-// 								}
-							}
 							creep::creep_source cs(bs.pos,is_creep_colony ? creep::creep_source_creep_colony : creep::creep_source_hatchery);
 							int count = 0;
 							for (auto&v : spots) {
@@ -705,8 +706,8 @@ void execute_build(build_task&b) {
 				if (pos != xy()) {
 					auto&bs = grid::get_build_square(pos);
 					if (b.type->unit->requires_creep && !pred_creep(bs)) xcept("unreachable: bad build spot for %s", b.type->name);
-					if (!b.type->unit->requires_creep && !pred_not_creep(bs)) xcept("unreachable: bad build spot", b.type->name);
-					if (b.type->unit->requires_pylon && !pred_pylon(bs)) xcept("unreachable: bad build spot", b.type->name);
+					if (b.type->unit->race != race_zerg && !b.type->unit->requires_creep && !pred_not_creep(bs)) xcept("unreachable: bad build spot for %s", b.type->name);
+					if (b.type->unit->requires_pylon && !pred_pylon(bs)) xcept("unreachable: bad build spot for %s", b.type->name);
 				}
 			}
 // 			xy pos = build_spot_finder::find(make_range_filter(my_buildings,[&](unit*u) {
@@ -728,7 +729,7 @@ void execute_build(build_task&b) {
 			multitasking::yield_point();
 		}
 	}
-	if (b.build_pos!=xy()) {
+	if (b.build_pos != xy()) {
 		if (!b.type->unit || !b.type->builder->is_worker) xcept("build task %s should not have a build pos (builder is %s)", b.type->name, b.type->builder->name);
 		bool builds_on_its_own = false;
 		if (b.type->unit) builds_on_its_own = b.type->unit->builder_type==unit_types::probe || b.type->unit->builder_type==unit_types::drone;
@@ -759,9 +760,11 @@ void execute_build(build_task&b) {
 			return f;
 		};
 		if ((b.build_frame && b.build_frame - current_frame <= 15 * 30 || b.built_unit) && (!b.built_unit || !builds_on_its_own)) {
-			if ((!builder || current_frame - b.last_look_for_builder >= 15 * 8) && current_frame - b.last_look_for_builder >= 15 * 2) {
-				b.last_look_for_builder = current_frame;
-				builder = get_best_score(my_units_of_type[b.type->unit->builder_type], builder_score, std::numeric_limits<double>::infinity());
+			if (!b.built_unit || !b.built_unit->build_unit) {
+				if ((!builder || current_frame - b.last_look_for_builder >= 15 * 8) && current_frame - b.last_look_for_builder >= 15 * 2) {
+					b.last_look_for_builder = current_frame;
+					builder = get_best_score(my_units_of_type[b.type->unit->builder_type], builder_score, std::numeric_limits<double>::infinity());
+				}
 			}
 		}
 		if (!b.built_unit && b.build_frame-current_frame>=15*45) builder = nullptr;
@@ -977,6 +980,18 @@ void execute_build(build_task&b) {
 						}
 					}
 					else xcept("unreachable (non-building build addon)");
+				} else if (b.type->unit && b.type->unit->is_building) {
+					if (builder->remaining_whatever_time <= latency_frames) {
+						if (current_frame + latency_frames >= b.build_frame) {
+							if (builder->controller->noorder_until <= current_frame && builder->game_unit->morph(b.type->unit->game_unit_type)) {
+								log("train hurray\n");
+								builder->controller->noorder_until = current_frame + latency_frames + 4;
+							} else {
+								log("train failed\n");
+								builder = nullptr;
+							}
+						}
+					}
 				}
 				else xcept("unreachable (build/train unknown)");
 			}

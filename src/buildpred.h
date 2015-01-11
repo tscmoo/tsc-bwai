@@ -11,6 +11,7 @@ struct st_unit {
 	unit_type*type;
 	int busy_until = 0;
 	bool has_addon = false;
+	int larva_count = 0;
 	st_unit(unit_type*type) : type(type) {}
 };
 
@@ -170,6 +171,7 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep, bool no
 	unit_type*addon_required = nullptr;
 	if (build) {
 		for (unit_type*prereq : build->required_units) {
+			if (prereq == unit_types::larva) continue;
 			if (prereq->is_addon && prereq->builder_type == build->builder_type && !build->builder_type->is_addon) {
 				addon_required = prereq;
 				continue;
@@ -259,6 +261,9 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep, bool no
 			}
 			if (!has_enough_gas) {
 				unit_type*refinery = unit_types::refinery;
+				if (st.race == race_terran) refinery = unit_types::refinery;
+				else if (st.race == race_protoss) refinery = unit_types::assimilator;
+				else refinery = unit_types::extractor;
 				if (st.minerals >= refinery->minerals_cost && !st.dont_build_refineries) {
 					bool found = false;
 					for (auto&v : st.bases) {
@@ -291,7 +296,9 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep, bool no
 				if (st.used_supply[build->race] + build->required_supply > st.max_supply[build->race]) {
 					//if (nodep) return failed;
 					//return unit_types::supply_depot;
-					add_built(unit_types::supply_depot, true);
+					if (st.race == race_terran) add_built(unit_types::supply_depot, true);
+					else if (st.race == race_protoss) add_built(unit_types::pylon, true);
+					else add_built(unit_types::overlord, true);
 // 					if (no_refinery_depots) return failed;
 // 					return nullptr;
 					continue;
@@ -301,7 +308,16 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep, bool no
 				st_unit*builder = nullptr;
 				st_unit*builder_without_addon = nullptr;
 				bool builder_exists = false;
-				if (build->builder_type->is_addon) {
+				if (build->builder_type == unit_types::larva) {
+					for (int i = 0; i < 3 && !builder; ++i) {
+						for (st_unit&u : st.units[i == 0 ? unit_types::hive : i == 1 ? unit_types::lair : unit_types::hatchery]) {
+							if (u.larva_count) {
+								builder = &u;
+								break;
+							}
+						}
+					}
+				} else if (build->builder_type->is_addon) {
 					for (st_unit&u : st.units[build->builder_type->builder_type]) {
 						if (u.has_addon) {
 							builder_exists = true;
@@ -314,7 +330,7 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep, bool no
 				} else {
 					for (st_unit&u : st.units[build->builder_type]) {
 						if (!addon_required || u.has_addon) builder_exists = true;
-						if (u.busy_until <= st.frame) {
+						if (u.busy_until <= st.frame || u.type == unit_types::hatchery || u.type == unit_types::lair) {
 							if (addon_required && !u.has_addon && false) builder_without_addon = &u;
 							else {
 								builder = &u;
@@ -323,7 +339,13 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep, bool no
 						}
 					}
 				}
-				if (!builder) {
+				if (build->builder_type == unit_types::larva) {
+					if (!builder) {
+						if (st.units[unit_types::hatchery].empty() && st.units[unit_types::lair].empty() && st.units[unit_types::hive].empty()) {
+							return unit_types::hatchery;
+						};
+					}
+				} else if (!builder) {
 					bool found = false;
 					if (builder_without_addon) {
 						add_built(addon_required, false);
@@ -360,16 +382,22 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep, bool no
 							if (!builder_exists) return failed;
 						}
 					}
-				} else {
-					builder->busy_until = st.frame + build->build_time;
+				}
+				if (builder) {
+					if (builder->type == unit_types::larva) --builder->larva_count;
+					else builder->busy_until = st.frame + build->build_time;
 					if (build == unit_types::nuclear_missile) builder->busy_until = st.frame + 15 * 60 * 30;
 					st.production.emplace(st.frame + build->build_time, build);
 					st.produced.emplace(st.frame, std::make_tuple(build, nullptr));
+					if (build->is_two_units_in_one_egg) {
+						st.production.emplace(st.frame + build->build_time, build);
+						st.produced.emplace(st.frame, std::make_tuple(build, nullptr));
+					}
 					st.minerals -= build->minerals_cost;
 					st.gas -= build->gas_cost;
 					st.used_supply[build->race] += build->required_supply;
 					if (build->is_addon) builder->has_addon = true;
-					//st.max_supply[build->race] += build->provided_supply;
+					if (builder->type == unit_types::drone) rm_unit(st, builder->type);
 					//log("%s successfully built\n", build->name);
 					return (unit_type*)nullptr;
 				}
@@ -399,6 +427,15 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep, bool no
 		st.total_gas_gathered += gas_income;
 		st.frame += f;
 
+		for (int i = 0; i < 3; ++i) {
+			for (st_unit&u : st.units[i == 0 ? unit_types::hive : i == 1 ? unit_types::lair : unit_types::hatchery]) {
+				if (st.frame >= u.busy_until && u.larva_count < 3) {
+					++u.larva_count;
+					u.busy_until = st.frame + 333;
+				}
+			}
+		}
+
 		if (st.frame >= end_frame) return timeout;
 
 	}
@@ -407,10 +444,17 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep, bool no
 
 void run(a_vector<state>&all_states, ruleset rules, bool is_for_me) {
 
-	int race = race_terran;
+	//int race = race_terran;
 
 	unit_type*cc_type = unit_types::cc;
 	unit_type*worker_type = unit_types::scv;
+
+	if (is_for_me) {
+		if (players::my_player->race == race_zerg) {
+			cc_type = unit_types::hatchery;
+			worker_type = unit_types::drone;
+		}
+	}
 
 	auto initial_state = all_states.back();
 	if (initial_state.bases.empty()) return;
@@ -459,11 +503,9 @@ void run(a_vector<state>&all_states, ruleset rules, bool is_for_me) {
 	while (st.frame < rules.end_frame) {
 		multitasking::yield_point();
 
-		int workers = st.units[unit_types::scv].size();
-
 		int expand_frame = -1;
-		if ((int)st.bases.size() < rules.bases && next_base && workers >= 14) {
-			unit_type*t = unit_types::cc;
+		if ((int)st.bases.size() < rules.bases && next_base) {
+			unit_type*t = cc_type;
 			if (advance(st, t, rules.end_frame, true, true)) st = all_states.back();
 			else {
 				auto s = next_base;
@@ -497,11 +539,18 @@ void add_builds(const state&st) {
 	static void*flag = &flag;
 	void*new_flag = &new_flag;
 
+	std::unordered_map<unit_type*, int> two_units_in_one_egg_counter;
 	for (auto&v : st.produced) {
 		int frame = v.first;
 		if (frame > current_frame + 15 * 90) continue;
 		unit_type*ut = std::get<0>(v.second);
+		if (ut->is_two_units_in_one_egg) {
+			if (two_units_in_one_egg_counter[ut]++ & 1) continue;
+		}
 		resource_spots::spot*s = std::get<1>(v.second);
+		if (s) {
+			if (ut != unit_types::cc && ut != unit_types::nexus && ut != unit_types::hatchery) xcept("add_builds: resource_spot is set for %s", ut->name);
+		}
 		bool found = false;
 		xy build_pos;
 		if (s) build_pos = s->cc_build_pos;
@@ -1177,6 +1226,7 @@ a_vector<state> run_opponent_builds(int end_frame) {
 
 state get_my_current_state() {
 	state initial_state;
+	initial_state.race = players::my_player->race;
 	initial_state.frame = current_frame;
 	initial_state.minerals = current_minerals;
 	initial_state.gas = current_gas;
@@ -1195,13 +1245,21 @@ state get_my_current_state() {
 	for (unit*u : my_units) {
 		//if (!u->is_completed) continue;
 		if (u->type->is_addon) continue;
-		auto&st_u = add_unit(initial_state, u->type);
+		if (u->type == unit_types::larva) continue;
+		unit_type*ut = u->type;
+		if (ut->game_unit_type == BWAPI::UnitTypes::Zerg_Egg) {
+			ut = units::get_unit_type(u->game_unit->getBuildType());
+			if (ut->is_two_units_in_one_egg) add_unit(initial_state, ut);
+		}
+		auto&st_u = add_unit(initial_state, ut);
 		if (u->addon) st_u.has_addon = true;
 		if (u->has_nuke) st_u.busy_until = current_frame + 15 * 60 * 30;
-		if (!u->is_completed && u->type->provided_supply) {
-			initial_state.max_supply[u->type->race] += u->type->provided_supply;
+		if (!u->is_completed && ut->provided_supply) {
+			initial_state.max_supply[ut->race] += ut->provided_supply;
 		}
-		if (u->type->is_gas) {
+		if (u->remaining_whatever_time) st_u.busy_until = initial_state.frame + u->remaining_whatever_time;
+		st_u.larva_count = u->game_unit->getLarva().size();
+		if (ut->is_gas) {
 			for (auto&r : resource_spots::live_resources) {
 				if (r.u == u) {
 					//initial_state.resource_info.emplace(&r, &r);

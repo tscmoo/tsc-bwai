@@ -205,13 +205,14 @@ namespace unit_types {
 	unit_type_pointer medic, ghost, firebat;
 	unit_type_pointer wraith, battlecruiser, dropship, science_vessel, valkyrie;
 	unit_type_pointer spider_mine, nuclear_missile;
-	unit_type_pointer nexus, pylon, gateway, photon_cannon, robotics_facility, stargate, forge, citadel_of_adun, templar_archives, fleet_beacon;
+	unit_type_pointer nexus, pylon, gateway, photon_cannon, robotics_facility, stargate, forge, citadel_of_adun, templar_archives;
+	unit_type_pointer fleet_beacon, assimilator, observatory;
 	unit_type_pointer probe;
 	unit_type_pointer zealot, dragoon, dark_templar, high_templar, reaver;
 	unit_type_pointer archon, dark_archon;
 	unit_type_pointer observer, shuttle, scout, carrier, interceptor, arbiter, corsair;
 	unit_type_pointer hatchery, lair, hive, creep_colony, sunken_colony, spore_colony, nydus_canal, spawning_pool, evolution_chamber;
-	unit_type_pointer hydralisk_den, spire, greater_spire;
+	unit_type_pointer hydralisk_den, spire, greater_spire, extractor;
 	unit_type_pointer drone, overlord, zergling, larva, hydralisk, lurker, lurker_egg, ultralisk, defiler;
 	unit_type_pointer mutalisk, cocoon, scourge, queen, guardian, devourer;
 	unit_type_pointer vespene_geyser;
@@ -270,6 +271,8 @@ namespace unit_types {
 		get(citadel_of_adun, BWAPI::UnitTypes::Protoss_Citadel_of_Adun);
 		get(templar_archives, BWAPI::UnitTypes::Protoss_Templar_Archives);
 		get(fleet_beacon, BWAPI::UnitTypes::Protoss_Fleet_Beacon);
+		get(assimilator, BWAPI::UnitTypes::Protoss_Assimilator);
+		get(observatory, BWAPI::UnitTypes::Protoss_Observatory);
 
 		get(probe, BWAPI::UnitTypes::Protoss_Probe);
 		get(zealot, BWAPI::UnitTypes::Protoss_Zealot);
@@ -301,6 +304,7 @@ namespace unit_types {
 		get(hydralisk_den, BWAPI::UnitTypes::Zerg_Hydralisk_Den);
 		get(spire, BWAPI::UnitTypes::Zerg_Spire);
 		get(greater_spire, BWAPI::UnitTypes::Zerg_Greater_Spire);
+		get(extractor, BWAPI::UnitTypes::Zerg_Extractor);
 
 		get(drone, BWAPI::UnitTypes::Zerg_Drone);
 		get(overlord, BWAPI::UnitTypes::Zerg_Overlord);
@@ -525,7 +529,7 @@ void update_unit_type(unit*u) {
 			u->building->is_liftable_wall = false;
 			u->building->nobuild_until = 0;
 		}
-	} else u->building = 0;
+	} else u->building = nullptr;
 }
 
 a_deque<weapon_stats> weapon_stats_container;
@@ -547,7 +551,7 @@ void update_weapon_stats(weapon_stats*st) {
 	if (gw.damageType() == BWAPI::DamageTypes::Concussive) st->damage_type = weapon_stats::damage_type_concussive;
 	if (gw.damageType() == BWAPI::DamageTypes::Normal) st->damage_type = weapon_stats::damage_type_normal;
 	if (gw.damageType() == BWAPI::DamageTypes::Explosive) st->damage_type = weapon_stats::damage_type_explosive;
-	st->explosion_type = gw.explosionType();
+	st->explosion_type = weapon_stats::explosion_type_none;
 	if (gw.explosionType() == BWAPI::ExplosionTypes::Radial_Splash) st->explosion_type = weapon_stats::explosion_type_radial_splash;
 	if (gw.explosionType() == BWAPI::ExplosionTypes::Enemy_Splash) st->explosion_type = weapon_stats::explosion_type_enemy_splash;
 	st->inner_splash_radius = gw.innerSplashRadius();
@@ -789,87 +793,91 @@ void on_unit_complete(BWAPI_Unit game_unit) {
 	events.emplace_back(event_t::t_complete,game_unit);
 }
 
+a_vector<unit_building*> registered_buildings;
+void update_building_squares() {
+	for (size_t i = 0; i < registered_buildings.size(); ++i) {
+		unit_building*b = registered_buildings[i];
+		unit*u = b->u;
+		if (b->u->building != b || b->is_lifted || u->pos != b->walk_squares_occupied_pos || u->gone || u->dead) {
+			//++pathing::update_spaces;
+			log("unregistered %s, because %s, %d squares\n", u->type->name, b->u->building != b ? "unit changed" : b->is_lifted ? "lifted" : u->pos != b->walk_squares_occupied_pos ? "moved" : u->gone ? "gone" : u->dead ? "dead" : "?", b->walk_squares_occupied.size());
+			for (auto*ws_p : b->walk_squares_occupied) {
+				find_and_erase(ws_p->buildings, u);
+				//if (ws_p->building==u) ws_p->building = 0;
+			}
+			b->walk_squares_occupied.clear();
+			for (auto*sfs_p : b->sixtyfour_squares_occupied) {
+				//while (!sfs_p->distance_map_used.empty()) pathing::invalidate_distance_map(sfs_p->distance_map_used.front());
+			}
+			b->sixtyfour_squares_occupied.clear();
+			for (auto*bs_p : b->build_squares_occupied) {
+				if (bs_p->building == u) bs_p->building = 0;
+			}
+			b->build_squares_occupied.clear();
+			xy upper_left = u->pos - xy(u->type->dimension_left(), u->type->dimension_up());
+			xy bottom_right = u->pos + xy(u->type->dimension_right(), u->type->dimension_down());
+			square_pathing::invalidate_area(upper_left, bottom_right);
+			if (i != registered_buildings.size() - 1) std::swap(registered_buildings[registered_buildings.size() - 1], registered_buildings[i]);
+			registered_buildings.pop_back();
+			--i;
+		} else {
+			for (auto*ws_p : b->walk_squares_occupied) {
+				//if (ws_p->building!=u) ws_p->building = u;
+			}
+			for (auto*bs_p : b->build_squares_occupied) {
+				if (bs_p->building != u) bs_p->building = u;
+			}
+		}
+	}
+
+	for (unit*u : visible_buildings) {
+		unit_building*b = u->building;
+		if (b->is_lifted) continue;
+
+		if (b->walk_squares_occupied.empty()) {
+			//++pathing::update_spaces;
+			xy upper_left = u->pos - xy(u->type->dimension_left(), u->type->dimension_up());
+			xy bottom_right = u->pos + xy(u->type->dimension_right(), u->type->dimension_down());
+			for (int y = upper_left.y&-8; y <= bottom_right.y; y += 8) {
+				if ((size_t)y >= (size_t)grid::map_height) continue;
+				for (int x = upper_left.x&-8; x <= bottom_right.x; x += 8) {
+					if ((size_t)x >= (size_t)grid::map_width) continue;
+					auto&ws = grid::get_walk_square(xy(x, y));
+					b->walk_squares_occupied.push_back(&ws);
+					//ws.building = u;
+					ws.buildings.push_back(u);
+				}
+			}
+			for (int y = upper_left.y&-64 - 64; y <= bottom_right.y + 64; y += 64) {
+				if ((size_t)y >= (size_t)grid::map_height) continue;
+				for (int x = upper_left.x&-64 - 64; x <= bottom_right.x + 64; x += 64) {
+					if ((size_t)x >= (size_t)grid::map_width) continue;
+					auto&sfs = grid::get_sixtyfour_square(xy(x, y));
+					b->sixtyfour_squares_occupied.push_back(&sfs);
+					//while (!sfs.distance_map_used.empty()) pathing::invalidate_distance_map(sfs.distance_map_used.front());
+				}
+			}
+			for (int y = 0; y < u->type->tile_height; ++y) {
+				for (int x = 0; x < u->type->tile_width; ++x) {
+					auto&bs = grid::get_build_square(u->building->build_pos + xy(x * 32, y * 32));
+					b->build_squares_occupied.push_back(&bs);
+					bs.building = u;
+				}
+			}
+			square_pathing::invalidate_area(upper_left, bottom_right);
+			registered_buildings.push_back(b);
+			b->walk_squares_occupied_pos = u->pos;
+			b->last_registered_pos = b->build_pos;
+			log("registered %s, %d squares\n", u->type->name, b->walk_squares_occupied.size());
+		}
+	}
+}
+
 void update_buildings_squares_task() {
 
-	a_vector<unit_building*> registered_buildings;
 	while (true) {
 
-		for (size_t i=0;i<registered_buildings.size();++i) {
-			unit_building*b = registered_buildings[i];
-			unit*u = b->u;
-			if (b->u->building!=b || b->is_lifted || u->pos!=b->walk_squares_occupied_pos || u->gone || u->dead) {
-				//++pathing::update_spaces;
-				log("unregistered %s, because %s, %d squares\n",u->type->name,b->u->building!=b ? "unit changed" : b->is_lifted ? "lifted" : u->pos!=b->walk_squares_occupied_pos ? "moved" : u->gone ? "gone" : u->dead ? "dead" : "?",b->walk_squares_occupied.size());
-				for (auto*ws_p : b->walk_squares_occupied) {
-					find_and_erase(ws_p->buildings, u);
-					//if (ws_p->building==u) ws_p->building = 0;
-				}
-				b->walk_squares_occupied.clear();
-				for (auto*sfs_p : b->sixtyfour_squares_occupied) {
-					//while (!sfs_p->distance_map_used.empty()) pathing::invalidate_distance_map(sfs_p->distance_map_used.front());
-				}
-				b->sixtyfour_squares_occupied.clear();
-				for (auto*bs_p : b->build_squares_occupied) {
-					if (bs_p->building==u) bs_p->building = 0;
-				}
-				b->build_squares_occupied.clear();
-				xy upper_left = u->pos - xy(u->type->dimension_left(), u->type->dimension_up());
-				xy bottom_right = u->pos + xy(u->type->dimension_right(), u->type->dimension_down());
-				square_pathing::invalidate_area(upper_left, bottom_right);
-				if (i!=registered_buildings.size()-1) std::swap(registered_buildings[registered_buildings.size()-1],registered_buildings[i]);
-				registered_buildings.pop_back();
-				--i;
-			} else {
-				for (auto*ws_p : b->walk_squares_occupied) {
-					//if (ws_p->building!=u) ws_p->building = u;
-				}
-				for (auto*bs_p : b->build_squares_occupied) {
-					if (bs_p->building!=u) bs_p->building = u;
-				}
-			}
-		}
-
-		for (unit*u : visible_buildings) {
-			unit_building*b = u->building;
-			if (b->is_lifted) continue;
-
-			if (b->walk_squares_occupied.empty()) {
-				//++pathing::update_spaces;
-				xy upper_left = u->pos - xy(u->type->dimension_left(),u->type->dimension_up());
-				xy bottom_right = u->pos + xy(u->type->dimension_right(),u->type->dimension_down());
-				for (int y=upper_left.y&-8;y<=bottom_right.y;y+=8) {
-					if ((size_t)y >= (size_t)grid::map_height) continue;
-					for (int x=upper_left.x&-8;x<=bottom_right.x;x+=8) {
-						if ((size_t)x >= (size_t)grid::map_width) continue;
-						auto&ws = grid::get_walk_square(xy(x,y));
-						b->walk_squares_occupied.push_back(&ws);
-						//ws.building = u;
-						ws.buildings.push_back(u);
-					}
-				}
-				for (int y=upper_left.y&-64 - 64;y<=bottom_right.y+64;y+=64) {
-					if ((size_t)y >= (size_t)grid::map_height) continue;
-					for (int x=upper_left.x&-64 - 64;x<=bottom_right.x+64;x+=64) {
-						if ((size_t)x >= (size_t)grid::map_width) continue;
-						auto&sfs = grid::get_sixtyfour_square(xy(x,y));
-						b->sixtyfour_squares_occupied.push_back(&sfs);
-						//while (!sfs.distance_map_used.empty()) pathing::invalidate_distance_map(sfs.distance_map_used.front());
-					}
-				}
-				for (int y=0;y<u->type->tile_height;++y) {
-					for (int x=0;x<u->type->tile_width;++x) {
-						auto&bs = grid::get_build_square(u->building->build_pos + xy(x*32,y*32));
-						b->build_squares_occupied.push_back(&bs);
-						bs.building = u;
-					}
-				}
-				square_pathing::invalidate_area(upper_left, bottom_right);
-				registered_buildings.push_back(b);
-				b->walk_squares_occupied_pos = u->pos;
-				b->last_registered_pos = b->build_pos;
-				log("registered %s, %d squares\n",u->type->name,b->walk_squares_occupied.size());
-			}
-		}
+		update_building_squares();
 
 		multitasking::sleep(4);
 	}
@@ -980,6 +988,7 @@ void update_units_task() {
 			// These events are delayed, so e.g. a unit is not necessarily visible even though we are processing a show event.
 			u->visible = u->game_unit->isVisible();
 			u->visible &= u->game_unit->exists(); // BWAPI bug: destroyed units are visible
+			auto*b = u->building;
 			switch (e.t) {
 			case event_t::t_show:
 				log("show %s\n",u->type->name);
@@ -1020,6 +1029,7 @@ void update_units_task() {
 // 				break;
 			}
 			//log("event %d - %s visible ? %d\n", e.t, u->type->name, u->visible);
+			if (b && u->building != b) update_building_squares();
 
 			update_groups(u);
 		}

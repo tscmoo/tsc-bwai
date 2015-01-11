@@ -429,7 +429,7 @@ void resource_gathering_task() {
 		for (unit*u : my_units) {
 			if (!u->type->game_unit_type.isResourceDepot()) continue;
 			if (u->building && u->building->is_lifted) continue;
-			if (!u->is_completed) continue;
+			if (!u->is_completed && u->type != unit_types::lair && u->type != unit_types::hive) continue;
 			resource_depots.push_back(u);
 		}
 
