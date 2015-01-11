@@ -43,11 +43,14 @@ struct path_node {
 	size_t root_index;
 };
 
+enum class pathing_map_index { default, no_enemy_buildings, include_liftable_wall };
+
 struct pathing_map {
 	bool initialized = false;
 	std::array<int, 4> dimensions;
 	tsc::dynamic_bitset walkable;
 	unit_type*ut;
+	pathing_map_index index;
 	bool include_enemy_buildings = true;
 	bool include_liftable_wall = false;
 	
@@ -80,7 +83,6 @@ tsc::dynamic_bitset test_walkable;
 
 a_list<pathing_map> all_pathing_maps;
 
-enum class pathing_map_index { default, no_enemy_buildings, include_liftable_wall };
 std::array<a_unordered_map<unit_type*, pathing_map*>, 3> pathing_map_for_unit_type;
 
 a_vector<std::tuple<xy, xy>> invalidation_queue;
@@ -99,6 +101,7 @@ pathing_map&get_pathing_map(unit_type*ut, pathing_map_index index = pathing_map_
 	r->walkable.resize(walkmap_width * walkmap_height);
 	r->nearest_path_node.resize(nearest_path_node_width*nearest_path_node_height);
 	r->ut = ut;
+	r->index = index;
 	r->include_enemy_buildings = index != pathing_map_index::no_enemy_buildings;
 	r->include_liftable_wall = index == pathing_map_index::include_liftable_wall;
 	return *r;
@@ -269,6 +272,8 @@ void generate_path_nodes(pathing_map&map) {
 			}
 		}
 	}
+
+	log("initial %d new nodes generated in %f\n", new_path_nodes.size(), elapsed);
 
 	for (auto&v : new_path_nodes) {
 		if (v.root_index == -1) continue;
@@ -795,7 +800,36 @@ void square_pathing_update_maps_task() {
 				map.last_update_path_nodes_frame = current_frame;
 				map.update_path_nodes = false;
 				map.path_nodes_requires_update = false;
-				generate_path_nodes(map);
+
+				auto copy_nodes = [&](pathing_map&dst, pathing_map&src) {
+					dst.path_nodes = src.path_nodes;
+					dst.nearest_path_node = src.nearest_path_node;
+					for (auto&v : dst.path_nodes) {
+						for (auto*&n : v.neighbors) {
+							n = dst.path_nodes.data() + src.path_node_index(*n);
+						}
+					}
+					for (auto*&n : dst.nearest_path_node) {
+						n = dst.path_nodes.data() + src.path_node_index(*n);
+					}
+				};
+
+				if (map.ut == unit_types::siege_tank_tank_mode) {
+					generate_path_nodes(map);
+					for (auto&v : all_pathing_maps) {
+						if (&v == &map) continue;
+						if (v.index != map.index) continue;
+						copy_nodes(v, map);
+					}
+				} else {
+					map.cached_distance.clear();
+					auto&siege_tank_map = get_pathing_map(unit_types::siege_tank_tank_mode, map.index);
+					if (siege_tank_map.path_nodes.empty() && !siege_tank_map.update_path_nodes) {
+						siege_tank_map.update_path_nodes = true;
+						siege_tank_map.update_path_nodes_frame = current_frame;
+					}
+					copy_nodes(map, siege_tank_map);
+				}
 			}
 		}
 
