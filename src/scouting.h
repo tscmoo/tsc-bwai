@@ -175,6 +175,9 @@ void scout::process() {
 
 }
 
+xy scan_here_please;
+int scan_enemy_base_until = 0;
+
 xy scan_best_pos;
 double scan_best_score;
 void scan() {
@@ -219,13 +222,13 @@ void scan() {
 			values[u->pos] += 10000;
 		}
 	}
-	if (buildpred::op_unverified_minerals_gathered>3000) {
-		for (unit*e : enemy_units) {
-			if (e->visible || e->gone) continue;
-			if (e->type->is_building) continue;
-			values[e->pos] += e->minerals_value + e->gas_value;
-		}
-	}
+// 	if (buildpred::op_unverified_minerals_gathered>3000) {
+// 		for (unit*e : enemy_units) {
+// 			if (e->visible || e->gone) continue;
+// 			if (e->type->is_building) continue;
+// 			values[e->pos] += e->minerals_value + e->gas_value;
+// 		}
+// 	}
 	int follow_worker_count = 0;
 	for (unit*e : enemy_units) {
 		if (e->visible || e->gone) continue;
@@ -238,6 +241,9 @@ void scan() {
 		}, std::numeric_limits<double>::infinity());
 		if (s) values[s->pos] += 3000;
 	}
+	
+	if (current_frame >= scan_enemy_base_until) values.clear();
+
 	for (size_t idx : combat::op_base) {
 		xy pos((idx % (size_t)grid::build_grid_width) * 32, (idx / (size_t)grid::build_grid_width) * 32);
 		int last_seen = grid::get_build_square(pos).last_seen;
@@ -248,16 +254,16 @@ void scan() {
 		}
 	}
 
-	for (auto&v : buildpred::opponent_states) {
-		auto&st = std::get<1>(v);
-		for (auto&ri : st.resource_info) {
-			values[ri.first->u->pos] += ri.second.gathered;
-		}
-		for (auto&v : st.bases) {
-			values[v.s->pos] += 20;
-			if (!v.verified) values[v.s->cc_build_pos] += 10000;
-		}
-	}
+// 	for (auto&v : buildpred::opponent_states) {
+// 		auto&st = std::get<1>(v);
+// 		for (auto&ri : st.resource_info) {
+// 			values[ri.first->u->pos] += ri.second.gathered;
+// 		}
+// 		for (auto&v : st.bases) {
+// 			values[v.s->pos] += 20;
+// 			if (!v.verified) values[v.s->cc_build_pos] += 10000;
+// 		}
+// 	}
 	auto*scan_st = units::get_unit_stats(unit_types::spell_scanner_sweep, players::my_player);
 	double best_score = 0.0;
 	xy best_pos;
@@ -283,18 +289,39 @@ void scan() {
 			best_pos = v.first;
 		}
 	}
-	scan_best_pos = best_pos;
-	scan_best_score = best_score;
-	bool use_scan = false;
-	use_scan |= best_score >= 3000.0 && scans_available > comsats * 2;
-	use_scan |= best_score >= 6000.0 && scans_available > comsats;
-	use_scan |= best_score >= 10000.0 && scans_available > 0;
-	if (use_scan) {
-		unit*u = get_best_score(my_units_of_type[unit_types::comsat_station], [&](unit*u) {
-			return -u->energy;
-		});
-		if (u) {
-			u->game_unit->useTech(BWAPI::TechTypes::Scanner_Sweep, BWAPI::Position(best_pos.x, best_pos.y));
+	if (scan_here_please != xy()) {
+		bool is_revealed = false;
+		for (unit*u : detectors) {
+			if ((u->pos - scan_here_please).length() <= u->stats->sight_range) {
+				is_revealed = true;
+				break;
+			}
+		}
+		if (!is_revealed) {
+			unit*u = get_best_score(my_units_of_type[unit_types::comsat_station], [&](unit*u) {
+				return -u->energy;
+			});
+			if (u) {
+				u->game_unit->useTech(BWAPI::TechTypes::Scanner_Sweep, BWAPI::Position(best_pos.x, best_pos.y));
+			}
+		}
+		scan_here_please = xy();
+	} else {
+		scan_best_pos = best_pos;
+		scan_best_score = best_score;
+		bool use_scan = false;
+		use_scan |= best_score >= 3000.0 && scans_available > comsats * 2;
+		use_scan |= best_score >= 6000.0 && scans_available > comsats;
+		use_scan |= best_score >= 10000.0 && scans_available > 0;
+		if (current_frame >= scan_enemy_base_until) use_scan = scans_available > 2;
+		if (current_frame >= scan_enemy_base_until) log("scan enemy base!\n");
+		if (use_scan) {
+			unit*u = get_best_score(my_units_of_type[unit_types::comsat_station], [&](unit*u) {
+				return -u->energy;
+			});
+			if (u) {
+				u->game_unit->useTech(BWAPI::TechTypes::Scanner_Sweep, BWAPI::Position(best_pos.x, best_pos.y));
+			}
 		}
 	}
 }
