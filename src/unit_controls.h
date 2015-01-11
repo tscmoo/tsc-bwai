@@ -197,12 +197,14 @@ void process(a_vector<unit_controller*>&controllers) {
 				}
 			}
 			if (u->type == unit_types::vulture) {
-				double nearest_sieged_tank_distance = get_best_score_value(my_units_of_type[unit_types::siege_tank_siege_mode], [&](unit*u) {
+				double nearest_sieged_tank_distance = get_best_score_value(my_completed_units_of_type[unit_types::siege_tank_siege_mode], [&](unit*u) {
 					return diag_distance(u->pos - c->u->pos);
 				});
-				double nearest_unsieged_tank_distance = get_best_score_value(my_units_of_type[unit_types::siege_tank_tank_mode], [&](unit*u) {
+				if (nearest_sieged_tank_distance == 0) nearest_sieged_tank_distance = std::numeric_limits<double>::infinity();
+				double nearest_unsieged_tank_distance = get_best_score_value(my_completed_units_of_type[unit_types::siege_tank_tank_mode], [&](unit*u) {
 					return diag_distance(u->pos - c->u->pos);
 				});
+				if (nearest_unsieged_tank_distance == 0) nearest_unsieged_tank_distance = std::numeric_limits<double>::infinity();
 				if (nearest_sieged_tank_distance < 32 * 8 || nearest_unsieged_tank_distance < 32 * 8) use_patrol = false;
 			}
 			xy upos = u->pos + xy((int)(u->hspeed*latency_frames), (int)(u->vspeed*latency_frames));
