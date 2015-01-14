@@ -470,18 +470,24 @@ void lift_wall_task() {
 					if (lift) u->controller->noorder_until = current_frame + 15;
 					if (!u->building->is_lifted) {
 						double my_army = 0;
+						combat_eval::eval eval;
 						for (unit*nu : my_units) {
 							if (nu->building || nu->type->is_worker) continue;
-							if (diag_distance(nu->pos - u->pos) > 32 * 10) continue;
-							my_army += u->type->required_supply;
+							if (diag_distance(nu->pos - u->pos) > 32 * 15) continue;
+							my_army += nu->type->required_supply;
+							eval.add_unit(nu, 0);
 						}
 						double op_army = 0;
 						for (unit*nu : enemy_units) {
 							if (nu->building || nu->type->is_worker) continue;
-							if (diag_distance(nu->pos - u->pos) > 32 * 10) continue;
-							op_army += u->type->required_supply;
+							if (diag_distance(nu->pos - u->pos) > 32 * 15) continue;
+							op_army += nu->type->required_supply;
+							eval.add_unit(nu, 1);
 						}
-						if (op_army == 0 || my_army >= op_army + 4) u->game_unit->lift();
+						eval.run();
+						log("lift - my_army %g op_army %g - scores %g %g\n", my_army, op_army, eval.teams[0].score, eval.teams[1].score);
+						if (op_army == 0 || eval.teams[0].score > eval.teams[1].score) u->game_unit->lift();
+						//if (op_army == 0 || my_army >= op_army + 4) u->game_unit->lift();
 					}
 				} else {
 					if (u->building->is_lifted) {
