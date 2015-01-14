@@ -475,11 +475,16 @@ void run(a_vector<state>&all_states, ruleset rules, bool is_for_me) {
 			double score = unit_pathing_distance(worker_type, s->cc_build_pos, initial_state.bases.front().s->cc_build_pos);
 			double res = 0;
 			if (is_for_me && initial_state.bases.size() > 1) {
-				double ned = get_best_score_value(is_for_me ? enemy_units : my_units, [&](unit*e) {
+// 				double ned = get_best_score_value(is_for_me ? enemy_units : my_units, [&](unit*e) {
+// 					if (e->type->is_worker) return std::numeric_limits<double>::infinity();
+// 					return diag_distance(s->pos - e->pos);
+// 				});
+// 				score -= ned;
+				double ned = get_best_score_value(is_for_me ? enemy_buildings : my_buildings, [&](unit*e) {
 					if (e->type->is_worker) return std::numeric_limits<double>::infinity();
 					return diag_distance(s->pos - e->pos);
 				});
-				score -= ned;
+				if (ned <= 32 * 30) score -= ned;
 			}
 			bool has_gas = false;
 			for (auto&r : s->resources) {
