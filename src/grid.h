@@ -60,6 +60,7 @@ struct build_square {
 	bool no_resource_depot;
 	bool entirely_walkable;
 	int last_seen;
+	bool reserved_for_resource_depot;
 	template<int=0>
 	build_square*get_neighbor(int d) {
 		xy p;
@@ -168,6 +169,7 @@ void update_mineral_reserved_task() {
 		for (auto&v : build_grid) {
 			v.mineral_reserved = false;
 			v.no_resource_depot = false;
+			v.reserved_for_resource_depot = false;
 		}
 		
 		for (unit*u : resource_units) {

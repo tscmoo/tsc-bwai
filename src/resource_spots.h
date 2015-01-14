@@ -40,15 +40,16 @@ a_list<spot> spots;
 
 void update_spots_pos() {
 
+	for (auto&bs : grid::build_grid) {
+		bs.reserved_for_resource_depot = false;
+	}
+
 	for (auto&s : spots) {
 		if (s.cc_build_pos!=xy()) {
-			//grid::unreserve_build_squares(s.cc_build_pos,unit_types::cc);
 			s.cc_build_pos = xy();
 		}
 		if (s.resources.empty()) continue;
 		xy pos;
-// 		for (auto&r : s.resources) pos += r.u->pos;
-// 		pos /= s.resources.size();
 		xy mpos, gpos;
 		size_t mcount = 0, gcount = 0;
 		for (auto&r : s.resources) {
@@ -83,13 +84,11 @@ void update_spots_pos() {
 							grid::build_square&s = grid::get_build_square(bs.pos + xy(x*32,y*32));
 							if (!s.buildable || s.no_resource_depot) return false;
 							if (s.building) return false;
-							//if (s.reserved.first) return false;
 						}
 					}
 					return true;
 				};
 				if (test()) {
-					//double d = (bs.pos-pos).length();
 					double d = 0.0;
 					for (auto&r : s.resources) {
 						d += diag_distance(r.u->pos - (bs.pos + xy(16 * 4, 16 * 3)));
@@ -129,7 +128,11 @@ void update_spots_pos() {
 
 	for (auto&s : spots) {
 		if (s.cc_build_pos!=xy()) {
-			//grid::reserve_build_squares(s.cc_build_pos,unit_types::cc);
+			for (int y = 0; y < 32 * 3; y += 32) {
+				for (int x = 0; x < 32 * 4; x += 32) {
+					grid::get_build_square(s.cc_build_pos + xy(x, y)).reserved_for_resource_depot = true;
+				}
+			}
 		}
 	}
 }
