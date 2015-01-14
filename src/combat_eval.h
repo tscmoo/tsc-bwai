@@ -202,8 +202,8 @@ namespace combat_eval {
 							//} else if (target->move > w->max_range) {
 								double speed = c.st->max_speed;
 								if (c.st->type == unit_types::siege_tank_siege_mode) speed = 2;
-								//if (c.st->type == unit_types::interceptor && c.move <= 0) speed = 0;
-								if (c.st->type == unit_types::interceptor) speed = 0;
+								if (c.st->type == unit_types::interceptor && c.move <= 0) speed /= 4;
+								//if (c.st->type == unit_types::interceptor) speed = 0;
 								if (speed > 0) {
 									++target_count;
 									if (teams[i].has_static_defence) c.move -= c.st->max_speed * frame_resolution / 4;
@@ -260,7 +260,7 @@ namespace combat_eval {
 										attack(target, 0.5);
 										--c.spider_mine_count;
 									} else attack(target, 1.0);
-									if (c.st->type == unit_types::siege_tank_siege_mode || c.st->type == unit_types::valkyrie) {
+									if (c.st->type == unit_types::siege_tank_siege_mode || c.st->type == unit_types::valkyrie || c.st->type == unit_types::firebat) {
 										combatant*ntarget = target + 1;
 										int max_n = 1;
 										if (c.st->type == unit_types::valkyrie) max_n = 3;
