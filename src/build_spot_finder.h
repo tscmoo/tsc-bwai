@@ -110,6 +110,7 @@ bool is_buildable_at(unit_type*ut,const at_T&at) {
 			if (!bs.buildable) return false;
 			if (bs.building || bs.reserved.first) return false;
 			if (!ut->is_resource_depot && bs.mineral_reserved) return false;
+			if (!ut->is_resource_depot && bs.reserved_for_resource_depot) return false;
 			if (ut->is_resource_depot && bs.no_resource_depot) return false;
 		}
 	}
