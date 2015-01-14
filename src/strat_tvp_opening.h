@@ -6,25 +6,90 @@ struct strat_tvp_opening {
 	void run() {
 
 		combat::no_aggressive_groups = true;
+		combat::defensive_spider_mine_count = 8;
 
 		using namespace buildpred;
 
-		get_upgrades::set_upgrade_value(upgrade_types::terran_infantry_weapons_1, 2000.0);
-		get_upgrades::set_upgrade_value(upgrade_types::terran_infantry_armor_1, 2000.0);
-
-		get_upgrades::set_upgrade_value(upgrade_types::ion_thrusters, 1000.0);
-
-		get_upgrades::set_upgrade_value(upgrade_types::u_238_shells, -1.0);
-		get_upgrades::set_upgrade_value(upgrade_types::stim_packs, 200.0);
+		get_upgrades::set_upgrade_value(upgrade_types::siege_mode, -1);
 
 		get_upgrades::set_no_auto_upgrades(true);
 
-		resource_gathering::max_gas = 150;
+		resource_gathering::max_gas = 100;
 		bool wall_calculated = false;
 		bool has_wall = false;
-		bool is_scared = false;
-		int scared_until = 0;
+		unit*scout_unit = nullptr;
+		size_t scout_index = 0;
+		bool opponent_has_fast_expanded = false;
 		while (true) {
+
+			update_possible_start_locations();
+			if (possible_start_locations.size() == 1 && current_used_total_supply < 20 && !opponent_has_fast_expanded) {
+				xy op_start_loc = possible_start_locations.front();
+				a_vector<std::tuple<double, xy>> possible_expos;
+				for (auto&s : resource_spots::spots) {
+					if (s.cc_build_pos == op_start_loc) continue;
+					auto&bs = grid::get_build_square(s.cc_build_pos);
+					if (bs.building) continue;
+					possible_expos.emplace_back(unit_pathing_distance(unit_types::probe, op_start_loc, s.cc_build_pos), s.cc_build_pos);
+				}
+				log("possible_expos.size() is %d\n", possible_expos.size());
+				std::sort(possible_expos.begin(), possible_expos.end());
+				if (possible_expos.size() > 2) possible_expos.resize(2);
+				if (!possible_expos.empty()) {
+					if (scout_unit == nullptr) {
+						auto*s = get_best_score_p(scouting::all_scouts, [&](scouting::scout*s) {
+							if (!s->scout_unit) return std::numeric_limits<double>::infinity();
+							return diag_distance(std::get<1>(possible_expos.front()) - s->scout_unit->pos);
+						});
+						if (s && s->scout_unit) {
+							scout_unit = s->scout_unit;
+							scouting::rm_scout(scout_unit);
+							log("taking over scout unit %p\n", scout_unit);
+						}
+					}
+					if (scout_unit) {
+						for (auto&s : scouting::all_scouts) {
+							if (s.type == scouting::scout::type_default || opponent_has_fast_expanded) scouting::rm_scout(scouting::all_scouts.front().scout_unit);
+						}
+						combat::combat_unit*cu = nullptr;
+						for (auto*a : combat::live_combat_units) {
+							if (a->u == scout_unit) {
+								cu = a;
+								break;
+							}
+						}
+						log("cu is %p\n", cu);
+						if (cu) {
+							if (scout_index >= possible_expos.size()) scout_index = 0;
+							cu->strategy_busy_until = current_frame + 15 * 10;
+							cu->action = combat::combat_unit::action_offence;
+							cu->subaction = combat::combat_unit::subaction_move;
+							cu->target_pos = std::get<1>(possible_expos[scout_index]) + xy(4 * 16, 3 * 16);
+							if (grid::get_build_square(cu->target_pos).visible) ++scout_index;
+						}
+					}
+				}
+			}
+
+			if (current_used_total_supply < 20 && !opponent_has_fast_expanded) {
+				bool has_expanded = false;
+				for (auto&s : resource_spots::spots) {
+					bool is_start_location = false;
+					for (xy pos : start_locations) {
+						if (diag_distance(pos - s.cc_build_pos) <= 32 * 10) {
+							is_start_location = true;
+							break;
+						}
+					}
+					if (is_start_location) continue;
+					auto&bs = grid::get_build_square(s.cc_build_pos);
+					if (bs.building && bs.building->owner == players::opponent_player) has_expanded = true;
+				}
+				log("has_expanded is %d\n", has_expanded);
+				if (has_expanded) {
+					opponent_has_fast_expanded = true;
+				}
+			}
 
 			int my_vulture_count = my_units_of_type[unit_types::vulture].size();
 			int enemy_zealot_count = 0;
@@ -46,7 +111,6 @@ struct strat_tvp_opening {
 
 			int attacking_zealot_count = 0;
 			int attacking_dragoon_count = 0;
-			update_possible_start_locations();
 			for (unit*e : enemy_units) {
 				if (!e->visible) continue;
 				if (e->type == unit_types::zealot || e->type == unit_types::dragoon) {
@@ -60,228 +124,244 @@ struct strat_tvp_opening {
 				}
 			}
 			log("attacking_zealot_count is %d, attacking_dragoon_count is %d\n", attacking_zealot_count, attacking_dragoon_count);
+
+			if (current_used_total_supply >= 20 && current_used_total_supply < 30 && !my_units_of_type[unit_types::bunker].empty()) {
+				unit*bunker = my_units_of_type[unit_types::bunker].front();
+
+				if (scout_unit) {
+					if (scout_unit->dead) scout_unit = nullptr;
+				}
+
+				if (attacking_zealot_count + attacking_dragoon_count == 0) {
+					if (scouting::all_scouts.empty()) {
+						unit*u = get_best_score(my_workers, [&](unit*u) {
+							if (u->controller->action != unit_controller::action_gather) return std::numeric_limits<double>::infinity();
+							return 0.0;
+						}, std::numeric_limits<double>::infinity());
+						scouting::add_scout(u);
+					}
+				} else {
+					if (!scouting::all_scouts.empty()) scouting::rm_scout(scouting::all_scouts.front().scout_unit);
+					int n = (attacking_zealot_count + attacking_dragoon_count + 1) / 2;
+					if (current_used_total_supply < 25) n = (enemy_zealot_count + enemy_dragoon_count + 1) / 2;
+					for (unit*u : my_workers) {
+						if (u->controller->action == unit_controller::action_repair) --n;
+					}
+					log("preemptively sending %d scvs to repair bunker\n", n);
+					for (auto*a : combat::live_combat_units) {
+						if (n <= 0) break;
+						if (!a->u->type->is_worker) continue;
+						if (a->u->controller->action == unit_controller::action_scout) continue;
+						if (a->u->controller->action == unit_controller::action_build) continue;
+						a->strategy_busy_until = current_frame + 15 * 30;
+						a->action = combat::combat_unit::action_offence;
+						a->subaction = combat::combat_unit::subaction_repair;
+						a->target = bunker;
+						--n;
+					}
+				}
+			}
+
 			
 			if (enemy_dt_count) combat::aggressive_vultures = false;
 
 			int my_siege_tank_count = my_units_of_type[unit_types::siege_tank_tank_mode].size() + my_units_of_type[unit_types::siege_tank_siege_mode].size();
-			bool need_missile_turret = enemy_zealot_count + enemy_dragoon_count < 8 && my_siege_tank_count >= 1 && my_units_of_type[unit_types::missile_turret].empty();
-			if (enemy_forge_count && my_siege_tank_count<2) need_missile_turret = false;
+			bool need_missile_turret = enemy_zealot_count + enemy_dragoon_count < 8 && !my_units_of_type[unit_types::machine_shop].empty() && my_units_of_type[unit_types::missile_turret].empty();
+			if (enemy_forge_count && my_siege_tank_count < 2) need_missile_turret = false;
 			if (enemy_cannon_count > 1 && my_siege_tank_count < 5) need_missile_turret = false;
-			if (attacking_zealot_count + attacking_dragoon_count && enemy_dt_count == 0) need_missile_turret = false;
+			if (attacking_zealot_count + attacking_dragoon_count > 2 && enemy_dt_count == 0) need_missile_turret = false;
+			if (enemy_dt_count || my_siege_tank_count >= 2) need_missile_turret = true;
+
+			double my_lost = players::my_player->minerals_lost + players::my_player->gas_lost;
+			double op_lost = players::opponent_player->minerals_lost + players::opponent_player->gas_lost;
 
 			if (attacking_zealot_count + attacking_dragoon_count >= 4 && my_siege_tank_count == 0) {
 				if (!scouting::all_scouts.empty()) scouting::rm_scout(scouting::all_scouts.front().scout_unit);
 			}
 
-			if (attacking_zealot_count >= 5 || (enemy_zealot_count >= 3 || attacking_zealot_count >= 2 && my_completed_units_of_type[unit_types::bunker].size() < 2)) {
-				if (my_completed_units_of_type[unit_types::vulture].size() < 2 && my_completed_units_of_type[unit_types::siege_tank_tank_mode].empty()) {
-					if (enemy_zealot_count > (int)my_completed_units_of_type[unit_types::marine].size() || my_completed_units_of_type[unit_types::bunker].size() <= 2) {
-						if (my_completed_units_of_type[unit_types::marine].size() < 10) {
-							scared_until = current_frame + 15 * 30;
-							is_scared = true;
-							combat::force_defence_is_scared_until = current_frame + 15 * 10;
-							get_upgrades::set_upgrade_value(upgrade_types::u_238_shells, 2000.0);
-						}
-					}
-				}
+			if (!my_units_of_type[unit_types::factory].empty() || current_gas >= 100) {
+				resource_gathering::max_gas = 0;
+				if (!my_units_of_type[unit_types::factory].empty() && my_units_of_type[unit_types::factory].front()->remaining_build_time <= 15 * 20) resource_gathering::max_gas = 50;
 			}
-			if (current_frame >= scared_until) {
-				is_scared = false;
-				combat::force_defence_is_scared_until = 0;
-				get_upgrades::set_upgrade_value(upgrade_types::u_238_shells, -1.0);
-			}
-
 			if (!my_completed_units_of_type[unit_types::factory].empty()) {
 				resource_gathering::max_gas = 300;
 			}
 
-			if (is_scared) {
-				for (auto&b : build::build_tasks) {
-					if (b.type->unit == unit_types::academy) {
-						build::cancel_build_task(&b);
-						break;
-					}
-				}
-				for (unit*u : my_units_of_type[unit_types::academy]) {
-					if (u->game_unit->getUpgrade() == BWAPI::UpgradeTypes::U_238_Shells) {
-						u->game_unit->cancelUpgrade();
-						break;
-					}
-				}
-				if (my_units_of_type[unit_types::cc].size() == 2) {
-					unit*cc = my_units_of_type[unit_types::cc][1];
-					if (!cc->addon || enemy_dt_count == 0) {
-						cc->controller->action = unit_controller::action_building_movement;
-						cc->controller->lift = true;
-						cc->controller->target_pos = cc->pos;
-						cc->controller->timeout = current_frame + 15 * 30;
-						if (cc->remaining_train_time) cc->game_unit->cancelTrain();
-					}
-				}
+			//if (opponent_has_fast_expanded || my_units_of_type[unit_types::siege_tank_tank_mode].size() >= 2) {
+			if (players::my_player->has_upgrade(upgrade_types::siege_mode)) {
+				get_upgrades::set_upgrade_value(upgrade_types::spider_mines, -1.0);
 			}
 
 			auto build = [&](state&st) {
-				st.dont_build_refineries = count_units_plus_production(st, unit_types::marine) < 5;
+				st.dont_build_refineries = true;
 
-				if (is_scared) {
-					return nodelay(st, unit_types::marine, [&](state&st) {
-						return nodelay(st, unit_types::scv, [&](state&st) {
-							return maxprod1(st, unit_types::vulture);
-						});
+				int scv_count = count_units_plus_production(st, unit_types::scv);
+				if (scv_count < 12) return depbuild(st, state(st), unit_types::scv);
+				if (count_units_plus_production(st, unit_types::barracks) == 0) return depbuild(st, state(st), unit_types::barracks);
+				if (count_units_plus_production(st, unit_types::refinery) == 0) return depbuild(st, state(st), unit_types::refinery);
+				if (scv_count < 15) return depbuild(st, state(st), unit_types::scv);
+				if (count_units_plus_production(st, unit_types::factory) == 0) return depbuild(st, state(st), unit_types::factory);
+
+				int tank_count = count_units_plus_production(st, unit_types::siege_tank_tank_mode) + count_units_plus_production(st, unit_types::siege_tank_siege_mode);
+				int vulture_count = count_units_plus_production(st, unit_types::vulture);
+				
+				int machine_shops = count_production(st, unit_types::machine_shop);
+				for (auto&v : st.units[unit_types::factory]) {
+					if (v.has_addon) ++machine_shops;
+				}
+// 				if (st.used_supply[race_terran] >= 28 && count_units_plus_production(st, unit_types::cc) == 1 && machine_shops == 1) return depbuild(st, state(st), unit_types::cc);
+// 				if (st.used_supply[race_terran] >= 30 && opponent_has_fast_expanded && count_units_plus_production(st, unit_types::cc) == 2) {
+// 					//return depbuild(st, state(st), unit_types::cc);
+// 				}
+
+				std::function<bool(state&)> army = [&](state&st) {
+					return nodelay(st, unit_types::siege_tank_tank_mode, [&](state&st) {
+						if (count_units_plus_production(st, unit_types::marine) < 4) return depbuild(st, state(st), unit_types::marine);
+						if (tank_count && count_units_plus_production(st, unit_types::factory) < 2) return depbuild(st, state(st), unit_types::factory);
+						return depbuild(st, state(st), unit_types::vulture);
 					});
-				}
+				};
 
-				if (my_completed_units_of_type[unit_types::factory].empty()) {
-					int scv_count = count_units_plus_production(st, unit_types::scv);
-					if (count_units_plus_production(st, unit_types::cc) < 2) {
-						if (scv_count >= 14 && count_units_plus_production(st, unit_types::barracks) == 0) return depbuild(st, state(st), unit_types::barracks);
-						return depbuild(st, state(st), unit_types::scv);
-					}
-
-					if (scv_count >= 16) {
-						if (count_units_plus_production(st, unit_types::refinery) == 0) return depbuild(st, state(st), unit_types::refinery);
-						if (count_units_plus_production(st, unit_types::academy) == 0) return depbuild(st, state(st), unit_types::academy);
-						int marine_count = count_units_plus_production(st, unit_types::marine);
-						if (marine_count >= 8 && count_units_plus_production(st, unit_types::barracks) == 1) return depbuild(st, state(st), unit_types::barracks);
-						if (attacking_zealot_count + attacking_dragoon_count < 3 || marine_count >= 4 || enemy_citadel_of_adun_count + enemy_templar_archives_count) {
-							bool is_researching_range = false;
-							for (unit*u : my_units_of_type[unit_types::academy]) {
-								if (u->game_unit->getUpgrade() == BWAPI::UpgradeTypes::U_238_Shells) {
-									is_researching_range = true;
-									break;
-								}
-							}
-							if (is_researching_range || players::my_player->has_upgrade(upgrade_types::u_238_shells)) {
-								int comsats = 0;
-								for (auto&v : st.units[unit_types::cc]) {
-									if (v.has_addon) ++comsats;
-								}
-								if (comsats < (enemy_dt_count ? 2 : 1)) return depbuild(st, state(st), unit_types::comsat_station);
-							}
-						}
-					}
-					if (my_completed_units_of_type[unit_types::bunker].empty() && count_units_plus_production(st, unit_types::marine) < 6) {
-						return nodelay(st, unit_types::marine, [&](state&st) {
-							return depbuild(st, state(st), unit_types::scv);
-						});
-					}
-					if (scv_count >= 20 || (scv_count >= 17 && my_units_of_type[unit_types::academy].empty())) {
-						int min_marines = 8;
-						if (attacking_zealot_count + attacking_dragoon_count) min_marines = 12;
-						if (count_units_plus_production(st, unit_types::marine) < min_marines) {
-							return nodelay(st, unit_types::marine, [&](state&st) {
-								return nodelay(st, unit_types::scv, [&](state&st) {
-									if (attacking_zealot_count > attacking_dragoon_count) return depbuild(st, state(st), unit_types::vulture);
-									return depbuild(st, state(st), unit_types::siege_tank_tank_mode);
-								});
-							});
-						}
-					}
-				}
-				return nodelay(st, unit_types::scv, [&](state&st) {
-					if (count_units_plus_production(st, unit_types::marine) < 4) {
-						return depbuild(st, state(st), unit_types::marine);
-					}
-					auto backbone = [&](state&st) {
-						return maxprod(st, unit_types::siege_tank_tank_mode, [&](state&st) {
-							return nodelay(st, unit_types::firebat, [&](state&st) {
-								return depbuild(st, state(st), unit_types::marine);
-							});
-						});
+				if ((attacking_zealot_count > 1 && attacking_zealot_count > attacking_dragoon_count) || (opponent_has_fast_expanded && tank_count >= 2)) {
+					army = [army](state&st) {
+						return nodelay(st, unit_types::vulture, army);
 					};
-					int siege_tank_count = count_units_plus_production(st, unit_types::siege_tank_tank_mode) + count_units_plus_production(st, unit_types::siege_tank_siege_mode);
-					int marine_count = count_units_plus_production(st, unit_types::marine);
-					int vulture_count = count_units_plus_production(st, unit_types::vulture);
+				}
+				if (tank_count >= 2 && vulture_count < tank_count * 2) {
+					army = [army](state&st) {
+						return nodelay(st, unit_types::vulture, army);
+					};
+				}
 
-					if (marine_count > 8 && !st.units[unit_types::academy].empty() && count_units_plus_production(st, unit_types::medic) < (int)st.units[unit_types::barracks].size()) {
-						return depbuild(st, state(st), unit_types::medic);
-					}
+				if (has_wall && count_units_plus_production(st, unit_types::bunker) == 0) {
+					army = [army](state&st) {
+						return nodelay(st, unit_types::bunker, army);
+					};
+				}
 
-					if ((siege_tank_count == 2 || current_minerals >= 300) && count_units_plus_production(st, unit_types::factory) == 1) {
-						return depbuild(st, state(st), unit_types::factory);
-					}
-					if (siege_tank_count < 2) {
-						return nodelay(st, unit_types::siege_tank_tank_mode, [&](state&st) {
-							return depbuild(st, state(st), unit_types::marine);
-						});
-					}
-					if (siege_tank_count) {
-						if (vulture_count < enemy_dt_count / 2 || enemy_zealot_count > vulture_count || (siege_tank_count >= enemy_dragoon_count / 2 && vulture_count < 6)) {
-							return depbuild(st, state(st), unit_types::vulture);
-						}
-					}
-					if (!my_units_of_type[unit_types::factory].empty() && marine_count < 3) {
-						return nodelay(st, unit_types::marine, backbone);
-					}
-					return backbone(st);
+				if (!opponent_has_fast_expanded && vulture_count < 4 && tank_count >= 1) {
+					army = [army](state&st) {
+						return nodelay(st, unit_types::scv, army);
+					};
+					army = [army](state&st) {
+						return nodelay(st, unit_types::vulture, army);
+					};
+				}
+
+				if (need_missile_turret && count_units_plus_production(st, unit_types::missile_turret) == 0) {
+					army = [army](state&st) {
+						return nodelay(st, unit_types::missile_turret, army);
+					};
+				}
+
+				return nodelay(st, unit_types::scv, [&](state&st) {
+					return army(st);
 				});
+
 			};
 
-			if (!my_units_of_type[unit_types::siege_tank_tank_mode].empty()) {
-				get_upgrades::set_upgrade_value(upgrade_types::siege_mode, -1.0);
-				if (players::my_player->has_upgrade(upgrade_types::siege_mode)) get_upgrades::set_upgrade_value(upgrade_types::spider_mines, -1.0);
+			xy natural_cc_pos = my_start_location;
+			if (true) {
+				auto*s = get_best_score_p(resource_spots::spots, [&](resource_spots::spot*s) {
+					if (diag_distance(s->cc_build_pos - my_start_location) <= 32 * 10) return std::numeric_limits<double>::infinity();
+					double score = unit_pathing_distance(unit_types::scv, s->cc_build_pos, my_start_location);
+					double res = 0;
+					bool has_gas = false;
+					for (auto&r : s->resources) {
+						res += r.u->resources;
+						if (r.u->type->is_gas) has_gas = true;
+					}
+					score -= (has_gas ? res : res / 4) / 10;
+					return score;
+				}, std::numeric_limits<double>::infinity());
+				if (s) natural_cc_pos = s->cc_build_pos;
 			}
-			bool expand = false;
-			int siege_tank_count = my_completed_units_of_type[unit_types::siege_tank_tank_mode].size() + my_completed_units_of_type[unit_types::siege_tank_siege_mode].size();
-			int marine_count = my_completed_units_of_type[unit_types::marine].size();
-			int vulture_count = my_completed_units_of_type[unit_types::vulture].size();
-			auto my_st = get_my_current_state();
-			bool has_bunker = !my_units_of_type[unit_types::bunker].empty();
-			if (my_st.bases.size() > 1 && siege_tank_count >= 2 && (has_bunker || siege_tank_count >= 3) && players::my_player->has_upgrade(upgrade_types::siege_mode)) break;
-			if (my_st.bases.size() > 1 && marine_count >= 1) combat::build_bunker_count = 2;
-			if (my_st.bases.size() == 1 && current_used_total_supply >= 14) {
-				if (siege_tank_count * 3 + vulture_count >= 9) {
+
+			unit*free_cc = nullptr;
+			for (unit*u : my_completed_units_of_type[unit_types::cc]) {
+				bool is_free = true;
+				for (auto&s : resource_spots::spots) {
+					if (u->building->build_pos == s.cc_build_pos) {
+						is_free = false;
+					}
+				}
+				if (!is_free) continue;
+				free_cc = u;
+				break;
+			}
+			int my_completed_tank_count = my_completed_units_of_type[unit_types::siege_tank_tank_mode].size() + my_completed_units_of_type[unit_types::siege_tank_siege_mode].size();
+			int my_completed_vulture_count = my_completed_units_of_type[unit_types::vulture].size();
+			if (free_cc) {
+				bool expand = false;
+				if (my_completed_tank_count >= 4 || my_completed_vulture_count >= 6) {
 					expand = true;
 				}
-				for (unit*u : enemy_units) {
-					if (!u->type->is_resource_depot) continue;
-					bool is_expo = true;
-					for (xy p : start_locations) {
-						if (u->building->build_pos == p) {
-							is_expo = false;
-							break;
-						}
+				if (expand) {
+					combat::build_bunker_count = 1;
+
+					xy land_pos = natural_cc_pos;
+					if (attacking_zealot_count + attacking_dragoon_count > 3) {
+						land_pos = my_start_location;
+						if (!my_completed_units_of_type[unit_types::siege_tank_tank_mode].empty()) land_pos = my_completed_units_of_type[unit_types::siege_tank_tank_mode].front()->pos;
+						if (!my_completed_units_of_type[unit_types::siege_tank_siege_mode].empty()) land_pos = my_completed_units_of_type[unit_types::siege_tank_siege_mode].front()->pos;
 					}
-					if (is_expo) expand = true;
+					log("land_pos is %d %d\n", land_pos.x, land_pos.y);
+					if (land_pos != xy()) {
+
+						free_cc->controller->action = unit_controller::action_building_movement;
+						if (free_cc->building->is_lifted) free_cc->controller->lift = false;
+						else if (free_cc->building->build_pos != land_pos) free_cc->controller->lift = true;
+						free_cc->controller->target_pos = land_pos;
+						free_cc->controller->timeout = current_frame + 15 * 30;
+
+						combat::my_closest_base_override = natural_cc_pos;
+						combat::my_closest_base_override_until = current_frame + 15 * 20;
+					} else break;
 				}
-				if (need_missile_turret) expand = false;
-				if (!players::my_player->has_upgrade(upgrade_types::siege_mode)) expand = false;
-				expand = true;
-				if (is_scared) expand = false;
-				if (my_units_of_type[unit_types::cc].size() >= 2) expand = false;
 			}
-			if (!has_wall && !my_units_of_type[unit_types::factory].empty() || is_scared) {
-				combat::build_bunker_count = 2;
-				if (get_op_current_state().bases.size() <= 1 || enemy_zealot_count + enemy_dragoon_count >= 10) combat::build_bunker_count = 4;
-				if (siege_tank_count >= 1 && enemy_cannon_count < 5) combat::build_bunker_count = 4;
-				if (marine_count >= 5) combat::build_bunker_count = 4;
-				if (is_scared && marine_count >= 2) combat::build_bunker_count = 4;
-				if (is_scared && marine_count >= 6) combat::build_bunker_count = 6;
+
+			if (get_my_current_state().bases.size() >= 2) {
+				combat::build_bunker_count = 1;
+				if (current_used_total_supply >= 60) break;
+				if (!my_units_of_type[unit_types::bunker].empty() && my_completed_tank_count >= 2) {
+					break;
+				}
 			}
-			if (!is_scared) {
-				bool is_researching_range = false;
-				for (unit*u : my_units_of_type[unit_types::academy]) {
-					if (u->game_unit->getUpgrade() == BWAPI::UpgradeTypes::U_238_Shells) {
-						is_researching_range = true;
-						break;
+
+			//if (wall_calculated && !has_wall && !my_units_of_type[unit_types::marine].empty()) {
+			if (!my_units_of_type[unit_types::marine].empty()) {
+// 				combat::my_closest_base_override = natural_cc_pos;
+// 				combat::my_closest_base_override_until = current_frame + 15 * 20;
+				combat::build_bunker_count = 1;
+			}
+
+			combat::my_closest_base_override = natural_cc_pos;
+			combat::my_closest_base_override_until = current_frame + 15 * 20;
+
+			bool expand = false;
+			if (my_units_of_type[unit_types::cc].size() == 1) {
+				if (opponent_has_fast_expanded) {
+					if (current_used_total_supply >= 18) expand = true;
+				}
+				if (attacking_zealot_count < my_vulture_count + my_siege_tank_count) {
+					if (!need_missile_turret || !my_units_of_type[unit_types::engineering_bay].empty()) {
+						if (current_used_total_supply >= 24) expand = true;
 					}
-				}
-				if (!is_researching_range && !players::my_player->has_upgrade(upgrade_types::u_238_shells)) {
-					combat::build_bunker_count = 0;
-					if (!my_units_of_type[unit_types::academy].empty()) combat::build_bunker_count = 1;
 				}
 			}
 
 			execute_build(expand, build);
 
-// 			if (my_st.bases.size() == 2 && combat::defence_choke.center != xy() && !wall_calculated) {
+// 			if (combat::defence_choke.center != xy() && !wall_calculated && combat::my_closest_base == natural_cc_pos) {
 // 				wall_calculated = true;
 // 
 // 				wall.spot = wall_in::find_wall_spot_from_to(unit_types::zealot, combat::my_closest_base, combat::defence_choke.outside, false);
 // 				wall.spot.outside = combat::defence_choke.outside;
 // 
-// 				wall.against(unit_types::zealot);
-// 				wall.add_building(unit_types::supply_depot);
+// 				//wall.against(unit_types::zealot);
+// 				//wall.add_building(unit_types::supply_depot);
+// 				wall.against(unit_types::dragoon);
+// 				wall.add_building(unit_types::bunker);
 // 				wall.add_building(unit_types::barracks);
 // 				has_wall = true;
 // 				if (!wall.find()) {

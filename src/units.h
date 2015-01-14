@@ -185,6 +185,7 @@ struct unit {
 	int scan_me_until;
 	bool is_powered;
 	int marines_loaded;
+	int strategy_high_priority_until;
 
 	std::array<size_t,std::extent<decltype(units::unit_containers)>::value> container_indexes;
 };
@@ -743,6 +744,7 @@ unit*new_unit(BWAPI_Unit game_unit) {
 	u->gas_value = 0;
 	u->high_priority_until = 0;
 	u->scan_me_until = 0;
+	u->strategy_high_priority_until = 0;
 
 	update_unit_owner(u);
 	update_unit_type(u);
