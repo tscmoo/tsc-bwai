@@ -138,6 +138,37 @@ void move_away(unit_controller*c) {
 	c->noorder_until = current_frame + 4 + rng(4);
 }
 
+bool move_stuff_away_from_build_pos(xy build_pos, unit_type*ut, unit_controller*builder) { 
+	bool something_in_the_way = false;
+	for (unit*nu : my_units) {
+		if (nu->building) continue;
+		if (nu->is_flying) continue;
+		if (builder && nu == builder->u) continue;
+		xy upper_left = nu->pos - xy(nu->type->dimension_left(), nu->type->dimension_up());
+		xy bottom_right = nu->pos + xy(nu->type->dimension_right(), nu->type->dimension_down());
+		int x1 = build_pos.x;
+		int y1 = build_pos.y;
+		int x2 = build_pos.x + ut->tile_width * 32;
+		int y2 = build_pos.y + ut->tile_height * 32;
+		if (bottom_right.x < x1) continue;
+		if (bottom_right.y < y1) continue;
+		if (upper_left.x > x2) continue;
+		if (upper_left.y > y2) continue;
+		something_in_the_way = true;
+		if (builder) {
+			if (!nu->controller->can_move && nu->type != unit_types::siege_tank_siege_mode) {
+				if (builder->u->game_unit->attack(nu->game_unit)) {
+					builder->noorder_until = current_frame + 15;
+					break;
+				}
+			}
+		}
+		nu->controller->move_away_from = xy((x1 + x2) / 2, (y1 + y2) / 2);
+		nu->controller->move_away_until = current_frame + 15 * 2;
+	}
+	return something_in_the_way;
+}
+
 void process(a_vector<unit_controller*>&controllers) {
 
 	for (auto*c : controllers) {
@@ -157,8 +188,10 @@ void process(a_vector<unit_controller*>&controllers) {
 		if (c->action == unit_controller::action_attack && c->target && !c->target->dead) {
 			if (c->target->type != unit_types::interceptor && u->type != unit_types::siege_tank_siege_mode) {
 				weapon_stats*w = c->target->is_flying ? u->stats->air_weapon : u->stats->ground_weapon;
-				double d = units_distance(u, c->target);
-				if (w && d > w->max_range && c->target->speed > 4 && d < 32 * 20) {
+				xy upos = u->pos + xy((int)(u->hspeed*latency_frames), (int)(u->vspeed*latency_frames));
+				xy tpos = c->target->pos + xy((int)(c->target->hspeed*latency_frames), (int)(c->target->vspeed*latency_frames));
+				double d = units_distance(upos, u, tpos, c->target);
+				if (w && (d > w->max_range || (d > w->max_range*0.75 && c->u->weapon_cooldown > latency_frames)) && c->target->speed > 4 && d < 32 * 20) {
 					double target_heading = std::atan2(c->target->vspeed, c->target->hspeed);
 					xy relpos = c->target->pos - u->pos;
 					double rel_angle = std::atan2(relpos.y, relpos.x);
@@ -336,7 +369,7 @@ void process(a_vector<unit_controller*>&controllers) {
 			} else if (c->ability == upgrade_types::nuclear_strike) {
 				used = u->game_unit->useTech(c->ability->game_tech_type, BWAPI::Position(c->target_pos.x, c->target_pos.y));
 				c->noorder_until = current_frame + 15;
-			} else if (c->ability == upgrade_types::personal_cloaking) {
+			} else if (c->ability == upgrade_types::personal_cloaking || c->ability == upgrade_types::cloaking_field) {
 				used = u->game_unit->useTech(c->ability->game_tech_type);
 				c->noorder_until = current_frame + 15;
 			} else if (c->ability == upgrade_types::defensive_matrix) {
@@ -450,31 +483,7 @@ void process(a_vector<unit_controller*>&controllers) {
 					}
 					if (enough_minerals && enough_gas && prereq_ok) {
 						bwapi_call_build(u->game_unit, c->target_type->game_unit_type, BWAPI::TilePosition(build_pos.x / 32, build_pos.y / 32));
-						bool something_in_the_way = false;
-						for (unit*nu : my_units) {
-							if (nu->building) continue;
-							if (nu->is_flying) continue;
-							if (nu == u) continue;
-							xy upper_left = nu->pos - xy(nu->type->dimension_left(), nu->type->dimension_up());
-							xy bottom_right = nu->pos + xy(nu->type->dimension_right(), nu->type->dimension_down());
-							int x1 = build_pos.x;
-							int y1 = build_pos.y;
-							int x2 = build_pos.x + c->target_type->tile_width * 32;
-							int y2 = build_pos.y + c->target_type->tile_height * 32;
-							if (bottom_right.x < x1) continue;
-							if (bottom_right.y < y1) continue;
-							if (upper_left.x > x2) continue;
-							if (upper_left.y > y2) continue;
-							something_in_the_way = true;
-							if (!nu->controller->can_move && nu->type != unit_types::siege_tank_siege_mode) {
-								if (u->game_unit->attack(nu->game_unit)) {
-									c->noorder_until = current_frame + 15;
-									break;
-								}
-							}
-							nu->controller->move_away_from = xy((x1 + x2) / 2, (y1 + y2) / 2);
-							nu->controller->move_away_until = current_frame + 15 * 2;
-						}
+						bool something_in_the_way = move_stuff_away_from_build_pos(build_pos, c->target_type, c);
 						if (!something_in_the_way) ++c->fail_build_count;
 						log("c->fail_build_count is now %d\n", c->fail_build_count);
 					}
@@ -624,6 +633,7 @@ void process(a_vector<unit_controller*>&controllers) {
 						u->game_unit->move(BWAPI::Position(c->target_pos.x, c->target_pos.y));
 						c->noorder_until = current_frame + 15;
 					} else {
+						move_stuff_away_from_build_pos(c->target_pos, c->u->type, nullptr);
 						u->game_unit->land(BWAPI::TilePosition(c->target_pos.x / 32, c->target_pos.y / 32));
 						c->noorder_until = current_frame + 15;
 					}
