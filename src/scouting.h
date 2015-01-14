@@ -3,6 +3,7 @@ namespace scouting {
 ;
 
 double comsat_supply = 60.0;
+double scout_supply = 8;
 
 struct scout {
 	unit*scout_unit = nullptr;
@@ -23,6 +24,69 @@ struct scout {
 };
 
 a_unordered_map<resource_spots::spot*, int> last_scouted;
+
+a_vector<xy> follow_worker_scout_locations;
+
+a_unordered_map<unit*, std::tuple<double, a_vector<xy>>> followed_workers;
+
+void follow_workers() {
+
+	a_map<xy, double> scout_locations;
+
+	for (unit*e : visible_enemy_units) {
+		if (!e->type->is_worker) continue;
+		auto&v = followed_workers[e];
+		auto&positions = std::get<1>(v);
+		double&timestamp = std::get<0>(v);
+		timestamp = current_frame;
+		positions.clear();
+		if (e->speed < 4) continue;
+		auto*nearest_spot = get_best_score_p(resource_spots::spots, [&](resource_spots::spot*s) {
+			return diag_distance(s->pos - e->pos);
+		});
+		if (nearest_spot && (diag_distance(nearest_spot->pos - e->pos) >= 32 * 15 || !grid::get_build_square(nearest_spot->cc_build_pos).building)) {
+			double heading = std::atan2(e->vspeed, e->hspeed);
+			for (auto&r : resource_spots::spots) {
+				auto&bs = grid::get_build_square(r.cc_build_pos);
+				if (bs.visible || bs.building) continue;
+				if (!square_pathing::unit_can_reach(e, e->pos, r.cc_build_pos, square_pathing::pathing_map_index::no_enemy_buildings)) continue;
+				xy relpos = r.pos - e->pos;
+				double ang = std::atan2(relpos.y, relpos.x);
+				double relang = ang - heading;
+				if (relang < -PI) relang += PI * 2;
+				else if (relang > PI) relang -= PI * 2;
+				if (std::abs(relang) < PI*0.75) {
+					positions.push_back(r.cc_build_pos);
+				}
+			}
+			log("followed worker -> %d possible hidden base locations\n", positions.size());
+			for (xy pos : positions) {
+				scout_locations[pos] += diag_distance(pos - e->pos);
+			}
+		}
+	}
+
+	follow_worker_scout_locations.clear();
+	for (auto&v : scout_locations) {
+		follow_worker_scout_locations.push_back(v.first);
+	}
+	log("follow_worker_scout_locations.size() is %d\n");
+
+	for (auto i = followed_workers.begin(); i != followed_workers.end();) {
+		if (current_frame - std::get<0>(i->second) >= 15 * 60 * 2 || i->first->dead) i = followed_workers.erase(i);
+		else {
+			auto&positions = std::get<1>(i->second);
+			for (auto i2 = positions.begin(); i2 != positions.end();) {
+				auto&bs = grid::get_build_square(*i2);
+				if (bs.visible || bs.building) i2 = positions.erase(i2);
+				else ++i2;
+			}
+			++i;
+		}
+
+	}
+
+}
 
 void scout::process() {
 
@@ -139,6 +203,12 @@ void scout::process() {
 					}
 				}
 			}
+			if (!follow_worker_scout_locations.empty()) {
+				xy pos = follow_worker_scout_locations.front();
+				if (square_pathing::unit_can_reach(scout_unit, scout_unit->pos, pos)) {
+					d += diag_distance(pos - s->pos) / 1000;
+				}
+			}
 			return d;
 		}, std::numeric_limits<double>::infinity());
 		if (dst_s) {
@@ -192,19 +262,6 @@ void scan() {
 	}
 
 	a_map<xy, double> values;
-
-	for (unit*e : enemy_units) {
-		if (e->gone) continue;
-		if (!e->cloaked || e->detected) continue;
-		int in_range_count = 0;
-		for (unit*u : my_units) {
-			if (u->type->is_non_usable) continue;
-			weapon_stats*w = e->is_flying ? u->stats->air_weapon : u->stats->ground_weapon;
-			if (!w) continue;
-			if (diag_distance(e->pos - u->pos) <= w->max_range) ++in_range_count;
-		}
-		if (in_range_count >= 3) values[e->pos] += 100000;
-	}
 	for (unit*e : enemy_units) {
 		if (e->gone) continue;
 		if (current_frame < e->scan_me_until) values[e->pos] += 20000;
@@ -229,20 +286,21 @@ void scan() {
 // 			values[e->pos] += e->minerals_value + e->gas_value;
 // 		}
 // 	}
-	int follow_worker_count = 0;
-	for (unit*e : enemy_units) {
-		if (e->visible || e->gone) continue;
-		if (!e->type->is_worker) continue;
-		if (combat::op_base.test(grid::build_square_index(e->pos))) continue;
-		if (++follow_worker_count >= 4) break;
-		auto*s = get_best_score_p(resource_spots::spots, [&](resource_spots::spot*s) {
-			if (grid::is_visible(s->pos)) return std::numeric_limits<double>::infinity();
-			return unit_pathing_distance(e, s->pos);
-		}, std::numeric_limits<double>::infinity());
-		if (s) values[s->pos] += 3000;
-	}
 	
 	if (current_frame >= scan_enemy_base_until) values.clear();
+
+	for (unit*e : enemy_units) {
+		if (e->gone) continue;
+		if (!e->cloaked || e->detected) continue;
+		int in_range_count = 0;
+		for (unit*u : my_units) {
+			if (u->type->is_non_usable) continue;
+			weapon_stats*w = e->is_flying ? u->stats->air_weapon : u->stats->ground_weapon;
+			if (!w) continue;
+			if (diag_distance(e->pos - u->pos) <= w->max_range) ++in_range_count;
+		}
+		if (in_range_count >= 3) values[e->pos] += 100000;
+	}
 
 	for (size_t idx : combat::op_base) {
 		xy pos((idx % (size_t)grid::build_grid_width) * 32, (idx / (size_t)grid::build_grid_width) * 32);
@@ -251,6 +309,21 @@ void scan() {
 		if (age <= 15 * 60 * 4) continue;
 		if (build_spot_finder::is_buildable_at(unit_types::barracks, pos)) {
 			values[pos] += age / 200;
+		}
+	}
+
+	bool has_found_their_start_location = false;
+	for (xy pos : start_locations) {
+		auto&bs = grid::get_build_square(pos);
+		if (bs.building && bs.building->owner != players::my_player) {
+			has_found_their_start_location = true;
+			break;
+		}
+	}
+	if (!has_found_their_start_location) {
+		for (xy pos : start_locations) {
+			auto&bs = grid::get_build_square(pos);
+			if (bs.last_seen == 0) values[pos] += 6000;
 		}
 	}
 
@@ -313,9 +386,9 @@ void scan() {
 		use_scan |= best_score >= 3000.0 && scans_available > comsats * 2;
 		use_scan |= best_score >= 6000.0 && scans_available > comsats;
 		use_scan |= best_score >= 10000.0 && scans_available > 0;
-		if (current_frame >= scan_enemy_base_until) use_scan = scans_available > 2;
+		if (current_frame >= scan_enemy_base_until && best_score < 10000.0) use_scan = scans_available > 2;
 		if (current_frame >= scan_enemy_base_until) log("scan enemy base!\n");
-		if (use_scan) {
+		if (use_scan && best_pos != xy()) {
 			unit*u = get_best_score(my_units_of_type[unit_types::comsat_station], [&](unit*u) {
 				return -u->energy;
 			});
@@ -351,21 +424,22 @@ void process_scouts() {
 
 	if (all_scouts.empty()) {
 		if (last_scout == 0 || current_frame - last_scout >= 15 * 60 * 3 || current_used_total_supply >= 100) {
-			if (my_workers.size() < 8) return;
-			unit*scout_unit = nullptr;
-			if (my_completed_units_of_type[unit_types::vulture].size() >= 15 && current_frame - last_vulture_scout >= 15 * 60 * 2) {
-				last_vulture_scout = current_frame;
-				scout_unit = get_best_score(my_completed_units_of_type[unit_types::vulture], [&](unit*u) {
-					return u->last_attacked;
-				}, std::numeric_limits<double>::infinity());
-			} else {
-				scout_unit = get_best_score(my_workers, [&](unit*u) {
-					if (u->controller->action != unit_controller::action_gather) return std::numeric_limits<double>::infinity();
-					return 0.0;
-				}, std::numeric_limits<double>::infinity());
+			if (current_used_total_supply >= scout_supply) {
+				unit*scout_unit = nullptr;
+				if (my_completed_units_of_type[unit_types::vulture].size() >= 15 && current_frame - last_vulture_scout >= 15 * 60 * 2) {
+					last_vulture_scout = current_frame;
+					scout_unit = get_best_score(my_completed_units_of_type[unit_types::vulture], [&](unit*u) {
+						return u->last_attacked;
+					}, std::numeric_limits<double>::infinity());
+				} else {
+					scout_unit = get_best_score(my_workers, [&](unit*u) {
+						if (u->controller->action != unit_controller::action_gather) return std::numeric_limits<double>::infinity();
+						return 0.0;
+					}, std::numeric_limits<double>::infinity());
+				}
+				if (scout_unit) last_scout = current_frame;
+				if (scout_unit) add_scout(scout_unit);
 			}
-			if (scout_unit) last_scout = current_frame;
-			if (scout_unit) add_scout(scout_unit);
 		}
 	}
 	if (current_frame <= 15 * 60 * 8 && my_completed_units_of_type[unit_types::marine].empty()) {
@@ -392,10 +466,16 @@ void process_scouts() {
 void scouting_task() {
 
 	int last_scan = 0;
+	int last_follow_workers = 0;
 
 	while (true) {
 
 		multitasking::sleep(4);
+
+		if (current_frame - last_follow_workers >= 15 * 2) {
+			last_follow_workers = current_frame;
+			follow_workers();
+		}
 
 		process_scouts();
 
@@ -467,6 +547,15 @@ void render() {
 	auto*scan_st = units::get_unit_stats(unit_types::spell_scanner_sweep, players::my_player);
 	game->drawCircleMap(scan_best_pos.x, scan_best_pos.y, (int)scan_st->sight_range, BWAPI::Colors::Blue);
 	game->drawTextMap(scan_best_pos.x, scan_best_pos.y, "\x0e%g", scan_best_score);
+
+	
+	for (auto&v : followed_workers) {
+		unit*e = v.first;
+		auto&vec = std::get<1>(v.second);
+		for (xy pos : vec) {
+			game->drawLineMap(e->pos.x, e->pos.y, pos.x, pos.y, BWAPI::Color(0, 0, 128));
+		}
+	}
 
 }
 
