@@ -701,6 +701,8 @@ xy get_move_to(unit*u, xy goal, int priority, xy last_move_to_pos) {
 	path_node*to_node = get_nearest_path_node(map, goal);
 	auto path = find_path(map, from_node, to_node);
 	if (path.empty()) return goal;
+	path_node*middle_node = path.front();
+	if (path.size() > 1) path.pop_front();
 	path_node*next_node = path.front();
 
 	render_node_path.clear();
@@ -710,7 +712,7 @@ xy get_move_to(unit*u, xy goal, int priority, xy last_move_to_pos) {
 
 	auto square_path = find_square_path(map, u->pos, [&](xy pos, xy npos) {
 		path_node*nn = map.nearest_path_node[nearest_path_node_index(npos)];
-		if (nn != from_node && nn != next_node) return false;
+		if (nn != from_node && nn != middle_node && nn != next_node) return false;
 		auto&ff = force_field[force_field_index(npos)];
 		if (std::get<0>(ff) >= current_frame - 15 && std::get<1>(ff) <= priority) {
 			double da = std::abs(angle - std::get<2>(ff));
