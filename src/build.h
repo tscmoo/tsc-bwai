@@ -495,6 +495,56 @@ void unset_build_pos(build_task*t) {
 	b.build_pos = xy();
 }
 
+void set_builder(build_task*t, unit*builder) {
+	auto&b = *t;
+
+	if (builder != b.builder) {
+		if (b.builder && b.builder->controller->flag == &b) {
+			b.builder->controller->action = unit_controller::action_idle;
+			b.builder->controller->target = nullptr;
+			b.builder->controller->target_pos = xy();
+			b.builder->controller->target_type = nullptr;
+			b.builder->controller->flag = nullptr;
+		}
+		b.builder = builder;
+	}
+	if (builder) {
+		auto*c = builder->controller;
+		if (c->action != unit_controller::action_build || (c->flag == &b && (c->target_pos != b.build_pos || c->target_type != b.type->unit || c->target != b.built_unit || c->wait_until != b.build_frame))) {
+			double d = unit_pathing_distance(builder, b.build_pos);
+			int t = frames_to_reach(builder, d);
+			if (t + t / 8 + latency_frames >= b.build_frame - current_frame) {
+				c->action = unit_controller::action_build;
+				c->target = b.built_unit;
+				c->target_pos = b.build_pos;
+				c->target_type = b.type->unit;
+				c->flag = &b;
+				c->wait_until = b.build_frame;
+			}
+		}
+	}
+
+}
+
+bool something_is_in_the_way(xy build_pos, unit_type*ut) {
+	for (unit*nu : my_units) {
+		if (nu->building) continue;
+		if (nu->is_flying) continue;
+		xy upper_left = nu->pos - xy(nu->type->dimension_left(), nu->type->dimension_up());
+		xy bottom_right = nu->pos + xy(nu->type->dimension_right(), nu->type->dimension_down());
+		int x1 = build_pos.x;
+		int y1 = build_pos.y;
+		int x2 = build_pos.x + ut->tile_width * 32;
+		int y2 = build_pos.y + ut->tile_height * 32;
+		if (bottom_right.x < x1) continue;
+		if (bottom_right.y < y1) continue;
+		if (upper_left.x > x2) continue;
+		if (upper_left.y > y2) continue;
+		return true;
+	}
+	return false;
+}
+
 int last_find_default_build_pos = 0;
 
 void execute_build(build_task&b) {
@@ -815,6 +865,7 @@ void execute_build(build_task&b) {
 			wait = true;
 			if (current_frame - building->building_addon_frame >= 30 && !building->is_liftable_wall && current_frame >= building->nobuild_until) {
 				auto pred = [&](grid::build_square&bs) {
+					if (something_is_in_the_way(bs.pos, builder->type)) return false;
 					return build_full_check(bs, builder->type);
 				};
 				xy pos = b.land_pos;
@@ -837,6 +888,7 @@ void execute_build(build_task&b) {
 						builder->game_unit->move(BWAPI::Position(move_to.x, move_to.y));
 						builder->controller->noorder_until = current_frame + 15;
 					} else {
+
 						builder->game_unit->land(BWAPI::TilePosition(pos.x / 32, pos.y / 32));
 						builder->controller->noorder_until = current_frame + 15;
 					}
@@ -920,10 +972,12 @@ void execute_build(build_task&b) {
 								}
 								const xy addon_rel_pos(builder->type->tile_width * 32, (builder->type->tile_height - b.type->unit->tile_height) * 32);
 								auto pred = [&](grid::build_square&bs) {
+									if (something_is_in_the_way(bs.pos, builder->type)) return false;
 									if (!build_full_check(bs, builder->type, true)) return false;
 									grid::reserve_build_squares(bs.pos, builder->type);
 									auto&addon_bs = grid::get_build_square(bs.pos + addon_rel_pos);
 									bool r = build_full_check(addon_bs, b.type->unit, true);
+									r &= !something_is_in_the_way(addon_bs.pos, b.type->unit);
 									grid::unreserve_build_squares(bs.pos, builder->type);
 									return r;
 								};
@@ -1089,6 +1143,11 @@ void on_morph_unit(unit*u) {
 void execute_build_task() {
 	while (true) {
 
+		int ccs_without_addon = 0;
+		for (unit*u : my_units_of_type[unit_types::cc]) {
+			if (!u->addon) ++ccs_without_addon;
+		}
+
 		for (auto i = build_tasks.begin(); i != build_tasks.end();) {
 			build_task&b = *i++;
 			if (b.upgrade_done_frame && current_frame >= b.upgrade_done_frame) {
@@ -1116,13 +1175,21 @@ void execute_build_task() {
 				if (b.builder->dead || b.builder->type!=b.type->builder || b.builder->owner!=players::my_player) {
 					log("build task %s lost its builder\n",b.type->name);
 					b.builder = nullptr;
-					unset_build_pos(&b);
+					if (b.type->unit != unit_types::bunker) unset_build_pos(&b);
 				}
 			}
 			if (b.dead && b.reference_count==0) {
 				log("build task %s dead, no references\n",b.type->name);
 				cancel_build_task(&b);
 				continue;
+			}
+			if (b.type->unit == unit_types::comsat_station && !b.built_unit) {
+				--ccs_without_addon;
+				if (ccs_without_addon < 0) {
+					log("refusing to build cc for comsat\n");
+					cancel_build_task(&b);
+					continue;
+				}
 			}
 		}
 
