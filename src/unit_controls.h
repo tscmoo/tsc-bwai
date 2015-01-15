@@ -325,6 +325,17 @@ void process(a_vector<unit_controller*>&controllers) {
 					}
 				} else if (c->attack_state == 3) {
 					int cooldown = 15;
+
+					double target_heading = std::atan2(c->target->vspeed, c->target->hspeed);
+					xy relpos = c->target->pos - u->pos;
+					double rel_angle = std::atan2(relpos.y, relpos.x);
+					double da = target_heading - rel_angle;
+					if (da < -PI) da += PI * 2;
+					if (da > PI) da -= PI * 2;
+					if (std::abs(da) > PI || c->target->speed < 4) {
+						if (u->type == unit_types::vulture) cooldown = 25;
+					}
+					
 					if (u->type == unit_types::valkyrie) cooldown = 40;
 					if (current_frame - c->attack_timer >= cooldown) c->attack_state = 0;
 				}
