@@ -484,7 +484,7 @@ void run(a_vector<state>&all_states, ruleset rules, bool is_for_me) {
 					if (e->type->is_worker) return std::numeric_limits<double>::infinity();
 					return diag_distance(s->pos - e->pos);
 				});
-				if (ned <= 32 * 30) score -= ned;
+				if (ned <= 32 * 30) score += 10000;
 			}
 			bool has_gas = false;
 			for (auto&r : s->resources) {
