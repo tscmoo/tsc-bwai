@@ -262,10 +262,7 @@ void scan() {
 	}
 
 	a_map<xy, double> values;
-	for (unit*e : enemy_units) {
-		if (e->gone) continue;
-		if (current_frame < e->scan_me_until) values[e->pos] += 20000;
-	}
+
 	if (scans_available > 2) {
 		for (auto&s : resource_spots::spots) {
 			int t = (current_frame - grid::get_build_square(s.pos).last_seen) - 15 * 60 * 10;
@@ -273,12 +270,7 @@ void scan() {
 			values[s.pos] += t;
 		}
 	}
-	for (unit*u : my_workers) {
-		if (u->controller->action != unit_controller::action_build) continue;
-		if (u->controller->fail_build_count >= 10) {
-			values[u->pos] += 10000;
-		}
-	}
+
 // 	if (buildpred::op_unverified_minerals_gathered>3000) {
 // 		for (unit*e : enemy_units) {
 // 			if (e->visible || e->gone) continue;
@@ -287,7 +279,19 @@ void scan() {
 // 		}
 // 	}
 	
-	if (current_frame >= scan_enemy_base_until) values.clear();
+	if (current_frame < scan_enemy_base_until) values.clear();
+
+	for (unit*e : enemy_units) {
+		if (e->gone) continue;
+		if (current_frame < e->scan_me_until) values[e->pos] += 20000;
+	}
+
+	for (unit*u : my_workers) {
+		if (u->controller->action != unit_controller::action_build) continue;
+		if (u->controller->fail_build_count >= 10) {
+			values[u->pos] += 10000;
+		}
+	}
 
 	for (unit*e : enemy_units) {
 		if (e->gone) continue;
