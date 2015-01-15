@@ -546,6 +546,8 @@ bool something_is_in_the_way(xy build_pos, unit_type*ut) {
 }
 
 int last_find_default_build_pos = 0;
+bool force_find_new_default_build_pos = 0;
+a_map<xy, int> blacklisted_default_build_pos;
 
 void execute_build(build_task&b) {
 	refcounter<build_task> rc(b);
@@ -607,7 +609,8 @@ void execute_build(build_task&b) {
 					}
 					return threat_count < 15;
 				};
-				if (default_build_pos == xy() || !is_safe(default_build_pos)) {
+				if (default_build_pos == xy() || !is_safe(default_build_pos) || force_find_new_default_build_pos) {
+					force_find_new_default_build_pos = false;
 					if (!my_buildings.empty()) {
 						default_build_pos = get_best_score(my_buildings, [&](unit*u) -> double {
 							double r = 0;
@@ -616,6 +619,10 @@ void execute_build(build_task&b) {
 								if (d != std::numeric_limits<double>::infinity()) r += d;
 							}
 							if (!is_safe(u->building->build_pos)) r += 100000;
+							auto i = blacklisted_default_build_pos.find(u->building->build_pos);
+							if (i != blacklisted_default_build_pos.end()) {
+								r += 10000.0 * i->second;
+							}
 							return u->type->is_resource_depot ? r / 2 : r;
 						})->building->build_pos;
 					}
@@ -751,6 +758,12 @@ void execute_build(build_task&b) {
 					//log("default find pos\n");
 					if (b.type->unit->requires_creep || b.type->unit->requires_pylon) xcept("unreachable: default build spot requires creep or pylon");
 					pos = build_spot_finder::find(starts, b.type->unit, pred_not_creep);
+
+					if (pos == xy() && starts[0] == default_build_pos) {
+						log("failed to find build pos, trying to move default_build_pos\n");
+						force_find_new_default_build_pos = true;
+						++blacklisted_default_build_pos[default_build_pos];
+					}
 				}
 
 				if (pos != xy()) {
