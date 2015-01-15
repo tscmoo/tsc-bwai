@@ -715,6 +715,7 @@ void update_unit_stuff(unit*u) {
 unit*new_unit(BWAPI_Unit game_unit) {
 	unit_container.emplace_back();
 	unit*u = &unit_container.back();
+	game_unit->setClientInfo(u);
 
 	new_units_queue.push_back(u);
 
@@ -760,7 +761,6 @@ unit*get_unit(BWAPI_Unit game_unit) {
 	if (!u) {
 		if (!game_unit->exists()) return nullptr;
 		u = new_unit(game_unit);
-		game_unit->setClientInfo(u);
 	}
 	return u;
 }
