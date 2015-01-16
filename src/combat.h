@@ -529,7 +529,7 @@ void update_groups() {
 			if (e->visible) {
 				double nearest_building_distance = get_best_score_value(my_units, [&](unit*u) {
 					if (!u->building) return std::numeric_limits<double>::infinity();
-					return units_pathing_distance(u, e);
+					return units_pathing_distance(unit_types::scv, u, e);
 				});
 				bool any_units_in_attack_range = false;
 				double nearest_unit_distance = get_best_score_value(my_units, [&](unit*u) {
@@ -834,7 +834,9 @@ void update_groups() {
 					if (can_attack_any && any_can_attack_me) break;
 				}
 				if (!can_attack_any) continue;
-				if (cu->u->type->is_worker && !any_can_attack_me) continue;
+				if (current_used_total_supply >= 40) {
+					if (cu->u->type->is_worker && !any_can_attack_me) continue;
+				}
 			}
 			if (g.threat_area.test(index)) {
 				if (!inside_group || diag_distance(cu->u->pos - g.enemies.front()->pos) < diag_distance(cu->u->pos - inside_group->enemies.front()->pos)) {
@@ -855,16 +857,20 @@ void update_groups() {
 					inside_group = nullptr;
 				}
 			}
-			if (current_used_total_supply < 40) inside_group = nullptr;
+			if (inside_group && current_used_total_supply < 40) {
+				bool any_buildings = false;
+				for (unit*e : inside_group->enemies) {
+					if (e->building) {
+						any_buildings = true;
+						break;
+					}
+				}
+				if (!any_buildings) inside_group = nullptr;
+			}
+			if (inside_group && inside_group->enemies.size() == 1 && inside_group->enemies.front()->type->is_worker) inside_group = nullptr;
 		}
 		if (inside_group) {
 			//log("%s is inside group %p\n", cu->u->type->name, inside_group);
-			if (cu->u->type->is_worker) {
-				if (inside_group->enemies.size() == 1 && inside_group->enemies.front()->type->is_worker) {
-					++i;
-					continue;
-				}
-			}
 			inside_group->allies.push_back(cu);
 			i = available_units.erase(i);
 		} else ++i;
@@ -2335,92 +2341,92 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 			if (enemies.size() <= 5 && allies.size() >= 10) {
 				okay = false;
 			}
-if (okay) {
-	unit*nearest_siege_tank = get_best_score(allies, [&](unit*u) {
-		if (u->type != unit_types::siege_tank_tank_mode && u->type != unit_types::siege_tank_siege_mode) return std::numeric_limits<double>::infinity();
-		return diag_distance(u->pos - a->u->pos);
-	}, std::numeric_limits<double>::infinity());
-	double nearest_siege_tank_distance = nearest_siege_tank ? units_distance(a->u, nearest_siege_tank) : 0;
-	if (nearest_siege_tank && nearest_siege_tank_distance <= 32 * 20 && nearest_siege_tank_distance >= 32 * 2) {
+			if (okay) {
+				unit*nearest_siege_tank = get_best_score(allies, [&](unit*u) {
+					if (u->type != unit_types::siege_tank_tank_mode && u->type != unit_types::siege_tank_siege_mode) return std::numeric_limits<double>::infinity();
+					return diag_distance(u->pos - a->u->pos);
+				}, std::numeric_limits<double>::infinity());
+				double nearest_siege_tank_distance = nearest_siege_tank ? units_distance(a->u, nearest_siege_tank) : 0;
+				if (nearest_siege_tank && nearest_siege_tank_distance <= 32 * 20 && nearest_siege_tank_distance >= 32 * 2) {
 
-		if (enemy_sieged_tanks_ready_to_fire >= 6) {
-			if (!target->visible) {
-				if (scans_available > 2 && current_frame - last_attack_scan >= 15 * 2) {
-					last_attack_scan = current_frame;
-					unit*u = get_best_score(my_units_of_type[unit_types::comsat_station], [&](unit*u) {
-						return -u->energy;
-					});
-					if (u) {
-						log("lots of siege tanks scan at %d %d\n", u->pos.x, u->pos.y);
-						u->game_unit->useTech(BWAPI::TechTypes::Scanner_Sweep, BWAPI::Position(u->pos.x, u->pos.y));
+					if (enemy_sieged_tanks_ready_to_fire >= 6) {
+						if (!target->visible) {
+							if (scans_available > 2 && current_frame - last_attack_scan >= 15 * 2) {
+								last_attack_scan = current_frame;
+								unit*u = get_best_score(my_units_of_type[unit_types::comsat_station], [&](unit*u) {
+									return -u->energy;
+								});
+								if (u) {
+									log("lots of siege tanks scan at %d %d\n", u->pos.x, u->pos.y);
+									u->game_unit->useTech(BWAPI::TechTypes::Scanner_Sweep, BWAPI::Position(u->pos.x, u->pos.y));
+								}
+							}
+						}
+// 						if (units_distance(nearest_siege_tank, target) > 32 * 13) {
+// 							do_run(a, enemies);
+// 							return;
+// 						}
 					}
-				}
-			}
-			// 						if (units_distance(nearest_siege_tank, target) > 32 * 13) {
-			// 							do_run(a, enemies);
-			// 							return;
-			// 						}
-		}
 
-		weapon_stats*netw = a->u->is_flying ? net->stats->air_weapon : net->stats->ground_weapon;
-		double wr = net->type == unit_types::bunker ? 32 * 6 : netw->max_range;
-		double r = units_distance(net, nearest_siege_tank);
-		if (r > wr + 32 * 2) {
-			if (r > 32 * 12 - wr) {
-				if (a->u->type->is_worker) {
-					unit*nr = nullptr;
-					double nd = 0.0;
-					for (auto&s : resource_spots::spots) {
-						auto*b = grid::get_build_square(s.cc_build_pos).building;
-						if (!b || b->owner != players::my_player) continue;
-						if (s.resources.empty()) continue;
-						unit*r = s.resources.front().u;
-						double d = diag_distance(a->u->pos - r->pos);
-						if (d < nd) {
-							nr = r;
-							nd = d;
+					weapon_stats*netw = a->u->is_flying ? net->stats->air_weapon : net->stats->ground_weapon;
+					double wr = net->type == unit_types::bunker ? 32 * 6 : netw->max_range;
+					double r = units_distance(net, nearest_siege_tank);
+					if (r > wr + 32 * 2) {
+						if (r > 32 * 12 - wr) {
+							if (a->u->type->is_worker) {
+								unit*nr = nullptr;
+								double nd = 0.0;
+								for (auto&s : resource_spots::spots) {
+									auto*b = grid::get_build_square(s.cc_build_pos).building;
+									if (!b || b->owner != players::my_player) continue;
+									if (s.resources.empty()) continue;
+									unit*r = s.resources.front().u;
+									double d = diag_distance(a->u->pos - r->pos);
+									if (d < nd) {
+										nr = r;
+										nd = d;
+									}
+								}
+								if (nr) {
+									a->subaction = combat_unit::subaction_idle;
+									a->u->controller->action = unit_controller::action_gather;
+									a->u->controller->target = nr;
+									return;
+								}
+							}
+
+							bool just_attack = false;
+							weapon_stats*w = target->is_flying ? a->u->stats->air_weapon : a->u->stats->ground_weapon;
+							if (w && units_distance(a->u, target) <= w->max_range) {
+								if (current_frame - nearest_siege_tank->last_attacked <= 15 * 5) {
+									just_attack = true;
+								}
+							}
+							if (!just_attack) {
+								double max_d = diag_distance(a->u->pos - nearest_siege_tank->pos) + 32 * 2;
+								a_deque<xy> path = find_path(a->u->type, a->u->pos, [&](xy pos, xy npos) {
+									double d = diag_distance(npos - nearest_siege_tank->pos);
+									if (d >= max_d) return false;
+									if (build_square_taken.test(grid::build_square_index(npos))) return false;
+									return true;
+								}, [&](xy pos, xy npos) {
+									double d = diag_distance(npos - nearest_siege_tank->pos);
+									return d;
+								}, [&](xy pos) {
+									double d = (pos - nearest_siege_tank->pos).length();
+									return d <= 32 * 12 - wr - 32 * 4;
+								});
+								//if (!path.empty() && diag_distance(path.back() - a->u->pos) > 32) {
+								if (!path.empty()) {
+									a->subaction = combat_unit::subaction_move;
+									build_square_taken.set(grid::build_square_index(path.back()));
+									a->target_pos = path.back();
+								}
+							}
 						}
 					}
-					if (nr) {
-						a->subaction = combat_unit::subaction_idle;
-						a->u->controller->action = unit_controller::action_gather;
-						a->u->controller->target = nr;
-						return;
-					}
-				}
-
-				bool just_attack = false;
-				weapon_stats*w = target->is_flying ? a->u->stats->air_weapon : a->u->stats->ground_weapon;
-				if (w && units_distance(a->u, target) <= w->max_range) {
-					if (current_frame - nearest_siege_tank->last_attacked <= 15 * 5) {
-						just_attack = true;
-					}
-				}
-				if (!just_attack) {
-					double max_d = diag_distance(a->u->pos - nearest_siege_tank->pos) + 32 * 2;
-					a_deque<xy> path = find_path(a->u->type, a->u->pos, [&](xy pos, xy npos) {
-						double d = diag_distance(npos - nearest_siege_tank->pos);
-						if (d >= max_d) return false;
-						if (build_square_taken.test(grid::build_square_index(npos))) return false;
-						return true;
-					}, [&](xy pos, xy npos) {
-						double d = diag_distance(npos - nearest_siege_tank->pos);
-						return d;
-					}, [&](xy pos) {
-						double d = (pos - nearest_siege_tank->pos).length();
-						return d <= 32 * 12 - wr - 32 * 4;
-					});
-					//if (!path.empty() && diag_distance(path.back() - a->u->pos) > 32) {
-					if (!path.empty()) {
-						a->subaction = combat_unit::subaction_move;
-						build_square_taken.set(grid::build_square_index(path.back()));
-						a->target_pos = path.back();
-					}
 				}
 			}
-		}
-	}
-}
 		}
 	}
 
