@@ -174,7 +174,7 @@ struct strat_tvz {
 					std::function<bool(state&)> army = [&](state&st) {
 						if (my_tank_count >= 3 && st.gas >= 200) {
 							// This is temporary until I fix addon production
-							int machine_shops = 0;
+							int machine_shops = count_production(st, unit_types::machine_shop);
 							for (auto&v : st.units[unit_types::factory]) {
 								if (v.has_addon) ++machine_shops;
 							}
@@ -192,7 +192,7 @@ struct strat_tvz {
 							});
 						}
 						if (!has_built_control_tower && !st.units[unit_types::starport].empty()) {
-							int control_towers = 0;
+							int control_towers = count_production(st, unit_types::control_tower);
 							for (auto&v : st.units[unit_types::starport]) {
 								if (v.has_addon) ++control_towers;
 							}
