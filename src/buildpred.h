@@ -728,6 +728,9 @@ static const auto maxprod = [](state&st, unit_type*ut, const std::function<bool(
 		st = std::move(prev_st);
 		if (t != failed) return nodelay(st, ut, func);
 		if (ut->required_supply && st.used_supply[ut->race] + ut->required_supply > 200) return false;
+		for (auto&v : st.units[ut->builder_type]) {
+			if (st.frame>=v.busy_until) return nodelay(st, ut, func);
+		}
 		return nodelay(st, bt, func);
 	}
 };
@@ -761,6 +764,9 @@ static const auto maxprod1 = [](state&st, unit_type*ut) {
 		st = std::move(prev_st);
 		if (t != failed) return depbuild(st, state(st), ut);
 		if (ut->required_supply && st.used_supply[ut->race] + ut->required_supply > 200) return false;
+		for (auto&v : st.units[ut->builder_type]) {
+			if (st.frame >= v.busy_until) return depbuild(st, state(st), ut);
+		}
 		return depbuild(st, state(st), bt);
 	}
 };
