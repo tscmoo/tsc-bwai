@@ -23,11 +23,24 @@ struct strat_tvt_opening {
 					return depbuild(st, state(st), unit_types::refinery);
 				}
 				auto backbone = [&](state&st) {
+					if (count_units_plus_production(st, unit_types::factory) >= 3) {
+						return depbuild(st, state(st), unit_types::vulture);
+					}
 					return maxprod1(st, unit_types::vulture);
 				};
 				int marine_count = count_units_plus_production(st, unit_types::marine);
-				if (!my_units_of_type[unit_types::factory].empty() && marine_count < 3) {
+				int vulture_count = count_units_plus_production(st, unit_types::vulture);
+				if (vulture_count==0 && marine_count < 3) {
 					return nodelay(st, unit_types::marine, backbone);
+				}
+				if (vulture_count >= 1) {
+					int machine_shops = count_production(st, unit_types::machine_shop);
+					for (auto&v : st.units[unit_types::factory]) {
+						if (v.has_addon) ++machine_shops;
+					}
+					if (machine_shops == 0) {
+						return nodelay(st, unit_types::machine_shop, backbone);
+					}
 				}
 				return backbone(st);
 			});
@@ -42,6 +55,8 @@ struct strat_tvt_opening {
 			int proxy_scv_count = 0;
 			int proxy_marine_count = 0;
 			int enemy_barracks_count = 0;
+			int enemy_vulture_count = 0;
+			int enemy_tank_count = 0;
 			update_possible_start_locations();
 			for (unit*e : enemy_units) {
 				if (e->type == unit_types::barracks || e->type == unit_types::scv || e->type == unit_types::marine) {
@@ -55,15 +70,18 @@ struct strat_tvt_opening {
 					}
 				}
 				if (e->type == unit_types::barracks) ++enemy_barracks_count;
+				if (e->type == unit_types::vulture) ++enemy_vulture_count;
+				if (e->type == unit_types::siege_tank_tank_mode || e->type == unit_types::siege_tank_siege_mode) ++enemy_tank_count;
 			}
 
 			int vulture_count = my_completed_units_of_type[unit_types::vulture].size();
 			int marine_count = my_completed_units_of_type[unit_types::marine].size();
-			bool defence_ok = marine_count + vulture_count * 2 >= proxy_marine_count + proxy_scv_count + 4 && marine_count + vulture_count * 2 >= 10;
+			bool defence_ok = (marine_count + vulture_count * 2 >= proxy_marine_count + proxy_scv_count + 4 && marine_count + vulture_count * 2 >= 10) || enemy_tank_count;
 
 			bool defend_proxy = (proxy_barracks_count || proxy_marine_count || proxy_scv_count >= 4 || enemy_barracks_count >= 2) && !defence_ok;
 
 			if (defend_proxy && !has_detected_proxy) {
+				log("waa detected proxy\n");
 				has_detected_proxy = true;
 				for (auto&b : build::build_tasks) {
 					if (b.built_unit) continue;
@@ -72,7 +90,7 @@ struct strat_tvt_opening {
 			}
 			if (!defend_proxy && has_detected_proxy) {
 				combat::no_aggressive_groups = false;
-			}
+			} else combat::no_aggressive_groups = true;
 
 			if (!my_units_of_type[unit_types::factory].empty()) {
 				resource_gathering::max_gas = 250;
@@ -88,12 +106,16 @@ struct strat_tvt_opening {
 				}
 			}
 
+			if (!defend_proxy && vulture_count > enemy_vulture_count && enemy_tank_count == 0) {
+				scouting::comsat_supply = 50;
+			} else scouting::comsat_supply = 70;
+
 			bool expand = false;
 			auto my_st = get_my_current_state();
 			bool has_bunker = !my_units_of_type[unit_types::bunker].empty();
-			if (my_st.bases.size() > 1 || vulture_count >= 4) break;
+			if (my_st.bases.size() > 2 || vulture_count >= 16) break;
 			if (my_st.bases.size() == 1) {
-				if (vulture_count >= 2) {
+				if (vulture_count >= 2 && vulture_count > enemy_vulture_count) {
 					expand = true;
 				}
 				for (unit*u : enemy_units) {
@@ -107,66 +129,129 @@ struct strat_tvt_opening {
 					}
 					if (is_expo) expand = true;
 				}
+			} else if (my_st.bases.size() == 2) {
+				if (vulture_count > enemy_vulture_count) expand = true;
+			}
+			if (my_workers.size() < 18) expand = false;
+			if (expand && my_completed_units_of_type[unit_types::siege_tank_tank_mode].empty()) {
+				if (!enemy_buildings.empty() && (proxy_barracks_count + proxy_marine_count + proxy_scv_count)) {
+					double d = get_best_score_value(enemy_buildings, [&](unit*u) {
+						return unit_pathing_distance(unit_types::scv, my_start_location, u->pos);
+					});
+					if (d <= 32 * 40) expand = false;
+				}
+			}
+
+			if (!defend_proxy) {
+				for (unit*u : my_workers) {
+					if (u->force_combat_unit) u->force_combat_unit = false;
+				}
 			}
 
 			if (defend_proxy) {
-				combat::defence_is_scared = true;
-				if (my_units_of_type[unit_types::factory].empty()) {
-					if (!built_bunker && marine_count >= 2 && proxy_marine_count > marine_count) {
-						built_bunker = true;
-						auto*t = build::add_build_task(0, unit_types::bunker);
-					}
-					for (auto&b : build::build_tasks) {
-						if (b.built_unit) continue;
-						if (b.type->unit != unit_types::bunker) continue;
-						unit*nu = get_best_score(my_buildings, [&](unit*u) {
-							double ned = get_best_score_value(enemy_units, [&](unit*e) {
-								return units_distance(e, u);
-							});
-							if (ned <= 32 * 8) return std::numeric_limits<double>::infinity();
-							if (!enemy_buildings.empty()) {
-								return get_best_score_value(enemy_buildings, [&](unit*e) {
-									return units_pathing_distance(e, u);
-								});
-							}
-							return ned;
-						}, std::numeric_limits<double>::infinity());
-						if (nu) {
-							build::unset_build_pos(&b);
-							log("nu is %s\n", nu->type->name);
-							std::array<xy, 1> starts;
-							starts[0] = nu->pos;
-							unit_type*ut = unit_types::bunker;
-							xy pos = build_spot_finder::find_best(starts, 32, [&](grid::build_square&bs) {
-								return build_spot_finder::is_buildable_at(ut, bs);
-							}, [&](xy pos) {
-								int n = 0;
-								for (int y = 0; y < ut->tile_height; ++y) {
-									for (int x = 0; x < ut->tile_width; ++x) {
-										if (combat::entire_threat_area.test(grid::build_square_index(pos + xy(x * 32, y * 32)))) ++n;
-									}
-								}
-								return diag_distance(pos - nu->pos);
-								//return n + diag_distance(pos - nu->pos) / 32 * 4;
-							});
-							log("bunker - move from %d %d to %d %d\n", b.build_pos.x, b.build_pos.y, pos.x, pos.y);
-							build::set_build_pos(&b, pos);
+				get_upgrades::set_no_auto_upgrades(true);
+
+				if (proxy_barracks_count && enemy_barracks_count < 2) {
+					if ((int)my_workers.size() >= proxy_scv_count + proxy_marine_count + 5 && proxy_marine_count <= 2) {
+						combat::no_aggressive_groups = false;
+						int combat_count = 0;
+						for (unit*u : my_workers) {
+							if (u->force_combat_unit) ++combat_count;
+						}
+						for (unit*u : my_workers) {
+							if (combat_count >= proxy_scv_count + proxy_marine_count + 2) break;
+							if (u->force_combat_unit) continue;
+							u->force_combat_unit = true;
+							++combat_count;
 						}
 					}
 				}
+
+				combat::defence_is_scared = true;
+				if (my_units_of_type[unit_types::factory].empty()) {
+// 					int enemy_completed_bunkers = 0;
+// 					for (unit*u : enemy_buildings) {
+// 						if (!u->is_completed) continue;
+// 						if (u->type == unit_types::bunker) ++enemy_completed_bunkers;
+// 					}
+// 					if (!built_bunker && enemy_completed_bunkers && !my_units_of_type[unit_types::marine].empty()) {
+// 						combat::build_bunker_count = 1;
+// 						if (!my_units_of_type[unit_types::bunker].empty()) built_bunker = true;
+// 					} else combat::build_bunker_count = 0;
+
+// 					if (!built_bunker && defend_proxy) {
+// 						built_bunker = true;
+// 						auto*t = build::add_build_task(0, unit_types::bunker);
+// 					}
+// 					for (auto&b : build::build_tasks) {
+// 						if (b.built_unit) continue;
+// 						if (b.type->unit != unit_types::bunker) continue;
+// 						unit*nu = get_best_score(my_buildings, [&](unit*u) {
+// 							double ned = get_best_score_value(enemy_units, [&](unit*e) {
+// 								return units_distance(e, u);
+// 							});
+// 							if (ned <= 32 * 8) return std::numeric_limits<double>::infinity();
+// 							if (!enemy_buildings.empty()) {
+// 								return get_best_score_value(enemy_buildings, [&](unit*e) {
+// 									return units_pathing_distance(e, u);
+// 								});
+// 							}
+// 							return ned;
+// 						}, std::numeric_limits<double>::infinity());
+// 						if (nu) {
+// 							build::unset_build_pos(&b);
+// 							log("nu is %s\n", nu->type->name);
+// 							std::array<xy, 1> starts;
+// 							starts[0] = nu->pos;
+// 							unit_type*ut = unit_types::bunker;
+// 							xy pos = build_spot_finder::find_best(starts, 128, [&](grid::build_square&bs) {
+// 								return build_spot_finder::is_buildable_at(ut, bs);
+// 							}, [&](xy pos) {
+// 								int n = 0;
+// 								for (int y = 0; y < ut->tile_height; ++y) {
+// 									for (int x = 0; x < ut->tile_width; ++x) {
+// 										if (combat::entire_threat_area.test(grid::build_square_index(pos + xy(x * 32, y * 32)))) ++n;
+// 									}
+// 								}
+// 								return diag_distance(pos + xy(ut->tile_width * 16, ut->tile_height * 16) - nu->pos);
+// 								//return n + diag_distance(pos - nu->pos) / 32 * 4;
+// 							});
+// 							log("bunker - move from %d %d to %d %d\n", b.build_pos.x, b.build_pos.y, pos.x, pos.y);
+// 							build::set_build_pos(&b, pos);
+// 						}
+// 					}
+				}
 				if (!scouting::all_scouts.empty()) scouting::rm_scout(scouting::all_scouts.front().scout_unit);
 				expand = false;
-				if (my_workers.size() <= 20) resource_gathering::max_gas = 1.0;
+				if (my_workers.size() < 12 ) resource_gathering::max_gas = 1.0;
+				else if (resource_gathering::max_gas == 1.0) resource_gathering::max_gas = 100;
 				auto proxy_defence_build = [&](state&st) {
 					std::function<bool(state&)> build = [&](state&st) {
-						if (my_units_of_type[unit_types::marine].size()>my_units_of_type[unit_types::scv].size()) {
-							return maxprod(st, unit_types::scv, [&](state&st) {
+						if (my_units_of_type[unit_types::marine].size() > my_units_of_type[unit_types::scv].size()) {
+							return nodelay(st, unit_types::scv, [&](state&st) {
 								return nodelay(st, unit_types::marine, [&](state&st) {
 									return depbuild(st, state(st), unit_types::vulture);
 								});
 							});
 						} else {
-							return maxprod(st, unit_types::marine, [&](state&st) {
+							return nodelay(st, unit_types::marine, [&](state&st) {
+								int scv_count = count_units_plus_production(st, unit_types::scv);
+								int barracks_count = count_units_plus_production(st, unit_types::barracks);
+								int factory_count = count_units_plus_production(st, unit_types::factory);
+								if (barracks_count >= 1 && factory_count == 0 && scv_count >= 12) {
+									return nodelay(st, unit_types::factory, [&](state&st) {
+										return nodelay(st, unit_types::marine, [&](state&st) {
+											return depbuild(st, state(st), unit_types::scv);
+										});
+									});
+								}
+								if (barracks_count < 1) {
+									return nodelay(st, unit_types::barracks, [&](state&st) {
+										return nodelay(st, unit_types::scv, [&](state&st) {
+											return depbuild(st, state(st), unit_types::vulture);
+										});
+									});
+								}
 								return nodelay(st, unit_types::scv, [&](state&st) {
 									return depbuild(st, state(st), unit_types::vulture);
 								});
@@ -175,7 +260,7 @@ struct strat_tvt_opening {
 					};
 					if (my_workers.size() < 8) {
 						build = [build](state&st) {
-							return maxprod(st, unit_types::scv, build);
+							return nodelay(st, unit_types::scv, build);
 						};
 					}
 					if (!my_completed_units_of_type[unit_types::factory].empty()) {
@@ -191,7 +276,7 @@ struct strat_tvt_opening {
 		combat::build_bunker_count = 0;
 		resource_gathering::max_gas = 0.0;
 
-		//combat::no_aggressive_groups = false;
+		get_upgrades::set_no_auto_upgrades(false);
 
 	}
 
