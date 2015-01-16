@@ -6,7 +6,7 @@ struct strat_tvp_opening {
 	void run() {
 
 		combat::no_aggressive_groups = true;
-		combat::defensive_spider_mine_count = 8;
+		combat::defensive_spider_mine_count = 20;
 
 		using namespace buildpred;
 
@@ -166,7 +166,7 @@ struct strat_tvp_opening {
 			if (enemy_dt_count) combat::aggressive_vultures = false;
 
 			int my_siege_tank_count = my_units_of_type[unit_types::siege_tank_tank_mode].size() + my_units_of_type[unit_types::siege_tank_siege_mode].size();
-			bool need_missile_turret = enemy_zealot_count + enemy_dragoon_count < 8 && !my_units_of_type[unit_types::machine_shop].empty() && my_units_of_type[unit_types::missile_turret].empty();
+			bool need_missile_turret = enemy_zealot_count + enemy_dragoon_count < 8 && !my_units_of_type[unit_types::machine_shop].empty() && my_units_of_type[unit_types::missile_turret].empty() && !opponent_has_fast_expanded;
 			if (enemy_forge_count && my_siege_tank_count < 2) need_missile_turret = false;
 			if (enemy_cannon_count > 1 && my_siege_tank_count < 5) need_missile_turret = false;
 			if (attacking_zealot_count + attacking_dragoon_count > 2 && enemy_dt_count == 0) need_missile_turret = false;
@@ -227,7 +227,8 @@ struct strat_tvp_opening {
 						return nodelay(st, unit_types::vulture, army);
 					};
 				}
-				if (tank_count >= 2 && vulture_count < tank_count * 2) {
+				//if (tank_count >= 2 && vulture_count < tank_count * 2) {
+				if (tank_count >= 1 && vulture_count < 8) {
 					army = [army](state&st) {
 						return nodelay(st, unit_types::vulture, army);
 					};
@@ -247,11 +248,12 @@ struct strat_tvp_opening {
 						return nodelay(st, unit_types::vulture, army);
 					};
 				}
-
-				if (need_missile_turret && count_units_plus_production(st, unit_types::missile_turret) == 0) {
-					army = [army](state&st) {
-						return nodelay(st, unit_types::missile_turret, army);
-					};
+				if (!my_units_of_type[unit_types::siege_tank_tank_mode].empty()) {
+					if (need_missile_turret && count_units_plus_production(st, unit_types::missile_turret) == 0) {
+						army = [army](state&st) {
+							return nodelay(st, unit_types::missile_turret, army);
+						};
+					}
 				}
 
 				return nodelay(st, unit_types::scv, [&](state&st) {
