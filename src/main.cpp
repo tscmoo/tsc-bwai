@@ -320,11 +320,22 @@ struct module : BWAPI::AIModule {
 		multitasking::stop();
 	}
 
+	template<bool is_bwapi_4>
+	struct x_key;
+	template<>
+	struct x_key<true> {
+		static const auto value = BWAPI::Key::K_X;
+	};
+	template<>
+	struct x_key<false> {
+		static const auto value = 'X';
+	};
+
 	virtual void onFrame() override {
 
 		if (test_mode) {
 			static bool holding_x;
-			if (game->getKeyState('X')) holding_x = true;
+			if (game->getKeyState(x_key<is_bwapi_4>::value)) holding_x = true;
 			else holding_x = false;
 			static bool last_holding_x;
 			static bool fast = true;
