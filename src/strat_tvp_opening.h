@@ -248,7 +248,7 @@ struct strat_tvp_opening {
 						return nodelay(st, unit_types::vulture, army);
 					};
 				}
-				if (!my_units_of_type[unit_types::siege_tank_tank_mode].empty()) {
+				if (tank_count) {
 					if (need_missile_turret && count_units_plus_production(st, unit_types::missile_turret) == 0) {
 						army = [army](state&st) {
 							return nodelay(st, unit_types::missile_turret, army);
