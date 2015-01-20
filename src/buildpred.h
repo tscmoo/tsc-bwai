@@ -729,8 +729,9 @@ static const auto maxprod = [](state&st, unit_type*ut, const std::function<bool(
 		if (t != failed) return nodelay(st, ut, func);
 		if (ut->required_supply && st.used_supply[ut->race] + ut->required_supply > 200) return false;
 		for (auto&v : st.units[ut->builder_type]) {
-			if (st.frame>=v.busy_until) return nodelay(st, ut, func);
+			if (st.frame >= v.busy_until) return nodelay(st, ut, func);
 		}
+		if (count_production(st, bt) >= 2 || st.minerals < ut->minerals_cost || st.gas < ut->gas_cost) return nodelay(st, ut, func);
 		return nodelay(st, bt, func);
 	}
 };
@@ -767,6 +768,7 @@ static const auto maxprod1 = [](state&st, unit_type*ut) {
 		for (auto&v : st.units[ut->builder_type]) {
 			if (st.frame >= v.busy_until) return depbuild(st, state(st), ut);
 		}
+		if (count_production(st, bt) >= 2 || st.minerals < ut->minerals_cost || st.gas < ut->gas_cost) return depbuild(st, state(st), ut);
 		return depbuild(st, state(st), bt);
 	}
 };
@@ -1258,6 +1260,10 @@ state get_my_current_state() {
 		if (u->type->is_addon) continue;
 		if (u->type == unit_types::larva) continue;
 		unit_type*ut = u->type;
+		if (!u->is_completed && !ut->provided_supply) {
+			initial_state.production.emplace(initial_state.frame + u->remaining_whatever_time, ut);
+			continue;
+		}
 		if (ut->game_unit_type == BWAPI::UnitTypes::Zerg_Egg) {
 			ut = units::get_unit_type(u->game_unit->getBuildType());
 			if (ut->is_two_units_in_one_egg) add_unit(initial_state, ut);
