@@ -70,6 +70,7 @@ struct unit_stats {
 	double max_speed;
 	double acceleration;
 	double stop_distance;
+	double turn_rate;
 
 	double energy;
 	double shields;
@@ -138,6 +139,7 @@ struct unit {
 	xy pos;
 	bool gone;
 	double speed, hspeed, vspeed;
+	double heading;
 	int resources, initial_resources;
 	BWAPI::Order game_order;
 	bool is_carrying_minerals_or_gas;
@@ -170,6 +172,7 @@ struct unit {
 
 	bool force_combat_unit;
 	int last_attacked;
+	unit*last_attack_target;
 	int prev_weapon_cooldown;
 
 	a_vector<unit*> loaded_units;
@@ -214,7 +217,7 @@ namespace unit_types {
 	unit_type_pointer observer, shuttle, scout, carrier, interceptor, arbiter, corsair;
 	unit_type_pointer hatchery, lair, hive, creep_colony, sunken_colony, spore_colony, nydus_canal, spawning_pool, evolution_chamber;
 	unit_type_pointer hydralisk_den, spire, greater_spire, extractor;
-	unit_type_pointer drone, overlord, zergling, larva, hydralisk, lurker, lurker_egg, ultralisk, defiler;
+	unit_type_pointer drone, overlord, zergling, larva, egg, hydralisk, lurker, lurker_egg, ultralisk, defiler;
 	unit_type_pointer mutalisk, cocoon, scourge, queen, guardian, devourer;
 	unit_type_pointer vespene_geyser;
 	std::reference_wrapper<unit_type_pointer> units_that_produce_land_units[] = {
@@ -308,6 +311,7 @@ namespace unit_types {
 		get(extractor, BWAPI::UnitTypes::Zerg_Extractor);
 
 		get(drone, BWAPI::UnitTypes::Zerg_Drone);
+		get(egg, BWAPI::UnitTypes::Zerg_Egg);
 		get(overlord, BWAPI::UnitTypes::Zerg_Overlord);
 		get(zergling, BWAPI::UnitTypes::Zerg_Zergling);
 		get(hydralisk, BWAPI::UnitTypes::Zerg_Hydralisk);
@@ -579,12 +583,13 @@ void update_stats(unit_stats*st) {
 	auto&gp = st->player->game_player;
 	auto&gu = st->type->game_unit_type;
 
-	st->max_speed = std::ceil(gp->topSpeed(gu)*256) / 256.0;
-	st->max_speed += 20.0/256.0; // Verify this: some(all?) speeds in BWAPI seem to be too low by this amount.
+	st->max_speed = std::ceil(gp->topSpeed(gu) * 256) / 256.0;
+	st->max_speed += 20.0 / 256.0; // Verify this: some(all?) speeds in BWAPI seem to be too low by this amount.
 	int acc = gu.acceleration();
 	st->acceleration = (double)acc / 256.0;
-	if (st->acceleration==0 || acc==1) st->acceleration = st->max_speed;
-	st->stop_distance = (double)gu.haltDistance()/256.0;
+	if (st->acceleration == 0 || acc == 1) st->acceleration = st->max_speed;
+	st->stop_distance = (double)gu.haltDistance() / 256.0;
+	st->turn_rate = (double)gu.turnRadius() / 128.0 * PI;
 
 	st->energy = (double)gp->maxEnergy(gu);
 	st->shields = (double)gu.maxShields();
@@ -640,6 +645,7 @@ void update_unit_stuff(unit*u) {
 	u->hspeed = u->game_unit->getVelocityX();
 	u->vspeed = u->game_unit->getVelocityY();
 	u->speed = xy_typed<double>(u->hspeed,u->vspeed).length();
+	u->heading = u->game_unit->getAngle();
 	u->resources = u->game_unit->getResources();
 	u->initial_resources = u->game_unit->getInitialResources();
 	u->game_order = u->game_unit->getOrder();
@@ -680,6 +686,7 @@ void update_unit_stuff(unit*u) {
 	u->order_target = targetunit(u->game_unit->getOrderTarget());
 
 	if (u->weapon_cooldown > u->prev_weapon_cooldown) u->last_attacked = current_frame;
+	if (u->game_order == BWAPI::Orders::AttackUnit || u->last_attacked == current_frame) u->last_attack_target = u->order_target;
 
 	u->loaded_units.clear();
 	for (auto&gu : u->game_unit->getLoadedUnits()) {
@@ -737,6 +744,7 @@ unit*new_unit(BWAPI_Unit game_unit) {
 	u->force_combat_unit = false;
 	//u->last_attacking = 0;
 	u->last_attacked = 0;
+	u->last_attack_target = nullptr;
 	u->prev_weapon_cooldown = 0;
 
 	u->container_indexes.fill(npos);
