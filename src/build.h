@@ -386,8 +386,15 @@ void generate_build_order_task() {
 					}
 				} else {
 					for (unit*u : my_units_of_type[b.type->builder]) {
+						bool requires_addon = false;
+						unit_type*ut = b.type->unit;
+						if (ut == unit_types::siege_tank_tank_mode) requires_addon = true;
+						if (ut == unit_types::dropship || ut == unit_types::science_vessel || ut == unit_types::battlecruiser || ut == unit_types::valkyrie) requires_addon = true;
+						if (requires_addon && !u->addon) continue;
 						if (build_delay == -1 || u->remaining_whatever_time < build_delay) build_delay = u->remaining_whatever_time;
-						if (build_delay == 0) break;
+						if (build_delay == 0) {
+							break;
+						}
 					}
 				}
 				build_delay /= resolution;
@@ -766,7 +773,7 @@ void execute_build(build_task&b) {
 					}
 				}
 
-				if (pos != xy()) {
+				if (pos != xy() && !b.type->unit->is_refinery) {
 					auto&bs = grid::get_build_square(pos);
 					if (b.type->unit->requires_creep && !pred_creep(bs)) xcept("unreachable: bad build spot for %s", b.type->name);
 					if (b.type->unit->race != race_zerg && !b.type->unit->requires_creep && !pred_not_creep(bs)) xcept("unreachable: bad build spot for %s", b.type->name);
