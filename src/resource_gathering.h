@@ -31,6 +31,7 @@ struct resource_t {
 	int current_complete_round_trip_time = 0;
 	a_vector<int> deliveries;
 	int last_find_transfer = 0;
+	size_t last_find_transfer_my_workers_size = 0;
 };
 
 a_list<resource_t> all_resources;
@@ -229,8 +230,9 @@ void process(resource_t&r) {
 	if (max_gas && current_gas < max_gas) minerals_to_gas_weight = 0.0125;
 	if (max_gas && current_gas >= max_gas) minerals_to_gas_weight = 100.0;
 
-	if (next_income>0 && (current_frame-r.last_find_transfer>=30 || current_frame<30)) {
+	if (next_income > 0 && (current_frame - r.last_find_transfer >= 30 || my_workers.size()>r.last_find_transfer_my_workers_size) && combat::can_transfer_to(r.u)) {
 		r.last_find_transfer = current_frame;
+		r.last_find_transfer_my_workers_size = my_workers.size();
 		double next_income_weighted = r.u->type->is_gas ? next_income : next_income*minerals_to_gas_weight;
 		gatherer_t*best = 0;
 		double best_dist = std::numeric_limits<double>::infinity();
