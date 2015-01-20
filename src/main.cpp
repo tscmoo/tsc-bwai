@@ -12,11 +12,6 @@
 #include <BWApi.h>
 #include <BWAPI/Client.h>
 
-#undef min
-#undef max
-#undef near
-#undef far
-
 #ifndef _DEBUG
 #pragma comment(lib,"BWAPI.lib")
 #pragma comment(lib,"BWAPIClient.lib")
@@ -44,6 +39,15 @@
 #include <mutex>
 #include <algorithm>
 #include <utility>
+
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+#undef min
+#undef max
+#undef near
+#undef far
 
 #include <tsc/containers.h>
 #include <tsc/alloc_unique.h>
@@ -235,7 +239,9 @@ namespace wall_in {
 }
 a_vector<xy> start_locations;
 xy my_start_location;
-
+namespace combat {
+	bool can_transfer_to(unit*r);
+}
 
 #include "multitasking.h"
 #include "multitasking_sync.h"
