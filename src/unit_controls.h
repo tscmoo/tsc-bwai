@@ -30,6 +30,8 @@ struct unit_controller {
 	int attack_state = 0;
 	int attack_timer = 0;
 	int attack_state2 = 0;
+	int weapon_ready_frames = 0;
+	int last_process = 0;
 };
 
 namespace unit_controls {
@@ -178,10 +180,25 @@ void process(a_vector<unit_controller*>&controllers) {
 		c->can_move = can_move;
 	}
 
-	for (auto*c : controllers) {
+	for (size_t i = 0; i < controllers.size();++i) {
+		auto*c = controllers[i];
+
+		if (c->last_process == current_frame) continue;
+		c->last_process = current_frame;
 
 		unit*u = c->u;
 		if (u->building && c->action != unit_controller::action_building_movement) continue;
+
+// 		if (u->weapon_cooldown == 0) ++c->weapon_ready_frames;
+// 		else {
+// 			if (c->weapon_ready_frames) {
+// 				log("%s: weapon was ready for %d frames\n", u->type->name, c->weapon_ready_frames);
+// 				c->weapon_ready_frames = 0;
+// 			}
+// 		}
+// 		if (c->action == unit_controller::action_attack && c->target && !c->target->dead) {
+// 			log("%s attack %s!\n", u->type->name, c->target->type->name);
+// 		}
 
 		bool should_intercept = false;
 		xy intercept_pos;
@@ -228,118 +245,194 @@ void process(a_vector<unit_controller*>&controllers) {
 					if (w->max_range >= ew->max_range) use_patrol = true;
 					if (w->max_range*1.5 >= ew->max_range && w->cooldown > ew->cooldown) use_patrol = true;
 				}
-			}
-			if (u->type == unit_types::vulture) {
-				double nearest_sieged_tank_distance = get_best_score_value(my_completed_units_of_type[unit_types::siege_tank_siege_mode], [&](unit*u) {
-					return diag_distance(u->pos - c->u->pos);
-				});
-				if (nearest_sieged_tank_distance == 0) nearest_sieged_tank_distance = std::numeric_limits<double>::infinity();
-				double nearest_unsieged_tank_distance = get_best_score_value(my_completed_units_of_type[unit_types::siege_tank_tank_mode], [&](unit*u) {
-					return diag_distance(u->pos - c->u->pos);
-				});
-				if (nearest_unsieged_tank_distance == 0) nearest_unsieged_tank_distance = std::numeric_limits<double>::infinity();
-				if (nearest_sieged_tank_distance < 32 * 8 || nearest_unsieged_tank_distance < 32 * 8) use_patrol = false;
-			}
-			xy upos = u->pos + xy((int)(u->hspeed*latency_frames), (int)(u->vspeed*latency_frames));
-			xy tpos = c->target->pos + xy((int)(c->target->hspeed*latency_frames), (int)(c->target->vspeed*latency_frames));
-			double d = units_distance(upos, u, tpos, c->target);
-
-			auto movedst = [&](xy origin, double a, double max_distance) {
-				if (u->is_flying) {
-					xy pos = origin;
-					pos.x += (int)(std::cos(a)*max_distance);
-					pos.y += (int)(std::sin(a)*max_distance);
-					return pos;
-				}
-				xy r = origin;
-				for (double distance = 0; distance < max_distance; distance += 32) {
-					xy pos = origin;
-					pos.x += (int)(std::cos(a)*distance);
-					pos.y += (int)(std::sin(a)*distance);
-					pos = square_pathing::get_pos_in_square(pos, u->type);
-					if (pos == xy()) break;
-					r = pos;
-				}
-				return r;
-			};
-
-			if (use_patrol && d < 32 * 10 && c->action != unit_controller::action_kite) {
-				xy rel = u->pos - c->target->pos;
-				double a = std::atan2(rel.y, rel.x);
-				xy dst = movedst(u->pos, a, 32 * 10);
-				if (diag_distance(u->pos - dst) <= 32 * 3) use_patrol = false;
-			}
-
-			bool valkyrie_method = u->type == unit_types::valkyrie;
-
-			if (use_patrol && d < 32 * 10) {
-				c->noorder_until = current_frame + 8;
-
-				//log("c->attack_state is %d\n", c->attack_state);
-				if (c->attack_state == 0) {
-					bool next = d <= w->max_range && u->weapon_cooldown <= latency_frames;
-					if (valkyrie_method && u->speed < 4) next = false;
-					if (next) c->attack_state = 1;
-					else {
-						xy dst;
-						if (d > w->max_range) dst = tpos;
-						else {
-							xy rel = u->pos - c->target->pos;
-							double a = std::atan2(rel.y, rel.x);
-							dst = movedst(u->pos, a, 32 * 5);
-						}
-
-						xy movepos = (bwapi_pos)u->game_unit->getTargetPosition();
-						if (u->game_unit->getOrder() == BWAPI::Orders::Move && diag_distance(dst - movepos) < 32) {
-						} else {
-							if (current_frame - c->attack_timer >= 6 && u->game_unit->move(BWAPI::Position(dst.x, dst.y))) {
-								c->attack_timer = current_frame;
-							}
-						}
+				if (true) {
+					unit*ne = get_best_score(enemy_units, [&](unit*e) {
+						if (!e->visible) return std::numeric_limits<double>::infinity();
+						return diag_distance(e->pos - u->pos);
+					});
+					if (ne && ne->type != c->target->type) {
+						use_patrol = false;
 					}
-				} else if (c->attack_state == 1) {
-					xy rel = c->target->pos - u->pos;
+				}
+
+				if (u->type == unit_types::vulture) {
+					double nearest_sieged_tank_distance = get_best_score_value(my_completed_units_of_type[unit_types::siege_tank_siege_mode], [&](unit*u) {
+						return diag_distance(u->pos - c->u->pos);
+					});
+					if (nearest_sieged_tank_distance == 0) nearest_sieged_tank_distance = std::numeric_limits<double>::infinity();
+					double nearest_unsieged_tank_distance = get_best_score_value(my_completed_units_of_type[unit_types::siege_tank_tank_mode], [&](unit*u) {
+						return diag_distance(u->pos - c->u->pos);
+					});
+					if (nearest_unsieged_tank_distance == 0) nearest_unsieged_tank_distance = std::numeric_limits<double>::infinity();
+					if (nearest_sieged_tank_distance < 32 * 8 || nearest_unsieged_tank_distance < 32 * 8) use_patrol = false;
+				}
+				xy upos = u->pos + xy((int)(u->hspeed*latency_frames), (int)(u->vspeed*latency_frames));
+				xy tpos = c->target->pos + xy((int)(c->target->hspeed*latency_frames), (int)(c->target->vspeed*latency_frames));
+				double d = units_distance(upos, u, tpos, c->target);
+
+				auto movedst = [&](xy origin, double a, double max_distance) {
+					if (u->is_flying) {
+						xy pos = origin;
+						pos.x += (int)(std::cos(a)*max_distance);
+						pos.y += (int)(std::sin(a)*max_distance);
+						return pos;
+					}
+					xy r = origin;
+					for (double distance = 0; distance < max_distance; distance += 32) {
+						xy pos = origin;
+						pos.x += (int)(std::cos(a)*distance);
+						pos.y += (int)(std::sin(a)*distance);
+						pos = square_pathing::get_pos_in_square(pos, u->type);
+						if (pos == xy()) break;
+						r = pos;
+					}
+					return r;
+				};
+
+				if (use_patrol && d < 32 * 10 && c->action != unit_controller::action_kite) {
+					xy rel = u->pos - c->target->pos;
 					double a = std::atan2(rel.y, rel.x);
-					a += PI / 6;
-					if (valkyrie_method) a += PI;
-					xy dst = movedst(u->pos, a, rel.length());
-					bool m = u->game_unit->patrol(BWAPI::Position(dst.x, dst.y));
+					xy dst = movedst(u->pos, a, 32 * 10);
+					if (diag_distance(u->pos - dst) <= 32 * 3) use_patrol = false;
+				}
 
-					c->attack_timer = current_frame;
-					c->attack_state = 2;
-					if (valkyrie_method) {
-						c->attack_state = 3;
-					}
-				} else if (c->attack_state == 2) {
-					if (current_frame - c->attack_timer >= 4) {
+				bool valkyrie_method = u->type == unit_types::valkyrie;
+
+				auto move_to_attack_range = [&]() {
+					xy dst;
+					if (d > w->max_range) dst = tpos;
+					else {
 						xy rel = u->pos - c->target->pos;
 						double a = std::atan2(rel.y, rel.x);
-						xy dst = movedst(u->pos, a, 32 * 10);
-						if (should_intercept) dst = intercept_pos;
-						if (c->action == unit_controller::action_kite) dst = c->target_pos;
-						xy movepos = (bwapi_pos)u->game_unit->getTargetPosition();
-						if (u->game_unit->move(BWAPI::Position(dst.x, dst.y))) {
+						dst = movedst(u->pos, a, 32 * 5);
+					}
+
+					xy movepos = (bwapi_pos)u->game_unit->getTargetPosition();
+					if (u->game_unit->getOrder() != BWAPI::Orders::Move || diag_distance(dst - movepos) >= 32) {
+						if (current_frame - c->attack_timer >= 6) {
+							u->game_unit->move(BWAPI::Position(dst.x, dst.y));
+							c->attack_timer = current_frame;
+						}
+					}
+				};
+				auto move_away_or_intercept = [&]() {
+					xy rel = u->pos - c->target->pos;
+					double a = std::atan2(rel.y, rel.x);
+					xy dst = movedst(u->pos, a, 32 * 10);
+					if (should_intercept) dst = intercept_pos;
+					if (c->action == unit_controller::action_kite) dst = c->target_pos;
+					xy movepos = (bwapi_pos)u->game_unit->getTargetPosition();
+					if (u->game_unit->getOrder() != BWAPI::Orders::Move || diag_distance(dst - movepos) >= 32) {
+						u->game_unit->move(BWAPI::Position(dst.x, dst.y));
+					}
+				};
+
+				if (use_patrol && d < 32 * 10) {
+
+					//log("c->attack_state is %d\n", c->attack_state);
+					if (c->attack_state == 0) {
+						bool next = d <= w->max_range && u->weapon_cooldown <= latency_frames;
+						if (valkyrie_method && u->speed < 4) next = false;
+						if (next) c->attack_state = 1;
+						else {
+							move_to_attack_range();
+						}
+					} else if (c->attack_state == 1) {
+						xy rel = c->target->pos - u->pos;
+						double a = std::atan2(rel.y, rel.x);
+						a += PI / 6;
+						if (valkyrie_method) a += PI;
+						xy dst = movedst(u->pos, a, rel.length());
+						u->game_unit->patrol(BWAPI::Position(dst.x, dst.y));
+
+						c->attack_timer = current_frame;
+						c->attack_state = 2;
+						if (valkyrie_method) {
+							c->attack_state = 3;
+						}
+					} else if (c->attack_state == 2) {
+						if (current_frame - c->attack_timer >= 4) {
+							move_away_or_intercept();
 							c->attack_timer = current_frame;
 							c->attack_state = 3;
 						}
-					}
-				} else if (c->attack_state == 3) {
-					int cooldown = 15;
+					} else if (c->attack_state == 3) {
+						int cooldown = 15;
 
-					double target_heading = std::atan2(c->target->vspeed, c->target->hspeed);
+						if (!c->target->type->is_worker) {
+							double target_heading = std::atan2(c->target->vspeed, c->target->hspeed);
+							xy relpos = c->target->pos - u->pos;
+							double rel_angle = std::atan2(relpos.y, relpos.x);
+							double da = target_heading - rel_angle;
+							if (da < -PI) da += PI * 2;
+							if (da > PI) da -= PI * 2;
+							if (std::abs(da) > PI || c->target->speed < 4) {
+								if (u->type == unit_types::vulture) cooldown = 25;
+							}
+						}
+
+						if (u->type == unit_types::valkyrie) cooldown = 40;
+						if (current_frame - c->attack_timer >= cooldown) c->attack_state = 0;
+					} else c->attack_state = 0;
+
+					continue;
+				}
+
+				bool do_state_machine = c->can_move;
+
+				int wait_frames = 0;
+				if (u->type == unit_types::marine) wait_frames = 5;
+				if (u->type == unit_types::ghost) wait_frames = 5;
+				if (u->type == unit_types::vulture) wait_frames = 1;
+				if (u->type == unit_types::goliath) wait_frames = 1;
+				if (u->type == unit_types::siege_tank_tank_mode) wait_frames = 1;
+				if (u->type == unit_types::wraith) wait_frames = 1;
+				if (u->type == unit_types::battlecruiser) wait_frames = 1;
+
+				if (c->action != unit_controller::action_kite) {
+					if (u->type == unit_types::marine || u->type == unit_types::ghost) do_state_machine = false;
+				}
+
+				if (do_state_machine && wait_frames) {
+
+					//log("c->attack_state is %d\n", c->attack_state);
+
 					xy relpos = c->target->pos - u->pos;
 					double rel_angle = std::atan2(relpos.y, relpos.x);
-					double da = target_heading - rel_angle;
+					double da = u->heading - rel_angle;
 					if (da < -PI) da += PI * 2;
 					if (da > PI) da -= PI * 2;
-					if (std::abs(da) > PI || c->target->speed < 4) {
-						if (u->type == unit_types::vulture) cooldown = 25;
-					}
-					
-					if (u->type == unit_types::valkyrie) cooldown = 40;
-					if (current_frame - c->attack_timer >= cooldown) c->attack_state = 0;
+					//log("u->heading is %g, rel_angle is %g, da %g\n", u->heading / PI*180.0, rel_angle / PI*180.0, da / PI*180.0);
+					int turn_frames = (int)(std::abs(da) / c->u->stats->turn_rate);
+
+					//log("turn_frames is %d (latency %d)\n", turn_frames, latency_frames);
+
+					if (c->attack_state == 0) {
+						bool next = d <= w->max_range && u->weapon_cooldown <= latency_frames + turn_frames;
+						if (next) {
+							u->game_unit->stop();
+
+							c->attack_state = 1;
+							c->attack_timer = current_frame + turn_frames + wait_frames;
+							log("turn_frames + wait_frames is %d + %d = %d\n", turn_frames, wait_frames, turn_frames + wait_frames);
+						} else {
+							move_to_attack_range();
+						}
+					} else if (c->attack_state == 1) {
+						u->game_unit->attack(c->target->game_unit);
+						c->attack_state = 2;
+					} else if (c->attack_state == 2) {
+						if (current_frame >= c->attack_timer) {
+							move_away_or_intercept();
+							int frames = turn_frames + frames_to_reach(u->stats, 0.0, d - w->max_range);
+							if (current_frame >= c->attack_timer + latency_frames && frames >= u->weapon_cooldown - latency_frames) {
+								c->attack_state = 0;
+							}
+						}
+					} else c->attack_state = 0;
+
+					continue;
 				}
-				continue;
 			}
 		}
 
@@ -367,8 +460,12 @@ void process(a_vector<unit_controller*>&controllers) {
 		}
 		if (c->action == unit_controller::action_move_directly && c->can_move && current_frame - c->last_move >= move_resolution) {
 			c->last_move = current_frame;
-			c->u->game_unit->move(BWAPI::Position(c->go_to.x, c->go_to.y));
-			c->noorder_until = current_frame + rng(8);
+			if (c->last_move_to_pos != c->go_to || current_frame >= c->last_move_to + 30) {
+				c->last_move_to = current_frame;
+				c->last_move_to_pos = c->go_to;
+				c->u->game_unit->move(BWAPI::Position(c->go_to.x, c->go_to.y));
+				c->noorder_until = current_frame + rng(8);
+			}
 		}
 
 		if (c->action == unit_controller::action_use_ability) {
@@ -518,18 +615,28 @@ void process(a_vector<unit_controller*>&controllers) {
 		}
 
 		bool do_attack = false;
-		if (c->action == unit_controller::action_kite) {
+		if (c->action == unit_controller::action_kite && c->target) {
+
 			weapon_stats*w = c->target->is_flying ? u->stats->air_weapon : u->stats->ground_weapon;
 			weapon_stats*ew = u->is_flying ? c->target->stats->air_weapon : c->target->stats->ground_weapon;
-			if (w && ew) do_attack = true;
+			if (w && !ew) do_attack = true;
 			else {
 				xy upos = u->pos + xy((int)(u->hspeed*latency_frames), (int)(u->vspeed*latency_frames));
 				xy tpos = c->target->pos + xy((int)(c->target->hspeed*latency_frames), (int)(c->target->vspeed*latency_frames));
-				double d = units_distance(upos, u, tpos, c->target);
+				double d = units_distance(upos, u, tpos, c->target) - w->max_range;
+				if (c->u->type == unit_types::goliath) d += 32;
 				if (w && frames_to_reach(u, d) >= u->weapon_cooldown - latency_frames) do_attack = true;
 				else {
-					c->go_to = c->target_pos;
-					move(c);
+					xy move_to = c->target_pos;
+					//if (c->u->type == unit_types::goliath && u->weapon_cooldown <= 2) move_to = c->target->pos;
+					c->last_move = current_frame;
+					if (c->last_move_to_pos != move_to || current_frame >= c->last_move_to + 30) {
+						c->last_move_to = current_frame;
+						c->last_move_to_pos = move_to;
+						c->u->game_unit->move(BWAPI::Position(move_to.x, move_to.y));
+						c->noorder_until = current_frame + rng(8);
+						//if (c->u->type == unit_types::goliath) c->noorder_until -= 2;
+					}
 				}
 			}
 		}
@@ -538,49 +645,6 @@ void process(a_vector<unit_controller*>&controllers) {
 
 			if (c->target->dead) c->action = unit_controller::action_idle;
 			else {
-
-// 				if (u->type == unit_types::valkyrie) {
-// 					weapon_stats*w = c->target->is_flying ? u->stats->air_weapon : u->stats->ground_weapon;
-// 					double d = units_distance(u, c->target) - w->max_range;
-// 					if (w && d < 0) {
-// 						default_attack = false;
-// 						log("c->attack_state is %d\n", c->attack_state);
-// 						if (c->attack_state == 0) {
-// 							xy rel = c->target->pos - u->pos;
-// 							//if (d <= 64) rel = u->pos - c->target->pos;
-// 							double a = std::atan2(rel.y, rel.x);
-// 							xy dst = u->pos;
-// 							dst.x += (int)(std::cos(a) * 32 * 10);
-// 							dst.y += (int)(std::sin(a) * 32 * 10);
-// 							xy movepos = (bwapi_pos)u->game_unit->getTargetPosition();
-// 							if (u->game_unit->getOrder() == BWAPI::Orders::Move && diag_distance(dst - movepos) < 32 * 4) {
-// 								dont_set_noorder_until = true;
-// 								//if (u->speed >= 4 || current_frame - c->attack_timer >= 8) c->attack_state = 1;
-// 								//if (u->speed >= 4) c->attack_state = 1;
-// 								c->attack_state = 1;
-// 							} else if (u->game_unit->move(BWAPI::Position(dst.x, dst.y))) {
-// 								dont_set_noorder_until = true;
-// 								c->attack_timer = current_frame;
-// 							}
-// 						} else if (c->attack_state == 1) {
-// 							xy rel = u->pos - c->target->pos;
-// 							double a = std::atan2(rel.y, rel.x);
-// 							xy dst = u->pos;
-// 							dst.x += (int)(std::cos(a) * 32 * 10);
-// 							dst.y += (int)(std::sin(a) * 32 * 10);
-// 							//bool m = u->game_unit->move(BWAPI::Position(dst.x, dst.y));
-// 							//log("issue move: %d\n", m);
-// 							bool m = u->game_unit->patrol(BWAPI::Position(dst.x, dst.y));
-// 							log("issue patrol: %d\n", m);
-// 
-// 							c->attack_timer = current_frame;
-// 							c->attack_state = 2;
-// 							c->noorder_until = current_frame + 40;
-// 						} else if (c->attack_state == 2) {
-// 							if (current_frame - c->attack_timer >= 40) c->attack_state = 0;
-// 						}
-// 					}
-// 				}
 
 				if (u->order_target != c->target || u->game_order != BWAPI::Orders::AttackUnit) {
 					if (c->target == nullptr) xcept("attack null unit");
