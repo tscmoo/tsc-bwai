@@ -32,14 +32,22 @@ void update_possible_start_locations() {
 			bool found = test_pred(s->resources, [](resource_spots::resource_t&r) {
 				return r.u->resources <= r.u->initial_resources - 8 * 4;
 			});
-			if (found) log("found because of resources\n");
 			auto&bs = grid::get_build_square(s->cc_build_pos);
-			if (bs.building && bs.building->owner == players::opponent_player) {
-				found = true;
-				log("found because of building\n");
-			}
+			if (bs.building && bs.building->owner == players::opponent_player) found = true;
 			if (found) {
 				xy pos = p;
+				possible_start_locations.clear();
+				possible_start_locations.push_back(pos);
+				break;
+			}
+		}
+	}
+	if (possible_start_locations.size() > 1) {
+		for (unit*u : enemy_buildings) {
+			if (u->type->is_resource_depot) {
+				xy pos = get_best_score(possible_start_locations, [&](xy pos) {
+					return diag_distance(pos - u->pos);
+				});
 				possible_start_locations.clear();
 				possible_start_locations.push_back(pos);
 				break;
