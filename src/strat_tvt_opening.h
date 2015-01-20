@@ -88,7 +88,7 @@ struct strat_tvt_opening {
 					build::unset_build_pos(&b);
 				}
 			}
-			if (!defend_proxy && has_detected_proxy) {
+			if (!defend_proxy && has_detected_proxy && my_units_of_type[unit_types::vulture].empty()) {
 				combat::no_aggressive_groups = false;
 			} else combat::no_aggressive_groups = true;
 
