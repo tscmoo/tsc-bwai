@@ -70,7 +70,6 @@ void follow_workers() {
 	for (auto&v : scout_locations) {
 		follow_worker_scout_locations.push_back(v.first);
 	}
-	log("follow_worker_scout_locations.size() is %d\n");
 
 	for (auto i = followed_workers.begin(); i != followed_workers.end();) {
 		if (current_frame - std::get<0>(i->second) >= 15 * 60 * 2 || i->first->dead) i = followed_workers.erase(i);
