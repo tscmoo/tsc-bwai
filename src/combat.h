@@ -1928,12 +1928,12 @@ void finish_attack() {
 					double r = 0.0;
 					for (unit*u : my_units_of_type[unit_types::spider_mine]) {
 						if (units_distance(u->pos, u->type, pos, unit_types::spider_mine) <= 32 * 3) {
-							r += 64.0;
+							r += 128.0;
 						}
 					}
 					for (auto*bst : bs_taken) {
 						if (units_distance(bst->pos + xy(16, 16), unit_types::spider_mine, pos, unit_types::spider_mine) <= 32 * 3) {
-							r += 64.0;
+							r += 128.0;
 						}
 					}
 					r += diag_distance(pos - defence_choke.center);
