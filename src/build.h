@@ -1203,14 +1203,15 @@ void execute_build_task() {
 					cancel_build_task(&b);
 					continue;
 				}
-				if (b.built_unit->dead || b.built_unit->type!=b.type->unit || b.built_unit->owner!=players::my_player) {
-					log("build task %s lost its built unit!\n",b.type->name);
+				if (b.built_unit->dead || b.built_unit->type != b.type->unit || b.built_unit->owner != players::my_player) {
+					log("build task %s lost its built unit!\n", b.type->name);
 					b.built_unit = nullptr;
+					if (b.type->unit != unit_types::bunker) unset_build_pos(&b);
 				}
 			}
 			if (b.builder) {
-				if (b.builder->dead || b.builder->type!=b.type->builder || b.builder->owner!=players::my_player) {
-					log("build task %s lost its builder\n",b.type->name);
+				if (b.builder->dead || b.builder->type != b.type->builder || b.builder->owner != players::my_player) {
+					log("build task %s lost its builder\n", b.type->name);
 					b.builder = nullptr;
 					if (b.type->unit != unit_types::bunker) unset_build_pos(&b);
 				}
