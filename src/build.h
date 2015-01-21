@@ -1188,14 +1188,14 @@ void execute_build_task() {
 					cancel_build_task(&b);
 					continue;
 				}
-				if (b.built_unit->dead || b.built_unit->type!=b.type->unit || b.built_unit->owner!=players::my_player) {
-					log("build task %s lost its built unit!\n",b.type->name);
-					b.built_unit = nullptr;
-				}
 				if (current_frame - b.built_unit->creation_frame >= b.type->build_time + 15 * 60 * 2) {
 					log("build task %s timed out\n", b.type->name);
 					cancel_build_task(&b);
 					continue;
+				}
+				if (b.built_unit->dead || b.built_unit->type!=b.type->unit || b.built_unit->owner!=players::my_player) {
+					log("build task %s lost its built unit!\n",b.type->name);
+					b.built_unit = nullptr;
 				}
 			}
 			if (b.builder) {
