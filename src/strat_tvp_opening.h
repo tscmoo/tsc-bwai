@@ -167,7 +167,7 @@ struct strat_tvp_opening {
 			if (enemy_dt_count) combat::aggressive_vultures = false;
 
 			int my_siege_tank_count = my_units_of_type[unit_types::siege_tank_tank_mode].size() + my_units_of_type[unit_types::siege_tank_siege_mode].size();
-			bool need_missile_turret = enemy_zealot_count + enemy_dragoon_count < 8 && !my_units_of_type[unit_types::machine_shop].empty() && my_units_of_type[unit_types::missile_turret].empty() && !opponent_has_fast_expanded;
+			bool need_missile_turret = enemy_zealot_count + enemy_dragoon_count < 8 && my_units_of_type[unit_types::missile_turret].empty() && !opponent_has_fast_expanded;
 			if (enemy_forge_count && my_siege_tank_count < 2) need_missile_turret = false;
 			if (enemy_cannon_count > 1 && my_siege_tank_count < 5) need_missile_turret = false;
 			if (attacking_zealot_count + attacking_dragoon_count > 2 && enemy_dt_count == 0) need_missile_turret = false;
@@ -223,7 +223,6 @@ struct strat_tvp_opening {
 				std::function<bool(state&)> army = [&](state&st) {
 					return nodelay(st, unit_types::siege_tank_tank_mode, [&](state&st) {
 						if (count_units_plus_production(st, unit_types::marine) < 4) return depbuild(st, state(st), unit_types::marine);
-						if (tank_count && count_units_plus_production(st, unit_types::factory) < 2) return depbuild(st, state(st), unit_types::factory);
 						return depbuild(st, state(st), unit_types::vulture);
 					});
 				};
@@ -245,21 +244,27 @@ struct strat_tvp_opening {
 						return nodelay(st, unit_types::bunker, army);
 					};
 				}
-
-				if (!opponent_has_fast_expanded && vulture_count < 4 && tank_count >= 1) {
-					army = [army](state&st) {
-						return nodelay(st, unit_types::scv, army);
-					};
-					army = [army](state&st) {
-						return nodelay(st, unit_types::vulture, army);
-					};
-				}
 				if (tank_count) {
-					if (need_missile_turret && count_units_plus_production(st, unit_types::missile_turret) == 0) {
+					if (count_units_plus_production(st, unit_types::factory) < 2) {
 						army = [army](state&st) {
-							return nodelay(st, unit_types::missile_turret, army);
+							return depbuild(st, state(st), unit_types::factory);
 						};
 					}
+					if (need_missile_turret && count_units_plus_production(st, unit_types::missile_turret) == 0) {
+						return nodelay(st, unit_types::missile_turret, [&](state&st) {
+							return nodelay(st, unit_types::scv, [&](state&st) {
+								return army(st);
+							});
+						});
+					}
+				}
+
+				if (!opponent_has_fast_expanded && vulture_count < 4 && tank_count >= 1) {
+					return nodelay(st, unit_types::vulture, [&](state&st) {
+						return nodelay(st, unit_types::scv, [&](state&st) {
+							return army(st);
+						});
+					});
 				}
 
 				return nodelay(st, unit_types::scv, [&](state&st) {
