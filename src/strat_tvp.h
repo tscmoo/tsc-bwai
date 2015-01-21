@@ -138,11 +138,13 @@ struct strat_tvp {
 			if (desired_goliath_count > 4) get_upgrades::set_upgrade_value(upgrade_types::charon_boosters, -1);
 			if (desired_wraith_count > 1) get_upgrades::set_upgrade_value(upgrade_types::cloaking_field, -1.0);
 
-			bool need_lots_of_goliaths = my_goliath_count - desired_goliath_count >= 8;
+			bool need_lots_of_goliaths = desired_goliath_count - my_goliath_count >= 8;
 
 			if (need_lots_of_goliaths) {
 
 				desired_wraith_count = 0;
+				if (!maxed_out_aggression) combat::no_aggressive_groups = true;
+				combat::build_missile_turret_count = 4;
 
 				if (!get_upgrades::no_auto_upgrades) {
 					get_upgrades::set_no_auto_upgrades(true);
