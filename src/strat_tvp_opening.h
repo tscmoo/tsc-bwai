@@ -6,7 +6,7 @@ struct strat_tvp_opening {
 	void run() {
 
 		combat::no_aggressive_groups = true;
-		combat::defensive_spider_mine_count = 20;
+		combat::defensive_spider_mine_count = 10;
 
 		using namespace buildpred;
 
@@ -20,6 +20,7 @@ struct strat_tvp_opening {
 		unit*scout_unit = nullptr;
 		size_t scout_index = 0;
 		bool opponent_has_fast_expanded = false;
+		size_t previous_base_count = 1;
 		while (true) {
 
 			update_possible_start_locations();
@@ -190,6 +191,11 @@ struct strat_tvp_opening {
 			//if (opponent_has_fast_expanded || my_units_of_type[unit_types::siege_tank_tank_mode].size() >= 2) {
 			if (players::my_player->has_upgrade(upgrade_types::siege_mode)) {
 				get_upgrades::set_upgrade_value(upgrade_types::spider_mines, -1.0);
+			}
+
+			if (get_my_current_state().bases.size() > previous_base_count) {
+				previous_base_count = get_my_current_state().bases.size();
+				combat::defensive_spider_mine_count += 12;
 			}
 
 			auto build = [&](state&st) {
