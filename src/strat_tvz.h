@@ -62,7 +62,6 @@ struct strat_tvz {
 			if (my_tank_count + my_goliath_count / 2 + my_marine_count / 3 < 6) combat::no_aggressive_groups = true;
 			if (enemy_lurker_count >= my_tank_count && my_science_vessel_count == 0) combat::no_aggressive_groups = true;
 			if (enemy_lurker_count >= 4 && my_tank_count < 4) combat::no_aggressive_groups = true;
-			if (get_op_current_state().bases.size() >= get_my_current_state().bases.size() + 2) combat::no_aggressive_groups = false;
 
 			if (current_used_total_supply >= 190.0) maxed_out_aggression = true;
 			if (maxed_out_aggression) {
@@ -70,10 +69,10 @@ struct strat_tvz {
 				if (current_used_total_supply < 100.0) maxed_out_aggression = false;
 			}
 
-// 			bool aggressive_vultures = true;
-// 			if (!players::my_player->has_upgrade(upgrade_types::spider_mines)) aggressive_vultures = false;
-// 			if (current_used_total_supply >= 100) aggressive_vultures = true;
-// 			if (aggressive_vultures != combat::aggressive_vultures) combat::aggressive_vultures = aggressive_vultures;
+			bool aggressive_vultures = true;
+			if (enemy_hydralisk_den_count && !players::my_player->has_upgrade(upgrade_types::spider_mines)) aggressive_vultures = false;
+			if (current_used_total_supply >= 100) aggressive_vultures = true;
+			if (aggressive_vultures != combat::aggressive_vultures) combat::aggressive_vultures = aggressive_vultures;
 
 			if (!has_built_control_tower && !my_units_of_type[unit_types::control_tower].empty()) {
 				has_built_control_tower = true;
@@ -184,6 +183,7 @@ struct strat_tvz {
 			int desired_science_vessel_count = (enemy_lurker_count + 5) / 6;
 			if (desired_science_vessel_count > (my_tank_count + my_goliath_count) / 4) desired_science_vessel_count = (my_tank_count + my_goliath_count) / 4;
 			int desired_goliath_count = 2 + enemy_mutalisk_count + enemy_guardian_count * 2;
+			if (enemy_spire_count) desired_goliath_count += 2;
 			if (enemy_spire_count + enemy_mutalisk_count) desired_goliath_count += 2;
 			if (my_tank_count < 2 && enemy_mutalisk_count == 0 && enemy_spire_count == 0) desired_goliath_count = 0;
 			int desired_wraith_count = 1 + (my_tank_count + my_goliath_count) / 8;
@@ -211,7 +211,7 @@ struct strat_tvz {
 				desired_valkyrie_count = 0;
 			}
 
-			if (desired_goliath_count - my_goliath_count >= 4) desired_wraith_count = 0;
+			if (desired_goliath_count - my_goliath_count >= 4 || (enemy_spire_count && my_goliath_count < 4)) desired_wraith_count = 0;
 
 			if (desired_goliath_count > 4) get_upgrades::set_upgrade_value(upgrade_types::charon_boosters, -1);
 			if (desired_wraith_count > 2) get_upgrades::set_upgrade_value(upgrade_types::cloaking_field, -1.0);
@@ -334,13 +334,23 @@ struct strat_tvz {
 						}
 					}
 
+					int machine_shops = count_production(st, unit_types::machine_shop);
+					for (auto&v : st.units[unit_types::factory]) {
+						if (v.has_addon) ++machine_shops;
+					}
+					if (machine_shops == 0) {
+						army = [army](state&st) {
+							return nodelay(st, unit_types::machine_shop, army);
+						};
+					}
+
 					if (vulture_count <= enemy_zergling_count / 5) {
 						army = [army](state&st) {
 							return nodelay(st, unit_types::vulture, army);
 						};
 					}
 
-					if (enemy_zergling_count < 8) {
+					if (enemy_zergling_count < 8 && enemy_hydralisk_den_count == 0) {
 						int goliath_count = count_units_plus_production(st, unit_types::goliath);
 						if (goliath_count < 2) {
 							army = [army](state&st) {
