@@ -624,8 +624,12 @@ void execute_build(build_task&b) {
 						default_build_pos = get_best_score(my_buildings, [&](unit*u) -> double {
 							double r = 0;
 							for (unit*w : my_workers) {
-								double d = units_pathing_distance(u, w);
+								double d = units_pathing_distance(w, u);
 								if (d != std::numeric_limits<double>::infinity()) r += d;
+							}
+							if (default_build_pos != xy()) {
+								double d = unit_pathing_distance(unit_types::scv, default_build_pos, u->pos) * 20;
+								if (d != std::numeric_limits<double>::infinity()) r -= d;
 							}
 							if (!is_safe(u->building->build_pos)) r += 100000;
 							auto i = blacklisted_default_build_pos.find(u->building->build_pos);
