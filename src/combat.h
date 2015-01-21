@@ -1689,9 +1689,8 @@ void finish_attack() {
 				if (damage <= 0) damage = 1.0;
 				damage *= w == e->stats->ground_weapon ? e->stats->ground_weapon_hits : e->stats->air_weapon_hits;
 				dpf += damage / w->cooldown;
-
 			}
-			prio_repair_n = (int)(dpf / repair_rate) + 1;
+			prio_repair_n = (int)(dpf / repair_rate) + 2;
 			log("dpf %g, repair_rate %g, bunker_repair_n %d\n", dpf, repair_rate, prio_repair_n);
 			if (prio_repair_n > 6) prio_repair_n = 6;
 		}
