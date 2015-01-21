@@ -115,7 +115,7 @@ struct strat_tvz_opening {
 			if (!my_units_of_type[unit_types::wraith].empty()) {
 				if (enemy_spire_count) {
 					for (auto&b : build::build_tasks) {
-						if (!b.built_unit && b.type->unit->builder_type == unit_types::starport) b.dead = true;
+						if (b.type->unit->builder_type == unit_types::starport) b.dead = true;
 					}
 					for (unit*u : my_completed_units_of_type[unit_types::starport]) {
 						u->game_unit->cancelTrain();
