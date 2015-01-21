@@ -414,7 +414,7 @@ void process(a_vector<unit_controller*>&controllers) {
 
 							c->attack_state = 1;
 							c->attack_timer = current_frame + turn_frames + wait_frames;
-							log("turn_frames + wait_frames is %d + %d = %d\n", turn_frames, wait_frames, turn_frames + wait_frames);
+							//log("turn_frames + wait_frames is %d + %d = %d\n", turn_frames, wait_frames, turn_frames + wait_frames);
 						} else {
 							move_to_attack_range();
 						}
