@@ -366,7 +366,10 @@ void resource_spots_task() {
 		}
 		if (first) {
 			first = false;
-			for (int i = 0; i < 50; ++i) update_spots();
+			for (int i = 0; i < 100; ++i) {
+				update_spots();
+				multitasking::yield_point();
+			}
 		}
 
 		update_spots();
