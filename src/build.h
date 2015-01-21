@@ -754,9 +754,11 @@ void execute_build(build_task&b) {
 				} else if (b.type->unit->is_refinery) {
 					unit*g = get_best_score(resource_units,[&](unit*r) {
 						if (r->type!=unit_types::vespene_geyser) return std::numeric_limits<double>::infinity();
-						return get_best_score(make_transform_filter(my_resource_depots,[&](unit*u) {
+						double d = get_best_score_value(my_resource_depots,[&](unit*u) {
 							return units_pathing_distance(unit_types::scv, r, u) + rng(32.0);
-						}));
+						});
+						if (d >= 32 * 20) return std::numeric_limits<double>::infinity();
+						return d;
 					},std::numeric_limits<double>::infinity());
 					if (g) {
 						pos = g->building->build_pos;
@@ -1189,6 +1191,11 @@ void execute_build_task() {
 				if (b.built_unit->dead || b.built_unit->type!=b.type->unit || b.built_unit->owner!=players::my_player) {
 					log("build task %s lost its built unit!\n",b.type->name);
 					b.built_unit = nullptr;
+				}
+				if (current_frame - b.built_unit->creation_frame >= b.type->build_time + 15 * 60 * 2) {
+					log("build task %s timed out\n", b.type->name);
+					cancel_build_task(&b);
+					continue;
 				}
 			}
 			if (b.builder) {
