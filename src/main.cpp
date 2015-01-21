@@ -88,9 +88,23 @@ struct simple_logger {
 };
 simple_logger logger;
 
+
+enum {
+	log_level_all,
+	log_level_debug,
+	log_level_info
+};
+
+int current_log_level = test_mode ? log_level_all : log_level_info;
+
 template<typename...T>
-void log(const char*fmt,T&&...args) {
-	logger(fmt,std::forward<T>(args)...);
+void log(int level, const char*fmt, T&&...args) {
+	if (current_log_level <= level) logger(fmt, std::forward<T>(args)...);
+}
+
+template<typename...T>
+void log(const char*fmt, T&&...args) {
+	log(log_level_debug, fmt, std::forward<T>(args)...);
 }
 
 struct xcept_t {
@@ -106,7 +120,7 @@ struct xcept_t {
 		try {
 			auto&str = ++n%2 ? str1 : str2;
 			tsc::strf::format(str,fmt,std::forward<T>(args)...);
-			log("about to throw exception %s\n",str);
+			log(log_level_info, "about to throw exception %s\n", str);
 //#ifdef _DEBUG
 			DebugBreak();
 //#endif
@@ -304,21 +318,19 @@ struct module : BWAPI::AIModule {
 
 	virtual void onStart() override {
 
+		log(log_level_info, "game start\n");
+
 		current_frame = game->getFrameCount();
 
 		game->enableFlag(BWAPI::Flag::UserInput);
 
-		game->setLocalSpeed(15);
-		//game->setLocalSpeed(30);
-		//game->setLocalSpeed(0);
+		game->setLocalSpeed(0);
 
 		if (!game->self()) return;
 
 		game->sendText("tsc-bwai v0.2.0 dev");
 
 		init();
-
-		game->setLocalSpeed(0);
 
 	}
 
@@ -370,10 +382,10 @@ struct module : BWAPI::AIModule {
 
 		double elapsed = ht.elapsed();
 		if (elapsed >= 1.0 / 20) {
-			log(" WARNING: frame took %fs!\n", elapsed);
+			log(log_level_info, " WARNING: frame took %fs!\n", elapsed);
 			for (auto id : multitasking::detail::running_tasks) {
 				auto&t = multitasking::detail::tasks[id];
-				log(" - %s took %f\n", t.name, multitasking::get_cpu_time(id) - last_cpu_time[id]);
+				log(log_level_info, " - %s took %f\n", t.name, multitasking::get_cpu_time(id) - last_cpu_time[id]);
 			}
 		}
 
@@ -425,10 +437,10 @@ void bwapi_connect() {
 
 int main() {
 
-	log("connecting\n");
+	log(log_level_info, "connecting\n");
 	bwapi_connect();
 
-	log("waiting for game start\n");
+	log(log_level_info, "waiting for game start\n");
 	while (BWAPI::BWAPIClient.isConnected() && !game->isInGame()) {
 		BWAPI::BWAPIClient.update();
 	}
@@ -470,11 +482,11 @@ int main() {
 		}
 		BWAPI::BWAPIClient.update();
 		if (!BWAPI::BWAPIClient.isConnected()) {
-			log("disconnected\n");
+			log(log_level_info, "disconnected\n");
 			break;
 		}
 	}
-	log("game over\n");
+	log(log_level_info, "game over\n");
 
 	return 0;
 }
