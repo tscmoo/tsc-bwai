@@ -39,6 +39,7 @@ struct build_task: refcounted {
 	double supply_req;
 	void*flag;
 	int upgrade_done_frame;
+	int build_started_frame;
 };
 
 a_list<build_type> build_type_container;
@@ -229,6 +230,7 @@ build_task*add_build_task(double priority,build_type*type) {
 	t->supply_req = 0;
 	t->flag = nullptr;
 	t->upgrade_done_frame = 0;
+	t->build_started_frame = 0;
 	build_tasks_for_type[type].push_back(*t);
 	build_order.push_back(*t);
 	priority_groups[priority].push_back(*t);
@@ -1114,11 +1116,13 @@ bool match_new_unit(unit*u) {
 		if (b.type->unit != u->type) continue;
 		if (u->build_unit == b.builder) {
 			b.built_unit = u;
+			b.build_started_frame = current_frame;
 			return true;
 		}
 		if (b.build_pos!=xy()) {
 			if (u->building && u->building->build_pos==b.build_pos) {
 				b.built_unit = u;
+				b.build_started_frame = current_frame;
 				return true;
 			}
 		} else {
@@ -1127,11 +1131,13 @@ bool match_new_unit(unit*u) {
 			if (b.type->unit->is_addon) {
 				if (b.builder && b.builder->addon == u) {
 					b.built_unit = u;
+					b.build_started_frame = current_frame;
 					return true;
 				}
 			} else {
 				if (b.builder && b.builder->pos == u->pos) {
 					b.built_unit = u;
+					b.build_started_frame = current_frame;
 					return true;
 				}
 			}
@@ -1188,7 +1194,7 @@ void execute_build_task() {
 					cancel_build_task(&b);
 					continue;
 				}
-				if (current_frame - b.built_unit->creation_frame >= b.type->build_time + 15 * 60 * 2) {
+				if (current_frame - b.build_started_frame >= b.type->build_time + 15 * 60 * 2) {
 					log("build task %s timed out\n", b.type->name);
 					cancel_build_task(&b);
 					continue;
