@@ -190,7 +190,7 @@ struct unit {
 	int marines_loaded;
 	int strategy_high_priority_until;
 
-	std::array<size_t,std::extent<decltype(units::unit_containers)>::value> container_indexes;
+	std::array<size_t, std::extent<decltype(units::unit_containers)>::value> container_indexes;
 };
 
 namespace units {
@@ -842,6 +842,7 @@ void update_building_squares() {
 
 	for (unit*u : visible_buildings) {
 		unit_building*b = u->building;
+		if (!b) continue;
 		if (b->is_lifted) continue;
 
 		if (b->walk_squares_occupied.empty()) {
