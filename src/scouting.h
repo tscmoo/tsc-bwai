@@ -55,7 +55,7 @@ void follow_workers() {
 				double relang = ang - heading;
 				if (relang < -PI) relang += PI * 2;
 				else if (relang > PI) relang -= PI * 2;
-				if (std::abs(relang) < PI*0.75) {
+				if (std::abs(relang) < PI / 2 * 0.75) {
 					positions.push_back(r.cc_build_pos);
 				}
 			}
