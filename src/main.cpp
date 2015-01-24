@@ -323,12 +323,12 @@ struct module : BWAPI::AIModule {
 		current_frame = game->getFrameCount();
 
 		game->enableFlag(BWAPI::Flag::UserInput);
-
+		game->setCommandOptimizationLevel(2);
 		game->setLocalSpeed(0);
 
 		if (!game->self()) return;
 
-		game->sendText("tsc-bwai v0.2.0 dev");
+		game->sendText("tsc-bwai v0.2.1 dev");
 
 		init();
 
@@ -357,13 +357,15 @@ struct module : BWAPI::AIModule {
 			else holding_x = false;
 			static bool last_holding_x;
 			static bool fast = true;
-			if (last_holding_x&&!holding_x) fast = !fast;
-			last_holding_x = holding_x;
-			if (fast) {
-				game->setLocalSpeed(0);
-			} else {
-				game->setLocalSpeed(30);
+			if (last_holding_x && !holding_x) {
+				fast = !fast;
+				if (fast) {
+					game->setLocalSpeed(0);
+				} else {
+					game->setLocalSpeed(30);
+				}
 			}
+			last_holding_x = holding_x;
 		}
 
 		current_frame = game->getFrameCount();
