@@ -425,6 +425,10 @@ void resource_gathering_task() {
 
 	a_unordered_set<unit*> initial_worker_mine_taken;
 
+	for (unit*u : my_units_of_type[unit_types::cc]) {
+		u->game_unit->train(BWAPI::UnitTypes::Terran_SCV);
+	}
+
 	while (true) {
 
 		resource_depots.clear();
