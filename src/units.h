@@ -184,6 +184,7 @@ struct unit {
 	bool has_nuke;
 	int lockdown_timer;
 	int stasis_timer;
+	int irradiate_timer;
 	int defensive_matrix_timer;
 	double defensive_matrix_hp;
 	int scan_me_until;
@@ -706,6 +707,7 @@ void update_unit_stuff(unit*u) {
 	u->stasis_timer = u->game_unit->getStasisTimer() * 8;
 	u->defensive_matrix_timer = u->game_unit->getDefenseMatrixTimer() * 8;
 	u->defensive_matrix_hp = u->game_unit->getDefenseMatrixPoints();
+	u->irradiate_timer = u->game_unit->getIrradiateTimer() * 8;
 	
 	u->is_powered = bwapi_is_powered(u->game_unit);
 
