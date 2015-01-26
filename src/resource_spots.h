@@ -128,8 +128,8 @@ void update_spots_pos() {
 
 	for (auto&s : spots) {
 		if (s.cc_build_pos!=xy()) {
-			for (int y = 0; y < 32 * 3; y += 32) {
-				for (int x = 0; x < 32 * 4; x += 32) {
+			for (int y = -1; y < 32 * (1 + 3 + 1); y += 32) {
+				for (int x = -1; x < 32 * (1 + 4 + 1); x += 32) {
 					grid::get_build_square(s.cc_build_pos + xy(x, y)).reserved_for_resource_depot = true;
 				}
 			}

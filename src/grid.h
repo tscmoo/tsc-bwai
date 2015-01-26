@@ -195,14 +195,6 @@ void update_mineral_reserved_task() {
 				}
 			};
 			invalidate(u);
-
-			unit*n = get_best_score(my_resource_depots, [&](unit*n) {
-				if (u->building->is_lifted) return std::numeric_limits<double>::infinity();
-				return units_distance(n,u);
-			},std::numeric_limits<double>::infinity());
-			if (n && units_distance(n,u)<=32*8) {
-				invalidate(n);
-			}
 		}
 
 		// quick hack to allow space for comsats
