@@ -15,6 +15,7 @@ namespace combat_eval {
 		int stim_pack_timer = 0;
 		int heal_frame = 0;
 		int spider_mine_count = 0;
+		int irradiate_timer = 0;
 	};
 
 	double get_damage_type_modifier(int damage_type, int target_size) {
@@ -91,6 +92,7 @@ namespace combat_eval {
 			c.spider_mine_count = u->spider_mine_count;
 			if (u->lockdown_timer) c.cooldown += u->lockdown_timer;
 			if (u->defensive_matrix_hp) c.hp += u->defensive_matrix_hp;
+			if (u->irradiate_timer) c.irradiate_timer = u->irradiate_timer;
 		}
 
 		void run() {
@@ -169,7 +171,7 @@ namespace combat_eval {
 										if (!ew) continue;
 										if (ec.cooldown >= 15 * 5) continue;
 									}
-									if (!c.force_target) {
+									if (!c.force_target && (!c.irradiate_timer || !ec.st->type->is_biological)) {
 										weapon_stats*w = ec.st->type->is_flyer ? c.st->air_weapon : c.st->ground_weapon;
 										if (!w) continue;
 										//if (c.move + ec.move < w->min_range) continue;
@@ -185,20 +187,21 @@ namespace combat_eval {
 							}
 							c.target = target;
 						}
-						if (c.cooldown) c.cooldown -= frame_resolution;
+						if (c.cooldown > 0) c.cooldown -= frame_resolution;
+						if (c.irradiate_timer > 0) c.irradiate_timer -= frame_resolution;
 						//if (c.st->type == unit_types::dropship) log("frame %d: %s: target is %p (force_target %d)\n", total_frames, c.st->type->name, target, c.force_target);
 						if (target) {
 							weapon_stats*w = target->st->type->is_flyer ? c.st->air_weapon : c.st->ground_weapon;
 							bool use_spider_mine = c.spider_mine_count && my_team.has_spider_mines && !target->st->type->is_hovering && !target->st->type->is_flyer && !target->st->type->is_building;
 							if (use_spider_mine && target->st->type == unit_types::lurker) use_spider_mine = false;
-							if (!w) {
+							if (!w && !c.irradiate_timer) {
 								if (c.st->max_speed > 0 && c.move > 0) {
 									++target_count;
 									if (teams[i].has_static_defence) c.move -= c.st->max_speed * frame_resolution / 4;
 									else c.move -= c.st->max_speed * frame_resolution;
 									my_team.score += c.st->max_speed / 1000.0 * frame_resolution;
 								}
-							} else if (c.move + target->move > (use_spider_mine ? 0 : w->max_range)) {
+							} else if (c.move + target->move > (use_spider_mine ? 0 : (w ? w->max_range : 32 * 2))) {
 							//} else if (c.move > w->max_range) {
 							//} else if (target->move > w->max_range) {
 								double speed = c.st->max_speed;
@@ -217,13 +220,19 @@ namespace combat_eval {
 									int hits = w == c.st->ground_weapon ? c.st->ground_weapon_hits : c.st->air_weapon_hits;
 									//if (target->move > c.move) target->move = c.move;
 									auto attack = [&](combatant*target, double damage_mult) {
-										double damage = w->damage;
-										if (target->shields <= 0) damage *= get_damage_type_modifier(w->damage_type, target->st->type->size);
-										damage -= target->st->armor;
-										if (damage <= 0) damage = 1.0;
-										damage *= hits;
+										double damage;
+										if (w) {
+											damage = w->damage;
+											if (target->shields <= 0) damage *= get_damage_type_modifier(w->damage_type, target->st->type->size);
+											damage -= target->st->armor;
+											if (damage <= 0) damage = 1.0;
+											damage *= hits;
+										} else {
+											damage = 120.0 / 256.0; // fixme: use the correct irradiate damage
+											damage *= frame_resolution;
+										}
 										damage *= damage_mult;
-										if (target->move + c.move < w->min_range) damage /= 2;
+										if (target->move + c.move < (w ? w->min_range : 0.0)) damage /= 2;
 										if (target->shields > 0) {
 											target->shields -= damage;
 											if (target->shields < 0) {
@@ -237,7 +246,7 @@ namespace combat_eval {
 										//log("%s dealt %g damage to %s\n", c.st->type->name, damage_dealt, target->st->type->name);
 										my_team.damage_dealt += damage_dealt;
 										enemy_team.damage_taken += damage_dealt;
-										int cooldown = w->cooldown;
+										int cooldown = w ? w->cooldown : frame_resolution;
 										if (c.st->type == unit_types::interceptor) cooldown = 60;
 										if (c.st->type == unit_types::marine) {
 // 											if (my_team.has_stim && c.stim_pack_timer == 0 && c.hp>10) {
