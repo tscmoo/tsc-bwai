@@ -1142,7 +1142,6 @@ a_unordered_set<unit*> active_spider_mine_targets;
 a_unordered_set<unit*> my_spider_mines_in_range_of;
 
 //a_unordered_map<unit*, double> nuke_damage;
-a_unordered_set<unit*> lockdown_target_taken;
 tsc::dynamic_bitset build_square_taken;
 a_unordered_map<unit*, int> space_left;
 a_unordered_map<unit*, int> bunker_repair_count;
@@ -1200,7 +1199,6 @@ void prepare_attack() {
 	}
 
 	//nuke_damage.clear();
-	lockdown_target_taken.clear();
 	build_square_taken.reset();
 	space_left.clear();
 	for (unit*u : my_units_of_type[unit_types::bunker]) {
@@ -1398,6 +1396,7 @@ void finish_attack() {
 		}
 	};
 	if (players::my_player->has_upgrade(upgrade_types::lockdown)) {
+		a_unordered_set<unit*> target_taken;
 		for (auto*c : ghosts) {
 			if (c->u->energy < 100) continue;
 			if (current_frame - c->last_run <= 15) {
@@ -1406,7 +1405,7 @@ void finish_attack() {
 					if (u->visible && !u->detected) return std::numeric_limits<double>::infinity();
 					if (!u->type->is_mechanical) return std::numeric_limits<double>::infinity();
 					if (u->lockdown_timer) return std::numeric_limits<double>::infinity();
-					if (lockdown_target_taken.count(u)) return std::numeric_limits<double>::infinity();
+					if (target_taken.count(u)) return std::numeric_limits<double>::infinity();
 					double value = u->minerals_value + u->gas_value;
 					if (value < 200 && c->u->energy < 200) return std::numeric_limits<double>::infinity();
 					double r = diag_distance(u->pos - c->u->pos) - 32 * 8;
@@ -1415,7 +1414,7 @@ void finish_attack() {
 					return r / value / ((u->shields + u->hp) / (u->stats->shields + u->stats->hp));
 				}, std::numeric_limits<double>::infinity());
 				if (target) {
-					lockdown_target_taken.insert(target);
+					target_taken.insert(target);
 					double r = units_distance(c->u, target);
 					if (r <= 32 * 8) {
 						if (current_frame - c->last_used_special >= 8) {
@@ -1557,6 +1556,78 @@ void finish_attack() {
 		if (current_frame < c->strategy_busy_until) continue;
 		if (c->u->type == unit_types::science_vessel) science_vessels.push_back(c);
 	}
+
+	if (players::my_player->has_upgrade(upgrade_types::irradiate)) {
+		a_unordered_set<unit*> target_taken;
+		int num_with_100_energy = 0;
+		for (auto*c : science_vessels) {
+			if (c->u->energy >= 100) ++num_with_100_energy;
+		}
+		for (auto*c : science_vessels) {
+			if (c->u->energy < 75) continue;
+			double air_dpf = 0.0;
+			double non_burrowed_hp = 0.0;
+			unit*target = get_best_score(enemy_units, [&](unit*e) {
+				if (!e->visible || !e->detected) return std::numeric_limits<double>::infinity();
+				if (e->building) return std::numeric_limits<double>::infinity();
+				if (e->stasis_timer) return std::numeric_limits<double>::infinity();
+				if (e->irradiate_timer) return std::numeric_limits<double>::infinity();
+				if (!e->type->is_biological) return std::numeric_limits<double>::infinity();
+				if (target_taken.count(e)) return std::numeric_limits<double>::infinity();
+				double value = e->minerals_value + e->gas_value * 2;
+				if (value < 200 && c->u->hp > c->u->stats->hp*0.25) return std::numeric_limits<double>::infinity();
+				double d = diag_distance(e->pos - c->u->pos);
+				if (d > 32 * 20) return std::numeric_limits<double>::infinity();
+				if (d < 32 * 9) d = 32 * 9;
+
+				double ehp = e->shields + e->hp;
+				ehp -= focus_fire[e];
+				if (ehp < 0) ehp = 0;
+				
+				if (!e->burrowed) non_burrowed_hp += ehp;
+
+				if (c->u->hp >= c->u->stats->hp*0.5 && c->u->energy < 150) {
+					if (d > 32 * 12) return std::numeric_limits<double>::infinity();
+					if (ehp < 100) return std::numeric_limits<double>::infinity();
+				}
+
+				if (e->stats->air_weapon) {
+					d /= 2;
+					weapon_stats*w = e->stats->air_weapon;
+					double damage = w->damage;
+					if (c->u->shields <= 0) damage *= combat_eval::get_damage_type_modifier(w->damage_type, c->u->stats->type->size);
+					damage -= c->u->stats->armor;
+					if (damage <= 0) damage = 1.0;
+					damage *= w == e->stats->ground_weapon ? e->stats->ground_weapon_hits : e->stats->air_weapon_hits;
+					air_dpf += damage / w->cooldown;
+				}
+
+				return d / value / (ehp / (e->stats->shields + e->stats->hp));
+			}, std::numeric_limits<double>::infinity());
+			//if ((air_dpf < 0.5 || air_dpf < num_with_100_energy * 2) && non_burrowed_hp >= 200) {
+			if (air_dpf < 0.5 && non_burrowed_hp >= 200) {
+				combat_unit*nearest_science_vessel = get_best_score(science_vessels, [&](combat_unit*c2) {
+					if (c2 == c) return std::numeric_limits<double>::infinity();
+					if (target_taken.count(c2->u)) return std::numeric_limits<double>::infinity();
+					return diag_distance(c->u->pos - c2->u->pos);
+				}, std::numeric_limits<double>::infinity());
+				if (nearest_science_vessel && units_distance(c->u, nearest_science_vessel->u) <= 32 * 10) target = nearest_science_vessel->u;
+			}
+			if (target) {
+				if (units_distance(c->u, target) <= 32 * 15) {
+					target_taken.insert(target);
+					c->subaction = combat_unit::subaction_idle;
+					if (current_frame - c->last_used_special >= 8) {
+						c->u->game_unit->useTech(upgrade_types::irradiate->game_tech_type, target->game_unit);
+						c->last_used_special = current_frame;
+						c->u->controller->noorder_until = current_frame + 8;
+					}
+				}
+			}
+		}
+	}
+
+
 	if (!science_vessels.empty()) {
 		a_vector<combat_unit*> wants_defensive_matrix;
 		for (auto*c : live_combat_units) {
@@ -1719,6 +1790,7 @@ void finish_attack() {
 			if (u->type->minerals_cost && current_minerals < 1) continue;
 			if (u->type->gas_cost && current_gas < 5) continue;
 			if (u->type->is_worker && ++worker_repair_count>1) continue;
+			if (u->irradiate_timer) continue;
 			if (u->type != unit_types::siege_tank_tank_mode && u->type != unit_types::siege_tank_siege_mode && !u->is_flying) {
 				if (!my_base.test(grid::build_square_index(u->pos))) continue;
 			}
@@ -1793,21 +1865,24 @@ void finish_attack() {
 				if (repair_flyer || (u->is_flying && units_distance(c->u, u) <= 32 * 4) || cu->is_repairing) {
 					double d = units_distance(c->u, u);
 					if (d > 32 || cu->is_repairing) {
-						if (d <= 32 && (cu->subaction == combat_unit::subaction_fight || cu->subaction == combat_unit::subaction_kite)) {
-							weapon_stats*w = cu->target->is_flying ? u->stats->air_weapon : u->stats->ground_weapon;
-							if (!w || units_distance(u, cu->target) > w->max_range) {
-								move = true;
-							}
-						} else {
-							move = true;
-						}
+// 						if (d <= 32 && (cu->subaction == combat_unit::subaction_fight || cu->subaction == combat_unit::subaction_kite)) {
+// 							weapon_stats*w = cu->target->is_flying ? u->stats->air_weapon : u->stats->ground_weapon;
+// 							if (!w || units_distance(u, cu->target) > w->max_range) {
+// 								move = true;
+// 							}
+// 						} else {
+// 							move = true;
+// 						}
+						move = true;
 						cu->is_repairing = u->hp < u->stats->hp*(1.0 - 1.0 / 64);
 					}
 				}
-				if (move && c->u > moved_to && u->type != unit_types::battlecruiser) {
+				if (c->u > moved_to && u->type != unit_types::battlecruiser) {
 					moved_to = c->u;
-					cu->subaction = combat_unit::subaction_move_directly;
-					cu->target_pos = c->u->pos;
+					if (move) {
+						cu->subaction = combat_unit::subaction_move_directly;
+						cu->target_pos = c->u->pos;
+					}
 				}
 			}
 		}
@@ -2033,6 +2108,7 @@ void finish_attack() {
 				double value = e->minerals_value + e->gas_value * 2;
 				if (value < 200 && c->u->hp > c->u->stats->hp*0.25) return std::numeric_limits<double>::infinity();
 				double d = diag_distance(e->pos - c->u->pos);
+				if (d > 32 * 15) return std::numeric_limits<double>::infinity();
 				if (d < 32 * 10) d = 32 * 10;
 
 				double ehp = e->shields + e->hp;
@@ -2212,6 +2288,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 		is_weaponless_target |= e->type == unit_types::pylon;
 		is_weaponless_target |= e->type == unit_types::reaver;
 		is_weaponless_target |= e->type == unit_types::high_templar;
+		is_weaponless_target |= e->type == unit_types::defiler;
 		bool is_attack_pylon = false;
 		if (e->type == unit_types::pylon && attack_pylons.count(e)) {
 			is_attack_pylon = true;
@@ -2246,6 +2323,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 		if (e->type->requires_pylon && !e->is_powered) hits += 10;
 		//if (d > w->max_range) return std::make_tuple(std::numeric_limits<double>::infinity(), hits + (d - w->max_range) / a->u->stats->max_speed / 90, 0.0);
 		if (d > w_max_range) hits += (d - w_max_range) / a->u->stats->max_speed / 4;
+		if (d > w_max_range && allies.size() >= 10) hits += 100;
 		if (d < w_max_range || a->u->is_flying) {
 			if (e->type == unit_types::carrier) hits /= 10;
 			if (e->is_flying && e->type != unit_types::overlord) hits /= 10;
@@ -2741,7 +2819,9 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 			weapon_stats*e_weapon = a->u->is_flying ? target->stats->air_weapon : target->stats->ground_weapon;
 			if (!e_weapon) continue;
 			if (e_weapon->explosion_type != weapon_stats::explosion_type_radial_splash && e_weapon->explosion_type != weapon_stats::explosion_type_enemy_splash) continue;
-			if (units_distance(a->u, e) > e_weapon->max_range) continue;
+			double max_range = e_weapon->max_range;
+			if (e->type == unit_types::lurker) max_range = 32 * 8;
+			if (units_distance(a->u, e) > max_range) continue;
 			splash_weapon = e_weapon;
 			break;
 		}
@@ -2873,7 +2953,21 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 	}
 
 	if (target && a->u->type == unit_types::science_vessel) {
-		if (entire_threat_area.test(grid::build_square_index(a->u->pos))) {
+		bool moved = false;
+		if (a->u->irradiate_timer) {
+			unit*target = get_best_score(enemies, [&](unit*e) {
+				if (e->building) return std::numeric_limits<double>::infinity();
+				if (e->burrowed) return std::numeric_limits<double>::infinity();
+				if (!e->type->is_biological) return std::numeric_limits<double>::infinity();
+				return units_distance(e, a->u);
+			}, std::numeric_limits<double>::infinity());
+			if (target) {
+				a->subaction = combat_unit::subaction_move;
+				a->target_pos = target->pos;
+				moved = true;
+			}
+		}
+		if (!moved && entire_threat_area.test(grid::build_square_index(a->u->pos))) {
 
 			unit*cloaked = get_best_score(enemies, [&](unit*e) {
 				if (!e->cloaked) return std::numeric_limits<double>::infinity();
@@ -2914,7 +3008,6 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 				});
 				if (!path.empty()) {
 					a->subaction = combat_unit::subaction_move;
-					build_square_taken.set(grid::build_square_index(path.back()));
 					a->target_pos = path.back();
 				}
 
