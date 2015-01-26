@@ -40,6 +40,7 @@ namespace upgrade_types {
 	upgrade_type_pointer charon_boosters;
 	upgrade_type_pointer defensive_matrix, emp_shockwave, irradiate, titan_reactor;
 	upgrade_type_pointer cloaking_field;
+	upgrade_type_pointer yamato_gun;
 
 	upgrade_type_pointer zerg_melee_attacks_1, zerg_melee_attacks_2, zerg_melee_attacks_3;
 	upgrade_type_pointer zerg_missile_attacks_1, zerg_missile_attacks_2, zerg_missile_attacks_3;
@@ -88,6 +89,7 @@ namespace upgrade_types {
 		get(irradiate, BWAPI::TechTypes::Irradiate);
 		get(titan_reactor, BWAPI::UpgradeTypes::Titan_Reactor);
 		get(cloaking_field, BWAPI::TechTypes::Cloaking_Field);
+		get(yamato_gun, BWAPI::TechTypes::Yamato_Gun);
 
 		get(zerg_melee_attacks_1, BWAPI::UpgradeTypes::Zerg_Melee_Attacks, 1);
 		get(zerg_melee_attacks_2, BWAPI::UpgradeTypes::Zerg_Melee_Attacks, 2);
