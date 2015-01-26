@@ -262,6 +262,8 @@ struct combat_unit {
 	int strategy_busy_until = 0;
 	bool maybe_stuck = false;
 	unit*stuck_target = nullptr;
+	bool is_repairing = false;
+	int registered_focus_fire_until = 0;
 };
 a_unordered_map<unit*, combat_unit> combat_unit_map;
 
@@ -866,6 +868,7 @@ void update_groups() {
 					if (can_attack_any && any_can_attack_me) break;
 				}
 				if (!can_attack_any && !any_can_attack_me) continue;
+				if (cu->u->is_flying && !can_attack_any) continue;
 // 				if (current_used_total_supply >= 40) {
 // 					if (cu->u->type->is_worker && !any_can_attack_me) continue;
 // 				}
@@ -1317,6 +1320,7 @@ void finish_attack() {
 				if (e->type->is_non_usable) continue;
 				if (e->invincible) continue;
 				if (e->type->size == unit_type::size_small && (nearest_sieged_tank_distance < 32 * 5 || nearest_sieged_tank_distance > 32 * 12)) continue;
+				if (e->type == unit_types::lurker && e->burrowed) continue;
 				double d = diag_distance(e->pos - c->u->pos);
 				if (d <= 32 * 5) {
 					nearby_target = e;
@@ -1404,7 +1408,7 @@ void finish_attack() {
 					if (u->lockdown_timer) return std::numeric_limits<double>::infinity();
 					if (lockdown_target_taken.count(u)) return std::numeric_limits<double>::infinity();
 					double value = u->minerals_value + u->gas_value;
-					if (value < 200) return std::numeric_limits<double>::infinity();
+					if (value < 200 && c->u->energy < 200) return std::numeric_limits<double>::infinity();
 					double r = diag_distance(u->pos - c->u->pos) - 32 * 8;
 					if (r < 0) r = 0;
 
@@ -1665,7 +1669,7 @@ void finish_attack() {
 			}
 			return ned;
 		};
-		if (current_used_total_supply < 50 && no_aggressive_groups) {
+		if (current_used_total_supply < 70 && no_aggressive_groups) {
 			prio_unit = get_best_score(my_completed_units_of_type[unit_types::bunker], prio_score_func, std::numeric_limits<double>::infinity());
 			if (!prio_unit) prio_unit = get_best_score(my_completed_units_of_type[unit_types::siege_tank_tank_mode], prio_score_func, std::numeric_limits<double>::infinity());
 			if (!prio_unit) prio_unit = get_best_score(my_completed_units_of_type[unit_types::siege_tank_siege_mode], prio_score_func, std::numeric_limits<double>::infinity());
@@ -1681,7 +1685,9 @@ void finish_attack() {
 			for (unit*e : enemy_units) {
 				if (e->gone) continue;
 				if (!e->stats->ground_weapon) continue;
+				if (e->is_flying) continue;
 				if (current_frame - e->last_seen >= 15 * 20) continue;
+				if (diag_distance(e->pos - prio_unit->pos) >= 32 * 30) continue;
 				weapon_stats*w = e->stats->ground_weapon;
 				double damage = w->damage;
 				if (prio_unit->shields <= 0) damage *= combat_eval::get_damage_type_modifier(w->damage_type, prio_unit->stats->type->size);
@@ -1713,9 +1719,9 @@ void finish_attack() {
 			if (u->type->minerals_cost && current_minerals < 1) continue;
 			if (u->type->gas_cost && current_gas < 5) continue;
 			if (u->type->is_worker && ++worker_repair_count>1) continue;
-			//if (u->type != unit_types::siege_tank_tank_mode && u->type != unit_types::siege_tank_siege_mode) {
+			if (u->type != unit_types::siege_tank_tank_mode && u->type != unit_types::siege_tank_siege_mode && !u->is_flying) {
 				if (!my_base.test(grid::build_square_index(u->pos))) continue;
-			//}
+			}
 			if (u != prio_unit && u->type == unit_types::bunker && u->loaded_units.empty() && entire_threat_area.test(grid::build_square_index(u->pos))) continue;
 			if (u->type == unit_types::bunker) {
 				double d = get_best_score_value(my_resource_depots, [&](unit*depot) {
@@ -1723,11 +1729,22 @@ void finish_attack() {
 				});
 				if (d > 32 * 20 && diag_distance(my_closest_base - u->pos) >= 32 * 20) continue;
 			}
-			if (u->hp < u->stats->hp || u == prio_unit) wants_repair.push_back(u);
+			if (u->hp < u->stats->hp || u == prio_unit) {
+				bool skip = false;
+				for (unit*e : enemy_units) {
+					if (!e->visible) continue;
+					if (e->type == unit_types::lurker) {
+						if (units_distance(u, e) <= 32 * 6) skip = true;
+					}
+					if (skip) break;
+				}
+				if (!skip) wants_repair.push_back(u);
+			}
 		}
 		std::sort(wants_repair.begin(), wants_repair.end(), [&](unit*a, unit*b) {
 			if (a->type == unit_types::bunker && b->type != unit_types::bunker) return true;
 			if (a->type == unit_types::missile_turret && b->type != unit_types::missile_turret) return true;
+			if (!a->building && b->building && b->hp>b->stats->hp / 2) return true;
 			return a->minerals_value + a->gas_value > b->minerals_value + b->gas_value;
 		});
 		int scvs_assigned = 0;
@@ -1735,19 +1752,24 @@ void finish_attack() {
 		for (auto*u : wants_repair) {
 			if (scvs.empty()) break;
 			if (scvs_assigned >= max_scvs_assigned) break;
+			auto*cu = &combat_unit_map[u];
 			int max_n = 2;
+			bool repair_flyer = u->is_flying && (u->hp <= u->stats->hp / 2 || cu->is_repairing);
+			if (repair_flyer) max_n = 4;
 			if (u->type == unit_types::siege_tank_tank_mode || u->type == unit_types::siege_tank_siege_mode) max_n = 5;
 			if (u->building) max_n = 4;
 			if (u == prio_unit) max_n = prio_repair_n;
-			else if (u->type != unit_types::bunker && u->type != unit_types::missile_turret) {
+			else if (u->type != unit_types::bunker && u->type != unit_types::missile_turret && !cu->is_repairing) {
 				if (u->hp > u->stats->hp / 2) max_n = 1;
 			}
 			//auto*ug = u->building ? nullptr : unit_group[u];
+			unit*moved_to = nullptr;
 			for (int i = 0; i < max_n; ++i) {
 				combat_unit*c = get_best_score(scvs, [&](combat_unit*c) {
 					if (c->u == u) return std::numeric_limits<double>::infinity();
 					//if (ug && unit_group[c->u] != ug) return std::numeric_limits<double>::infinity();
-					if (!square_pathing::unit_can_reach(c->u, c->u->pos, u->pos)) return std::numeric_limits<double>::infinity();
+					
+					if (!repair_flyer && !square_pathing::unit_can_reach(c->u, c->u->pos, u->pos)) return std::numeric_limits<double>::infinity();
 					//if (u->type->is_worker && c->u->hp < c->u->stats->hp) return std::numeric_limits<double>::infinity();
 					if (current_frame - c->last_run <= 15 * 2 && u != prio_unit) return std::numeric_limits<double>::infinity();
 
@@ -1766,6 +1788,27 @@ void finish_attack() {
 				c->target = u;
 				find_and_erase(scvs, c);
 				++scvs_assigned;
+
+				bool move = false;
+				if (repair_flyer || (u->is_flying && units_distance(c->u, u) <= 32 * 4) || cu->is_repairing) {
+					double d = units_distance(c->u, u);
+					if (d > 32 || cu->is_repairing) {
+						if (d <= 32 && (cu->subaction == combat_unit::subaction_fight || cu->subaction == combat_unit::subaction_kite)) {
+							weapon_stats*w = cu->target->is_flying ? u->stats->air_weapon : u->stats->ground_weapon;
+							if (!w || units_distance(u, cu->target) > w->max_range) {
+								move = true;
+							}
+						} else {
+							move = true;
+						}
+						cu->is_repairing = u->hp < u->stats->hp*(1.0 - 1.0 / 64);
+					}
+				}
+				if (move && c->u > moved_to && u->type != unit_types::battlecruiser) {
+					moved_to = c->u;
+					cu->subaction = combat_unit::subaction_move_directly;
+					cu->target_pos = c->u->pos;
+				}
 			}
 		}
 	}
@@ -1958,6 +2001,76 @@ void finish_attack() {
 		}
 	}
 
+	if (players::my_player->has_upgrade(upgrade_types::yamato_gun)) {
+		a_vector<combat_unit*> battlecruisers;
+		for (auto*c : live_combat_units) {
+			if (current_frame < c->strategy_busy_until) continue;
+			if (c->u->type == unit_types::battlecruiser) battlecruisers.push_back(c);
+		}
+		for (auto*c : battlecruisers) {
+			if (c->u->energy < 150) continue;
+			auto yamato_damage = [&](unit*target) {
+				double damage = 260;
+				if (target->shields <= 0) damage *= combat_eval::get_damage_type_modifier(weapon_stats::damage_type_explosive, target->stats->type->size);
+				damage -= target->stats->armor;
+				if (damage <= 0) damage = 1.0;
+				return damage;
+			};
+			if (current_frame >= c->registered_focus_fire_until) {
+				auto i = registered_focus_fire.find(c);
+				if (i != registered_focus_fire.end()) {
+					if (std::abs(focus_fire[std::get<0>(i->second)] -= std::get<1>(i->second)) < 1) {
+						focus_fire.erase(std::get<0>(i->second));
+					}
+					registered_focus_fire.erase(i);
+				}
+			}
+			unit*target = get_best_score(enemy_units, [&](unit*e) {
+				if (!e->visible || !e->detected) return std::numeric_limits<double>::infinity();
+				if (e->building && !e->stats->air_weapon && !e->stats->ground_weapon && (e->type != unit_types::bunker || e->marines_loaded == 0)) return std::numeric_limits<double>::infinity();
+				if (e->lockdown_timer > 15 * 10) return std::numeric_limits<double>::infinity();
+				if (e->stasis_timer) return std::numeric_limits<double>::infinity();
+				double value = e->minerals_value + e->gas_value * 2;
+				if (value < 200 && c->u->hp > c->u->stats->hp*0.25) return std::numeric_limits<double>::infinity();
+				double d = diag_distance(e->pos - c->u->pos);
+				if (d < 32 * 10) d = 32 * 10;
+
+				double ehp = e->shields + e->hp;
+				ehp -= focus_fire[e];
+				if (ehp < 0) ehp = 0;
+				ehp /= combat_eval::get_damage_type_modifier(weapon_stats::damage_type_explosive, e->stats->type->size);
+
+				if (c->u->hp >= c->u->stats->hp*0.5) {
+					if (d > 32 * 10) return std::numeric_limits<double>::infinity();
+					if (ehp < 100) return std::numeric_limits<double>::infinity();
+				}
+
+				return d / value / (ehp / (e->stats->shields + e->stats->hp));
+			}, std::numeric_limits<double>::infinity());
+			if (target) {
+				if (units_distance(c->u, target) <= 32 * 10) {
+					c->subaction = combat_unit::subaction_idle;
+					if (current_frame - c->last_used_special >= 15 * 5) {
+						c->u->game_unit->useTech(upgrade_types::yamato_gun->game_tech_type, target->game_unit);
+						c->last_used_special = current_frame;
+						c->u->controller->noorder_until = current_frame + 15 * 10;
+
+						double damage = yamato_damage(target);
+						focus_fire[target] += damage;
+						auto i = registered_focus_fire.find(c);
+						if (i != registered_focus_fire.end()) {
+							if (std::abs(focus_fire[std::get<0>(i->second)] -= std::get<1>(i->second)) < 1) {
+								focus_fire.erase(std::get<0>(i->second));
+							}
+						}
+						registered_focus_fire[c] = std::make_tuple(target, damage, current_frame + 15 * 10);
+						c->registered_focus_fire_until = current_frame + 15 * 10;
+					}
+				}
+			}
+		}
+	}
+
 
 }
 
@@ -2054,7 +2167,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 		}
 	}
 
-	if (a->u->weapon_cooldown <= latency_frames) {
+	if (a->u->weapon_cooldown <= latency_frames && current_frame >= a->registered_focus_fire_until) {
 		auto i = registered_focus_fire.find(a);
 		if (i != registered_focus_fire.end()) {
 			if (std::abs(focus_fire[std::get<0>(i->second)] -= std::get<1>(i->second)) < 1) {
@@ -2634,7 +2747,8 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 		}
 		if (splash_weapon) {
 			a_vector<unit*> too_close;
-			double radius = splash_weapon->outer_splash_radius;
+			//double radius = splash_weapon->outer_splash_radius;
+			double radius = 56;
 			for (unit*u : allies) {
 				double d = (u->pos - a->u->pos).length();
 				if (d <= radius) too_close.push_back(u);
@@ -2650,7 +2764,6 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 					double ang = atan2(relpos.y, relpos.x);
 					for (unit*u : allies) {
 						double d = (u->pos - a->u->pos).length();
-						if (d <= radius) too_close.push_back(u);
 						if (d <= 64) {
 							xy relpos = target->pos - u->pos;
 							double dang = ang - atan2(relpos.y, relpos.x);
@@ -2898,7 +3011,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 					do_run(a, enemies);
 				}
 			} else {
-				if (my_weapon && d <= my_weapon->max_range && a->u->weapon_cooldown <= latency_frames) {
+				if (my_weapon && d <= my_weapon->max_range && a->u->weapon_cooldown <= latency_frames && current_frame >= a->registered_focus_fire_until) {
 					focus_fire[target] += damage;
 					auto i = registered_focus_fire.find(a);
 					if (i != registered_focus_fire.end()) {
@@ -3872,7 +3985,7 @@ void fight() {
 				if (a->u->type->is_worker && !a->u->force_combat_unit && run_with_workers) {
 					attack = false;
 					if (fight && a->u->controller->action == unit_controller::action_gather) continue;
-					if (eval.teams[1].score < 75 && a->u->controller->action == unit_controller::action_gather) continue;
+					if (eval.teams[0].score > eval.teams[1].score && a->u->controller->action == unit_controller::action_gather) continue;
 				}
 				if (a->u->type == unit_types::firebat) attack = true;
 				if (my_workers.size() == current_used_total_supply) attack = true;
@@ -4107,27 +4220,30 @@ void update_defence_choke_task() {
 						std::array<xy, 1> starts;
 						starts[0] = combat::defence_choke.center;
 
-						bool in_danger = false;
+						//bool in_danger = false;
 						auto pred = [&](grid::build_square&bs) {
 							if (!build_spot_finder::can_build_at(unit_types::bunker, bs)) return false;
 							xy pos = bs.pos + xy(unit_types::bunker->tile_width * 16, unit_types::bunker->tile_height * 16);
-							if (!in_danger) {
-								for (unit*u : enemy_units) {
-									if (u->type->is_non_usable || !u->stats->ground_weapon) continue;
-									if (u->type->is_worker) continue;
-									if (diag_distance(u->pos - pos) <= u->stats->ground_weapon->max_range + 32 * 6) {
-										in_danger = true;
-										break;
-									}
-								}
-							}
-							if (in_danger) return true;
+// 							if (!in_danger) {
+// 								for (unit*u : enemy_units) {
+// 									if (u->type->is_non_usable || !u->stats->ground_weapon) continue;
+// 									if (u->type->is_worker) continue;
+// 									if (diag_distance(u->pos - pos) <= u->stats->ground_weapon->max_range + 32 * 6) {
+// 										in_danger = true;
+// 										break;
+// 									}
+// 								}
+// 							}
+// 							if (in_danger) return true;
 							for (auto*bs : defence_choke.outside_squares) {
 								double d = (bs->pos + xy(16, 16) - pos).length();
 								if (d <= 32 * 6) return false;
 							}
-							
-							return true;
+							for (auto*bs : defence_choke.inside_squares) {
+								double d = (bs->pos + xy(16, 16) - pos).length();
+								if (d <= 32 * 2) return true;
+							}
+							return false;
 						};
 						auto score = [&](xy pos) {
 							double r = 0;
