@@ -482,7 +482,7 @@ void scouting_task() {
 
 		process_scouts();
 
-		if (current_used_total_supply >= comsat_supply || (!my_completed_units_of_type[unit_types::academy].empty() && current_used_total_supply >= 40)) {
+		if (current_used_total_supply >= comsat_supply) {
 			if (!my_units_of_type[unit_types::cc].empty()) {
 				if (my_units_of_type[unit_types::academy].empty()) {
 					build::add_build_sum(0, unit_types::academy, 1);
