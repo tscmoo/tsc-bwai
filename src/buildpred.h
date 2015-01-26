@@ -330,8 +330,8 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep, bool no
 				} else {
 					for (st_unit&u : st.units[build->builder_type]) {
 						if (!addon_required || u.has_addon) builder_exists = true;
-						if (u.busy_until <= st.frame || u.type == unit_types::hatchery || u.type == unit_types::lair) {
-							if (addon_required && !u.has_addon && false) builder_without_addon = &u;
+						if (u.busy_until <= st.frame || u.type == unit_types::hatchery || u.type == unit_types::lair || u.type == unit_types::hive) {
+							if (addon_required && !u.has_addon) builder_without_addon = &u;
 							else {
 								builder = &u;
 								break;
@@ -350,6 +350,7 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep, bool no
 					if (builder_without_addon) {
 						add_built(addon_required, false);
 						builder_without_addon->has_addon = true;
+						found = true;
 
 // 						for (auto&v : st.production) {
 // 							if (v.second == addon_required) {
@@ -694,29 +695,13 @@ static const auto nodelay = [](state&st, unit_type*ut, const std::function<bool(
 	return nodelay_n(st, ut, 0, func);
 };
 
-// TODO: fix the way maxprod makes addons.
 static const auto maxprod = [](state&st, unit_type*ut, const std::function<bool(state&)>&func) {
 	unit_type*bt = ut->builder_type;
 	unit_type*addon = nullptr;
 	if (ut == unit_types::siege_tank_tank_mode) addon = unit_types::machine_shop;
 	if (ut == unit_types::dropship || ut == unit_types::science_vessel || ut == unit_types::battlecruiser || ut == unit_types::valkyrie) addon = unit_types::control_tower;
 	if (addon) {
-		bool inprod = false;
-		for (auto&v : st.production) {
-			if (v.second == addon) {
-				inprod = true;
-				break;
-			}
-		}
-		if (!inprod) {
-			for (auto&v : st.units[bt]) {
-				if (!v.has_addon) {
-					bt = addon;
-// 					return nodelay(st, bt, func);
-// 					break;
-				}
-			}
-		}
+		bt = addon;
 	}
 	auto prev_st = st;
 	unit_type*t = advance(st, ut, st.frame + advance_frame_amount, true, true);
@@ -731,7 +716,7 @@ static const auto maxprod = [](state&st, unit_type*ut, const std::function<bool(
 		for (auto&v : st.units[ut->builder_type]) {
 			if (st.frame >= v.busy_until) return nodelay(st, ut, func);
 		}
-		if (count_production(st, bt) >= 2 || st.minerals < ut->minerals_cost || st.gas < ut->gas_cost) return nodelay(st, ut, func);
+		if (count_production(st, bt) >= 2 || (st.minerals < ut->minerals_cost && st.gas < ut->gas_cost)) return nodelay(st, ut, func);
 		return nodelay(st, bt, func);
 	}
 };
@@ -741,22 +726,7 @@ static const auto maxprod1 = [](state&st, unit_type*ut) {
 	if (ut == unit_types::siege_tank_tank_mode) addon = unit_types::machine_shop;
 	if (ut == unit_types::dropship || ut == unit_types::science_vessel || ut == unit_types::battlecruiser || ut == unit_types::valkyrie) addon = unit_types::control_tower;
 	if (addon) {
-		bool inprod = false;
-		for (auto&v : st.production) {
-			if (v.second == addon) {
-				inprod = true;
-				break;
-			}
-		}
-		if (!inprod) {
-			for (auto&v : st.units[bt]) {
-				if (!v.has_addon) {
-					bt = addon;
-// 					return depbuild(st, state(st), bt);
-// 					break;
-				}
-			}
-		}
+		bt = addon;
 	}
 	auto prev_st = st;
 	unit_type*t = advance(st, ut, st.frame + advance_frame_amount, true, true);
@@ -768,7 +738,7 @@ static const auto maxprod1 = [](state&st, unit_type*ut) {
 		for (auto&v : st.units[ut->builder_type]) {
 			if (st.frame >= v.busy_until) return depbuild(st, state(st), ut);
 		}
-		if (count_production(st, bt) >= 2 || st.minerals < ut->minerals_cost || st.gas < ut->gas_cost) return depbuild(st, state(st), ut);
+		if (count_production(st, bt) >= 2 || (st.minerals < ut->minerals_cost && st.gas < ut->gas_cost)) return depbuild(st, state(st), ut);
 		return depbuild(st, state(st), bt);
 	}
 };
