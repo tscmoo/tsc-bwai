@@ -190,6 +190,7 @@ namespace combat_eval {
 						if (target) {
 							weapon_stats*w = target->st->type->is_flyer ? c.st->air_weapon : c.st->ground_weapon;
 							bool use_spider_mine = c.spider_mine_count && my_team.has_spider_mines && !target->st->type->is_hovering && !target->st->type->is_flyer && !target->st->type->is_building;
+							if (use_spider_mine && target->st->type == unit_types::lurker) use_spider_mine = false;
 							if (!w) {
 								if (c.st->max_speed > 0 && c.move > 0) {
 									++target_count;
