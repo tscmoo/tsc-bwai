@@ -102,7 +102,7 @@ struct unit_building {
 
 struct unit;
 namespace units {
-	a_vector<unit*> unit_containers[13];
+	a_vector<unit*> unit_containers[14];
 }
 
 a_vector<unit*>&all_units_ever = units::unit_containers[0];
@@ -116,10 +116,11 @@ a_vector<unit*>&my_units = units::unit_containers[6];
 a_vector<unit*>&my_workers = units::unit_containers[7];
 a_vector<unit*>&my_buildings = units::unit_containers[8];
 a_vector<unit*>&my_resource_depots = units::unit_containers[9];
+a_vector<unit*>&my_detector_units = units::unit_containers[10];
 
-a_vector<unit*>&enemy_units = units::unit_containers[10];
-a_vector<unit*>&visible_enemy_units = units::unit_containers[11];
-a_vector<unit*>&enemy_buildings = units::unit_containers[12];
+a_vector<unit*>&enemy_units = units::unit_containers[11];
+a_vector<unit*>&visible_enemy_units = units::unit_containers[12];
+a_vector<unit*>&enemy_buildings = units::unit_containers[13];
 
 a_unordered_map<unit_type*, a_vector<unit*>> my_units_of_type;
 a_unordered_map<unit_type*, a_vector<unit*>> my_completed_units_of_type;
@@ -184,9 +185,10 @@ struct unit {
 	bool has_nuke;
 	int lockdown_timer;
 	int stasis_timer;
-	int irradiate_timer;
 	int defensive_matrix_timer;
 	double defensive_matrix_hp;
+	int irradiate_timer;
+	int stim_timer;
 	int scan_me_until;
 	bool is_powered;
 	int marines_loaded;
@@ -205,7 +207,7 @@ namespace unit_types {
 	typedef unit_type*unit_type_pointer;
 	unit_type_pointer unknown;
 	unit_type_pointer cc, supply_depot, barracks, factory, science_facility, nuclear_silo, bunker, refinery, machine_shop;
-	unit_type_pointer missile_turret, academy, comsat_station, starport, control_tower, engineering_bay, armory;
+	unit_type_pointer missile_turret, academy, comsat_station, starport, control_tower, engineering_bay, armory, covert_ops;
 	unit_type_pointer spell_scanner_sweep;
 	unit_type_pointer scv, marine, vulture, siege_tank_tank_mode, siege_tank_siege_mode, goliath;
 	unit_type_pointer medic, ghost, firebat;
@@ -247,6 +249,7 @@ namespace unit_types {
 		get(control_tower, BWAPI::UnitTypes::Terran_Control_Tower);
 		get(engineering_bay, BWAPI::UnitTypes::Terran_Engineering_Bay);
 		get(armory, BWAPI::UnitTypes::Terran_Armory);
+		get(covert_ops, BWAPI::UnitTypes::Terran_Covert_Ops);
 
 		get(scv, BWAPI::UnitTypes::Terran_SCV);
 		get(marine, BWAPI::UnitTypes::Terran_Marine);
@@ -708,6 +711,7 @@ void update_unit_stuff(unit*u) {
 	u->defensive_matrix_timer = u->game_unit->getDefenseMatrixTimer() * 8;
 	u->defensive_matrix_hp = u->game_unit->getDefenseMatrixPoints();
 	u->irradiate_timer = u->game_unit->getIrradiateTimer() * 8;
+	u->stim_timer = u->game_unit->getStimTimer() * 8;
 	
 	u->is_powered = bwapi_is_powered(u->game_unit);
 
@@ -970,6 +974,7 @@ void update_units_task() {
 		update_unit_container(u, my_workers, u->visible && u->owner == players::my_player && u->type->is_worker && u->is_completed && !u->is_morphing);
 		update_unit_container(u, my_buildings, u->visible && u->owner == players::my_player && u->building);
 		update_unit_container(u, my_resource_depots, u->visible && u->owner == players::my_player && u->type->is_resource_depot);
+		update_unit_container(u, my_detector_units, u->visible && u->owner == players::my_player && u->type->is_detector);
 
 		update_unit_container(u, enemy_units, !u->dead && u->owner->is_enemy);
 		update_unit_container(u, visible_enemy_units, u->visible && u->owner->is_enemy);
@@ -1087,17 +1092,24 @@ void update_units_task() {
 			}
 		}
 
+		auto is_visible_around = [&](xy pos) {
+			if (!grid::is_visible(pos)) return false;
+			if (!grid::is_visible(pos + xy(32, 0))) return false;
+			if (!grid::is_visible(pos + xy(0, 32))) return false;
+			if (!grid::is_visible(pos + xy(-32, 0))) return false;
+			if (!grid::is_visible(pos + xy(0, -32))) return false;
+			return true;
+		};
+		auto has_detection_at = [&](xy pos) {
+			for (unit*u : my_detector_units) {
+				if ((pos - u->pos).length() <= u->stats->sight_range) return true;
+			}
+			return false;
+		};
+
 		for (unit*u : invisible_units) {
 			if (!u->gone) {
-				auto is_visible_around = [&](xy pos) {
-					if (!grid::is_visible(pos)) return false;
-					if (!grid::is_visible(pos + xy(32,0))) return false;
-					if (!grid::is_visible(pos + xy(0, 32))) return false;
-					if (!grid::is_visible(pos + xy(-32, 0))) return false;
-					if (!grid::is_visible(pos + xy(0, -32))) return false;
-					return true;
-				};
-				if (is_visible_around(u->pos)) {
+				if (is_visible_around(u->pos) && (!u->burrowed || has_detection_at(u->pos))) {
 					log("%s is gone\n",u->type->name);
 					u->gone = true;
 					events.emplace_back(event_t::t_refresh, u->game_unit);
