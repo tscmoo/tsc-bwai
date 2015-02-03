@@ -3,8 +3,12 @@
 namespace get_upgrades {
 ;
 a_unordered_map<upgrade_type*, double> upgrade_value_overrides;
+a_unordered_map<upgrade_type*, double> upgrade_order_overrides;
 void set_upgrade_value(upgrade_type*upg, double value) {
 	upgrade_value_overrides[upg] = value;
+}
+void set_upgrade_order(upgrade_type*upg, double value) {
+	upgrade_order_overrides[upg] = value;
 }
 bool no_auto_upgrades = false;
 void set_no_auto_upgrades(bool val) {
@@ -24,9 +28,18 @@ void get_upgrades() {
 		}
 	}
 
-	a_unordered_set<unit_type*> visited;
+	a_vector<upgrade_type*> sorted_upgrades;
 	for (auto&upg : upgrades::upgrade_type_container) {
-		if (upg.gas_cost && current_gas_per_frame == 0) continue;
+		sorted_upgrades.push_back(&upg);
+	}
+	std::stable_sort(sorted_upgrades.begin(), sorted_upgrades.end(), [&](upgrade_type*a, upgrade_type*b) {
+		return upgrade_order_overrides[a] < upgrade_order_overrides[b];
+	});
+
+	a_unordered_set<unit_type*> visited;
+	for (auto*p_upg : sorted_upgrades) {
+		auto&upg = *p_upg;
+		if (upg.gas_cost && current_gas < upg.gas_cost && current_gas_per_frame == 0) continue;
 		if (upg.prev && !players::my_player->upgrades.count(upg.prev)) continue;
 		if (players::my_player->upgrades.count(&upg)) continue;
 		double sum = 0.0;
