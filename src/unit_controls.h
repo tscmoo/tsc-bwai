@@ -462,6 +462,7 @@ void process(const a_vector<unit_controller*>&controllers) {
 				int wait_frames = 0;
 				if (u->type == unit_types::marine) wait_frames = 5;
 				if (u->type == unit_types::ghost) wait_frames = 5;
+				if (u->type == unit_types::firebat) wait_frames = 8;
 				if (u->type == unit_types::vulture) wait_frames = 1;
 				if (u->type == unit_types::goliath) wait_frames = 1;
 				if (u->type == unit_types::siege_tank_tank_mode) wait_frames = 1;
