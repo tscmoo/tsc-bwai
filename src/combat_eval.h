@@ -270,10 +270,11 @@ namespace combat_eval {
 										attack(target, 0.5);
 										--c.spider_mine_count;
 									} else attack(target, 1.0);
-									if (c.st->type == unit_types::siege_tank_siege_mode || c.st->type == unit_types::valkyrie || c.st->type == unit_types::firebat) {
+									if (c.st->type == unit_types::siege_tank_siege_mode || c.st->type == unit_types::valkyrie || c.st->type == unit_types::firebat || c.st->type == unit_types::lurker) {
 										combatant*ntarget = target + 1;
 										int max_n = 1;
 										if (c.st->type == unit_types::valkyrie) max_n = 3;
+										if (c.st->type == unit_types::lurker) max_n = 3;
 										for (int i = 0; i < max_n; ++i) {
 											if (ntarget < enemy_team.units.data() + enemy_team.units.size()) {
 												weapon_stats*nw = ntarget->st->type->is_flyer ? c.st->air_weapon : c.st->ground_weapon;
