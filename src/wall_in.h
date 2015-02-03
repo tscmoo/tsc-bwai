@@ -360,7 +360,6 @@ struct wall_builder {
 	}
 
 	bool build() {
-		if (built) return false;
 
 		log("build wall!\n");
 
@@ -387,6 +386,7 @@ struct wall_builder {
 				}
 			}
 		}
+		if (built) return false;
 		int remaining = 0;
 		for (size_t i = 0; i < buildings_pos.size(); ++i) {
 			if (found[i]) continue;
