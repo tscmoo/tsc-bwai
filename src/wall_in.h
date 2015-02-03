@@ -6,7 +6,7 @@ struct wall_spot {
 	bool valid = false;
 	a_deque<xy> path;
 	a_vector<grid::build_square*> build_squares;
-	double wall_width;
+	double wall_width = 0.0;
 	xy inside;
 	xy center;
 	xy outside;
@@ -173,6 +173,7 @@ struct wall_builder {
 	unit_type*against_ut = nullptr;
 	a_vector<unit_type*> buildings;
 	a_vector<xy> buildings_pos;
+	bool built = false;
 
 	wall_builder();
 	~wall_builder();
@@ -359,6 +360,7 @@ struct wall_builder {
 	}
 
 	bool build() {
+		if (built) return false;
 
 		log("build wall!\n");
 
@@ -401,6 +403,7 @@ struct wall_builder {
 			}
 		}
 		log("remaining is %d\n", remaining);
+		if (remaining == 0) built = true;
 
 		return remaining != 0;
 	}
@@ -450,10 +453,39 @@ int active_wall_count() {
 }
 
 void lift_wall_task() {
+	a_unordered_set<unit*> lift_from_wall;
 	while (true) {
 
 		for (unit*u : my_buildings) {
 			if (u->building->is_liftable_wall) {
+				if (lift_from_wall.count(u)) {
+					if (!u->building->is_lifted) {
+						u->controller->noorder_until = current_frame + 15;
+						u->game_unit->lift();
+					} else {
+						u->building->is_liftable_wall = false;
+						lift_from_wall.erase(u);
+					}
+					continue;
+				}
+
+				if (!u->building->is_lifted) {
+					bool found = false;
+					for (auto*v : active_walls) {
+						for (xy pos : v->buildings_pos) {
+							if (pos == u->building->build_pos) {
+								found = true;
+								break;
+							}
+						}
+						if (found) break;
+					}
+					if (!found) {
+						lift_from_wall.insert(u);
+						continue;
+					}
+				}
+
 				bool lift = lift_queue.count(u) != 0;
 				bool low_prio_lift = false;
 				if (!lift) {
@@ -506,23 +538,6 @@ void lift_wall_task() {
 							u->controller->noorder_until = current_frame + 15;
 							u->game_unit->land(BWAPI::TilePosition(pos.x / 32, pos.y / 32));
 						}
-					}
-				}
-
-				bool found = false;
-				for (auto*v : active_walls) {
-					for (xy pos : v->buildings_pos) {
-						if (pos == u->building->build_pos) {
-							found = true;
-							break;
-						}
-					}
-					if (found) break;
-				}
-				if (!found) {
-					if (!u->building->is_lifted) {
-						u->controller->noorder_until = current_frame + 15;
-						if (u->game_unit->lift()) u->building->is_liftable_wall = false;
 					}
 				}
 			}
