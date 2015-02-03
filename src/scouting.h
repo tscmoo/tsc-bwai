@@ -292,18 +292,18 @@ void scan() {
 		}
 	}
 
-	for (unit*e : enemy_units) {
-		if (e->gone) continue;
-		if (!e->cloaked || e->detected) continue;
-		int in_range_count = 0;
-		for (unit*u : my_units) {
-			if (u->type->is_non_usable) continue;
-			weapon_stats*w = e->is_flying ? u->stats->air_weapon : u->stats->ground_weapon;
-			if (!w) continue;
-			if (diag_distance(e->pos - u->pos) <= w->max_range) ++in_range_count;
-		}
-		if (in_range_count >= 3) values[e->pos] += 100000;
-	}
+// 	for (unit*e : enemy_units) {
+// 		if (e->gone) continue;
+// 		if (!e->cloaked || e->detected) continue;
+// 		int in_range_count = 0;
+// 		for (unit*u : my_units) {
+// 			if (u->type->is_non_usable) continue;
+// 			weapon_stats*w = e->is_flying ? u->stats->air_weapon : u->stats->ground_weapon;
+// 			if (!w) continue;
+// 			if (diag_distance(e->pos - u->pos) <= w->max_range) ++in_range_count;
+// 		}
+// 		if (in_range_count >= 3) values[e->pos] += 100000;
+// 	}
 
 	for (size_t idx : combat::op_base) {
 		xy pos((idx % (size_t)grid::build_grid_width) * 32, (idx / (size_t)grid::build_grid_width) * 32);
