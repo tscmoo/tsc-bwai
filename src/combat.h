@@ -4275,7 +4275,6 @@ void fight() {
 				if (my_workers.size() == current_used_total_supply) attack = true;
 				if (a->u->cloaked && !op_detectors) attack = true;
 				if (a->u->irradiate_timer && eval.teams[0].end_supply) attack = true;
-				attack = true;
 				if (attack) {
 					bool dont_attack = false;
 					/*bool unload = true;
