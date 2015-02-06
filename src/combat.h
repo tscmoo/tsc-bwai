@@ -497,10 +497,10 @@ bool aggressive_valkyries = false;
 
 bool hide_wraiths = false;
 
-bool search_and_destroy = false;
-
 int defensive_spider_mine_count = 0;
 
+
+bool search_and_destroy = false;
 int scans_available = 0;
 
 void update_groups() {
@@ -863,10 +863,6 @@ void update_groups() {
 
 	for (auto i = available_units.begin(); i != available_units.end();) {
 		auto*cu = *i;
-		if (!cu->u->type->is_worker) {
-			++i;
-			continue;
-		}
 		size_t index = grid::build_square_index(cu->u->pos);
 		group_t*inside_group = nullptr;
 		for (auto&g : new_groups) {
@@ -1184,6 +1180,7 @@ a_unordered_set<unit*> attack_pylons;
 
 a_unordered_set<unit*> no_splash_target;
 a_unordered_map<unit*, std::tuple<combat_unit*, int>> lockdown_target_taken;
+a_unordered_map<unit*, std::tuple<combat_unit*, int>> optical_flare_target_taken;
 
 void prepare_attack() {
 	for (auto i = registered_focus_fire.begin(); i != registered_focus_fire.end();) {
@@ -1294,6 +1291,11 @@ void prepare_attack() {
 
 	for (auto i = lockdown_target_taken.begin(); i != lockdown_target_taken.end();) {
 		if (current_frame >= std::get<1>(i->second)) i = lockdown_target_taken.erase(i);
+		else ++i;
+	}
+
+	for (auto i = optical_flare_target_taken.begin(); i != optical_flare_target_taken.end();) {
+		if (current_frame >= std::get<1>(i->second)) i = optical_flare_target_taken.erase(i);
 		else ++i;
 	}
 
@@ -1820,10 +1822,14 @@ void finish_attack() {
 			});
 			if (ned >= 32 * 30 || inrange < 3) return std::numeric_limits<double>::infinity();
 			if (u->type == unit_types::bunker) {
+				int marines_nearby = 0;
 				double nm = get_best_score_value(my_units_of_type[unit_types::marine], [&](unit*m) {
-					return diag_distance(m->pos - u->pos);
+					double d = diag_distance(m->pos - u->pos);
+					if (d <= 32 * 12) ++marines_nearby;
+					return d;
 				}, std::numeric_limits<double>::infinity());
 				if (nm >= 32 * 25) return std::numeric_limits<double>::infinity();
+				if (marines_nearby <= 1) return std::numeric_limits<double>::infinity();
 			}
 			return ned;
 		};
@@ -1835,6 +1841,23 @@ void finish_attack() {
 			if (!prio_unit && my_completed_units_of_type[unit_types::bunker].size() == 1) {
 				prio_unit = my_completed_units_of_type[unit_types::bunker].front();
 			}
+
+			if (!prio_unit) {
+				a_vector<unit*> wall_buildings;
+				for (auto*w : wall_in::active_walls) {
+					if (w->is_walled_off) {
+						for (xy pos : w->buildings_pos) {
+							auto&bs = grid::get_build_square(pos);
+							if (bs.building) wall_buildings.push_back(bs.building);
+						}
+					}
+				}
+				prio_unit = get_best_score(wall_buildings, [&](unit*u) {
+					return u->hp / u->stats->hp;
+				}, 1.0);
+			}
+
+			if (prio_unit && !prio_unit->building && prio_unit->hp == prio_unit->stats->hp) prio_unit = nullptr;
 		}
 
 		if (prio_unit) {
@@ -1862,8 +1885,8 @@ void finish_attack() {
 			if ((int)scvs.size() > non_scv_count + 1) scvs.resize(non_scv_count + 1);
 			if (non_scv_count <= 2) scvs.clear();
 		}
-// 		if (prio_unit) log("prio_unit is %s\n", prio_unit->type->name);
-// 		else log("prio_unit is null\n");
+//		if (prio_unit) log("prio_unit is %s\n", prio_unit->type->name);
+//		else log("prio_unit is null\n");
 		//if (scvs.size() / 4 + 2 < scvs.size()) scvs.resize(scvs.size() / 4 + 2);
 		for (unit*u : my_workers) {
 			if (u->controller->action == unit_controller::action_repair) u->controller->action = unit_controller::action_idle;
@@ -2237,6 +2260,45 @@ void finish_attack() {
 	}
 
 
+	if (players::my_player->has_upgrade(upgrade_types::optical_flare)) {
+		a_vector<combat_unit*> medics;
+		for (auto*c : live_combat_units) {
+			if (current_frame < c->strategy_busy_until) continue;
+			if (c->u->type == unit_types::medic) medics.push_back(c);
+		}
+		for (auto*c : medics) {
+			if (c->u->energy < 75 + 40) continue;
+			if (c->last_win_ratio >= 8.0) continue;
+			unit*target = get_best_score(enemy_units, [&](unit*e) {
+				if (!e->visible || !e->detected) return std::numeric_limits<double>::infinity();
+				if (e->building) return std::numeric_limits<double>::infinity();
+				if (e->stasis_timer) return std::numeric_limits<double>::infinity();
+				if (e->is_blind) return std::numeric_limits<double>::infinity();
+				double d = diag_distance(e->pos - c->u->pos);
+				if (d > 32 * 9) return std::numeric_limits<double>::infinity();
+
+				weapon_stats*gw = e->stats->ground_weapon;
+				if (gw && gw->max_range <= 32 * 5) return std::numeric_limits<double>::infinity();
+
+				auto it = optical_flare_target_taken.find(e);
+				if (it != optical_flare_target_taken.end() && std::get<0>(it->second) != c) return std::numeric_limits<double>::infinity();
+
+				return d / e->stats->sight_range / (e->hp / e->stats->hp);
+			}, std::numeric_limits<double>::infinity());
+			if (target) {
+				if (units_distance(c->u, target) <= 32 * 9) {
+					optical_flare_target_taken[target] = std::make_tuple(c, current_frame + 30);
+					c->subaction = combat_unit::subaction_idle;
+					if (current_frame - c->last_used_special >= 8) {
+						c->u->game_unit->useTech(upgrade_types::optical_flare->game_tech_type, target->game_unit);
+						c->last_used_special = current_frame;
+						c->u->controller->noorder_until = current_frame + 8;
+					}
+				}
+			}
+		}
+	}
+
 }
 
 void do_run(combat_unit*a, const a_vector<unit*>&enemies);
@@ -2540,8 +2602,9 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 			if (!a->type->is_biological) return std::make_tuple(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
 			if (a->is_loaded) return std::make_tuple(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
 			if (is_being_healed[a]) return std::make_tuple(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
+			if (a == u) return std::make_tuple(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
 			double d = units_pathing_distance(u, a);
-			return std::make_tuple(a->hp, d, 0.0);
+			return std::make_tuple(a->hp < a->stats->hp ? 0.0 : 1.0, d, 0.0);
 		};
 	}
 
@@ -2677,6 +2740,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 			if (enemies.size() <= 5 && allies.size() >= 10) {
 				okay = false;
 			}
+			if (siege_tank_count < (int)allies.size() / 3) okay = false;
 			if (okay) {
 				unit*nearest_siege_tank = get_best_score(allies, [&](unit*u) {
 					if (u->type != unit_types::siege_tank_tank_mode && u->type != unit_types::siege_tank_siege_mode) return std::numeric_limits<double>::infinity();
@@ -3287,7 +3351,8 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 		}
 	}
 
-	if (target && a->subaction == combat_unit::subaction_fight) {
+	//if (target && a->subaction == combat_unit::subaction_fight && allies.size() < 20 && a->last_win_ratio < 2.0) {
+	if (target && a->subaction == combat_unit::subaction_fight && allies.size() < 20) {
 		unit*bunker = get_best_score(my_completed_units_of_type[unit_types::bunker], [&](unit*u) {
 			if (u->loaded_units.empty()) return std::numeric_limits<double>::infinity();
 			double d = diag_distance(u->pos - target->pos);
@@ -3359,6 +3424,8 @@ void do_run(combat_unit*a, const a_vector<unit*>&enemies) {
 	a->subaction = combat_unit::subaction_move;
 	a->target_pos = xy(grid::map_width / 2, grid::map_height / 2);
 
+	if (a->u->is_loaded) return;
+
 	if (a->u->type == unit_types::marine || a->u->type == unit_types::firebat) {
 		unit*target = get_best_score(enemies, [&](unit*e) {
 			return diag_distance(a->u->pos - e->pos);
@@ -3369,6 +3436,7 @@ void do_run(combat_unit*a, const a_vector<unit*>&enemies) {
 			if (d >= 32 * 40) return std::numeric_limits<double>::infinity();
 			return diag_distance(target->pos - u->pos);
 		}, std::numeric_limits<double>::infinity());
+		log("%s: bunker is %p\n", a->u->type->name, bunker);
 		if (a->u->type == unit_types::firebat) {
 			if (target->stats->ground_weapon && target->stats->ground_weapon->max_range > 32 * 3) bunker = nullptr;
 		}
@@ -3379,6 +3447,7 @@ void do_run(combat_unit*a, const a_vector<unit*>&enemies) {
 			if (nearest_building != bunker) bunker = nullptr;
 		}
 		if (bunker) {
+			log("%s: run to bunker %p!\n", a->u->type->name, bunker);
 			if (units_distance(a->u, bunker) <= 32 * 4) space_left[bunker] -= a->u->type->space_required;
 			if (current_frame >= a->u->controller->noorder_until) {
 				if ((a->u->type == unit_types::marine || a->u->type == unit_types::firebat) && a->u->owner->has_upgrade(upgrade_types::stim_packs)) {
@@ -3395,7 +3464,6 @@ void do_run(combat_unit*a, const a_vector<unit*>&enemies) {
 			return;
 		}
 	}
-	if (a->u->is_loaded) return;
 
 	//log("%s : run!\n", a->u->type->name);
 	
@@ -3435,7 +3503,7 @@ void do_run(combat_unit*a, const a_vector<unit*>&enemies) {
 					a->subaction = combat_unit::subaction_fight;
 					a->target = ne;
 				} else {
-					if (a->last_win_ratio > 0.25) {
+					if (a->last_win_ratio > 0.25 || true) {
 						a->subaction = combat_unit::subaction_kite;
 						a->target = ne;
 					}
@@ -4032,10 +4100,10 @@ void fight() {
 				}
 				for (unit*e : nearby_enemies) add(use_workers_eval, e, 1);
 				use_workers_eval.run();
-				if (use_workers_eval.teams[0].score > eval.teams[0].score) {
+				if (use_workers_eval.teams[0].score > eval.teams[0].score && use_workers_eval.teams[0].score >= use_workers_eval.teams[1].score*0.75) {
+					log("use workers! (%g vs %g > %g vs %g)\n", use_workers_eval.teams[0].score, use_workers_eval.teams[1].score, eval.teams[0].score, eval.teams[1].score);
 					eval = use_workers_eval;
 					run_with_workers = false;
-					log("use workers! (%g vs %g > %g vs %g)\n", use_workers_eval.teams[0].score, use_workers_eval.teams[1].score, eval.teams[0].score, eval.teams[1].score);
 				} else log("using workers is not beneficial (%g vs %g <= %g vs %g)\n", use_workers_eval.teams[0].score, use_workers_eval.teams[1].score, eval.teams[0].score, eval.teams[1].score);
 			} else if (worker_count) log("don't have to use workers\n");
 
