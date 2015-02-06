@@ -365,7 +365,6 @@ void generate_path_nodes(pathing_map&map) {
 		}
 	}
 
-	
 	map.path_nodes = std::move(new_path_nodes);
 	map.nearest_path_node = std::move(new_nearest_path_node);
 
@@ -781,12 +780,10 @@ void square_pathing_update_maps_task() {
 		invalidation_queue.clear();
 
 		for (auto&map : all_pathing_maps) {
-			bool updated = false;
 			if (!map.initialized) {
 				update_map(map, xy(0, 0), xy(grid::map_width - 1, grid::map_height - 1));
 				map.initialized = true;
 				map.update_path_nodes = true;
-				updated = true;
 			}
 			for (auto&v : queue) {
 				xy from, to;
@@ -796,7 +793,13 @@ void square_pathing_update_maps_task() {
 				to.x += map.dimensions[2] + 16;
 				to.y += map.dimensions[3] + 16;
 				update_map(map, from, to);
-				updated = true;
+			}
+			if (map.update_path_nodes && map.ut != unit_types::siege_tank_tank_mode) {
+				auto&siege_tank_map = get_pathing_map(unit_types::siege_tank_tank_mode, map.index);
+				if (siege_tank_map.path_nodes_requires_update && !siege_tank_map.update_path_nodes) {
+					siege_tank_map.update_path_nodes = true;
+					siege_tank_map.update_path_nodes_frame = current_frame;
+				}
 			}
 			if (map.update_path_nodes && ((current_frame - map.update_path_nodes_frame >= 15 * 5 && current_frame - map.last_update_path_nodes_frame >= 15 * 10) || current_frame < 15 * 60)) {
 				map.last_update_path_nodes_frame = current_frame;
@@ -808,11 +811,11 @@ void square_pathing_update_maps_task() {
 					dst.nearest_path_node = src.nearest_path_node;
 					for (auto&v : dst.path_nodes) {
 						for (auto*&n : v.neighbors) {
-							n = dst.path_nodes.data() + src.path_node_index(*n);
+							if (n) n = dst.path_nodes.data() + src.path_node_index(*n);
 						}
 					}
 					for (auto*&n : dst.nearest_path_node) {
-						n = dst.path_nodes.data() + src.path_node_index(*n);
+						if (n) n = dst.path_nodes.data() + src.path_node_index(*n);
 					}
 				};
 
