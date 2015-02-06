@@ -34,7 +34,7 @@ namespace upgrade_types {
 	upgrade_type_pointer ion_thrusters;
 	upgrade_type_pointer siege_mode;
 	upgrade_type_pointer u_238_shells, stim_packs;
-	upgrade_type_pointer healing;
+	upgrade_type_pointer healing, restoration, optical_flare, caduceus_reactor;
 	upgrade_type_pointer ocular_implants, moebius_reactor, lockdown, personal_cloaking, nuclear_strike;
 	upgrade_type_pointer spider_mines;
 	upgrade_type_pointer charon_boosters;
@@ -77,6 +77,9 @@ namespace upgrade_types {
 		get(u_238_shells, BWAPI::UpgradeTypes::U_238_Shells);
 		get(stim_packs, BWAPI::TechTypes::Stim_Packs);
 		get(healing, BWAPI::TechTypes::Healing);
+		get(restoration, BWAPI::TechTypes::Restoration);
+		get(optical_flare, BWAPI::TechTypes::Optical_Flare);
+		get(caduceus_reactor, BWAPI::UpgradeTypes::Caduceus_Reactor);
 		get(ocular_implants, BWAPI::UpgradeTypes::Ocular_Implants);
 		get(moebius_reactor, BWAPI::UpgradeTypes::Moebius_Reactor);
 		get(lockdown, BWAPI::TechTypes::Lockdown);
