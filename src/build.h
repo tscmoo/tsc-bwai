@@ -761,7 +761,9 @@ void execute_build(build_task&b) {
 					unit*g = get_best_score(resource_units,[&](unit*r) {
 						if (r->type!=unit_types::vespene_geyser) return std::numeric_limits<double>::infinity();
 						double d = get_best_score_value(my_resource_depots,[&](unit*u) {
-							return units_pathing_distance(unit_types::scv, r, u) + rng(32.0);
+							double d = units_pathing_distance(unit_types::scv, r, u) + rng(32.0);
+							if (!u->is_completed) d += 1000.0;
+							return d;
 						});
 						if (d >= 32 * 20) return std::numeric_limits<double>::infinity();
 						return d;
