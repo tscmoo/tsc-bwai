@@ -33,6 +33,7 @@ struct unit_controller {
 	int attack_state2 = 0;
 	int weapon_ready_frames = 0;
 	int last_process = 0;
+	int not_moving_counter = 0;
 };
 
 namespace unit_controls {
@@ -248,6 +249,18 @@ void process(const a_vector<unit_controller*>&controllers) {
 		unit*u = c->u;
 		if (u->building && c->action != unit_controller::action_building_movement) continue;
 
+		if (u->game_order == BWAPI::Orders::Move && u->speed == 0.0) {
+			++c->not_moving_counter;
+			if (c->not_moving_counter == 60) {
+				u->game_unit->stop();
+				continue;
+			} else if (c->not_moving_counter == 75) {
+				u->game_unit->move(BWAPI::Position(u->pos.x - 32 + rng(64 + 1), u->pos.y - 32 + rng(64 + 1)));
+				c->not_moving_counter = 0;
+				continue;
+			}
+		} else if (c->not_moving_counter) c->not_moving_counter = 0;
+
 		if ((c->action == unit_controller::action_attack || c->action == unit_controller::action_kite) && c->target) {
 			if (!u->is_flying && !square_pathing::unit_can_reach(u, u->pos, c->target->pos, square_pathing::pathing_map_index::include_liftable_wall)) {
 				weapon_stats*w = c->target->is_flying ? u->stats->air_weapon : u->stats->ground_weapon;
@@ -266,10 +279,26 @@ void process(const a_vector<unit_controller*>&controllers) {
 					}, [&](xy pos) {
 						return units_distance(pos, u->type, c->target->pos, c->target->type) <= w->max_range;
 					});
-					if (best_pos != xy()) {
+					if (best_pos != xy() && diag_distance(u->pos - best_pos) > 8) {
 						c->go_to = best_pos;
 						move(c);
 						continue;
+					}
+				}
+			}
+		}
+
+		if (c->action == unit_controller::action_attack || c->action == unit_controller::action_kite) {
+			if ((u->type == unit_types::marine || u->type == unit_types::firebat) && u->owner->has_upgrade(upgrade_types::stim_packs)) {
+				weapon_stats*w = c->target->is_flying ? u->stats->air_weapon : u->stats->ground_weapon;
+				weapon_stats*ew = u->is_flying ? c->target->stats->air_weapon : c->target->stats->ground_weapon;
+				if (w) {
+					double d = units_distance(u, c->target);
+					if (d <= w->max_range + 32 || (ew && d <= ew->max_range + 32)) {
+						if (u->stim_timer <= latency_frames && current_frame >= c->nospecial_until) {
+							u->game_unit->useTech(upgrade_types::stim_packs->game_tech_type);
+							c->nospecial_until = current_frame + latency_frames + 4;
+						}
 					}
 				}
 			}
@@ -470,10 +499,13 @@ void process(const a_vector<unit_controller*>&controllers) {
 				if (u->type == unit_types::battlecruiser) wait_frames = 2;
 
 				if (c->action != unit_controller::action_kite) {
-					if (u->type == unit_types::marine || u->type == unit_types::ghost) {
+					if (u->type == unit_types::marine || u->type == unit_types::ghost || u->type == unit_types::firebat) {
 						if (!ew || w->max_range <= ew->max_range + 64 || d > ew->max_range + 64) do_state_machine = false;
 						//if (!ew || w->max_range <= ew->max_range + 64) do_state_machine = false;
 					}
+				}
+				if (u->type == unit_types::marine || u->type == unit_types::firebat) {
+					if (u->stim_timer > latency_frames) do_state_machine = false;
 				}
 
 				if (do_state_machine && wait_frames) {
@@ -653,7 +685,7 @@ void process(const a_vector<unit_controller*>&controllers) {
 		}
 
 		if (c->action == unit_controller::action_repair) {
-			if (units_pathing_distance(u, c->target) > 32 * 4) {
+			if (units_pathing_distance(u, c->target) > 32 * 4 && square_pathing::unit_can_reach(u, u->pos, c->target->pos, square_pathing::pathing_map_index::include_liftable_wall)) {
 				c->go_to = c->target->pos;
 				move(c);
 			} else {
@@ -799,31 +831,16 @@ void process(const a_vector<unit_controller*>&controllers) {
 
 			if (c->target->dead) c->action = unit_controller::action_idle;
 			else {
-
 				if (u->order_target != c->target || u->game_order != BWAPI::Orders::AttackUnit) {
-					if (c->target == nullptr) xcept("attack null unit");
-					weapon_stats*w = c->target->is_flying ? u->stats->air_weapon : u->stats->ground_weapon;
-					weapon_stats*ew = u->is_flying ? c->target->stats->air_weapon : c->target->stats->ground_weapon;
-					if (w) {
-						double d = units_distance(u, c->target);
-						//if (d <= w->max_range + 32 || (ew && d <= ew->max_range + 32)) {
-						if (d <= w->max_range + 32) {
-							if ((u->type == unit_types::marine || u->type == unit_types::firebat) && u->owner->has_upgrade(upgrade_types::stim_packs)) {
-								if (u->stim_timer <= latency_frames && current_frame >= c->nospecial_until) {
-									u->game_unit->useTech(upgrade_types::stim_packs->game_tech_type);
-									c->nospecial_until = current_frame + latency_frames + 4;
-								}
-							}
-						}
-					}
 					bool issue_attack = true;
 					if (u->type == unit_types::medic) {
 						issue_attack = false;
 						if (!bwapi_is_healing_order(u->game_order)) {
-							if (!u->game_unit->useTech(upgrade_types::healing->game_tech_type, c->target->game_unit)) {
-								c->go_to = c->target->pos;
-								move(c);
-							}
+// 							if (!u->game_unit->useTech(upgrade_types::healing->game_tech_type, c->target->game_unit)) {
+// 								c->go_to = c->target->pos;
+// 								move(c);
+// 							}
+							u->game_unit->useTech(upgrade_types::healing->game_tech_type, BWAPI::Position(c->target->pos.x, c->target->pos.y));
 						}
 					}
 					if (issue_attack && !u->game_unit->attack(c->target->game_unit)) {
