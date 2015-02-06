@@ -189,6 +189,7 @@ struct unit {
 	double defensive_matrix_hp;
 	int irradiate_timer;
 	int stim_timer;
+	int is_blind;
 	int scan_me_until;
 	bool is_powered;
 	int marines_loaded;
@@ -712,6 +713,7 @@ void update_unit_stuff(unit*u) {
 	u->defensive_matrix_hp = u->game_unit->getDefenseMatrixPoints();
 	u->irradiate_timer = u->game_unit->getIrradiateTimer() * 8;
 	u->stim_timer = u->game_unit->getStimTimer() * 8;
+	u->is_blind = u->game_unit->isBlind();
 	
 	u->is_powered = bwapi_is_powered(u->game_unit);
 
