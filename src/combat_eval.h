@@ -191,6 +191,11 @@ namespace combat_eval {
 						if (c.irradiate_timer > 0) c.irradiate_timer -= frame_resolution;
 						//if (c.st->type == unit_types::dropship) log("frame %d: %s: target is %p (force_target %d)\n", total_frames, c.st->type->name, target, c.force_target);
 						if (target) {
+
+							double speed = c.st->max_speed;
+							if (c.st->type == unit_types::siege_tank_siege_mode) speed = 2;
+							if (c.st->type == unit_types::interceptor && c.move <= 0) speed /= 4;
+
 							weapon_stats*w = target->st->type->is_flyer ? c.st->air_weapon : c.st->ground_weapon;
 							bool use_spider_mine = c.spider_mine_count && my_team.has_spider_mines && !target->st->type->is_hovering && !target->st->type->is_flyer && !target->st->type->is_building;
 							if (use_spider_mine && target->st->type == unit_types::lurker) use_spider_mine = false;
@@ -202,12 +207,6 @@ namespace combat_eval {
 									my_team.score += c.st->max_speed / 1000.0 * frame_resolution;
 								}
 							} else if (c.move + target->move > (use_spider_mine ? 0 : (w ? w->max_range : 32 * 2))) {
-							//} else if (c.move > w->max_range) {
-							//} else if (target->move > w->max_range) {
-								double speed = c.st->max_speed;
-								if (c.st->type == unit_types::siege_tank_siege_mode) speed = 2;
-								if (c.st->type == unit_types::interceptor && c.move <= 0) speed /= 4;
-								//if (c.st->type == unit_types::interceptor) speed = 0;
 								if (speed > 0) {
 									++target_count;
 									if (teams[i].has_static_defence) c.move -= c.st->max_speed * frame_resolution / 4;
@@ -218,7 +217,6 @@ namespace combat_eval {
 								++target_count;
 								if (c.cooldown <= 0) {
 									int hits = w == c.st->ground_weapon ? c.st->ground_weapon_hits : c.st->air_weapon_hits;
-									//if (target->move > c.move) target->move = c.move;
 									auto attack = [&](combatant*target, double damage_mult) {
 										double damage;
 										if (w) {
@@ -241,7 +239,6 @@ namespace combat_eval {
 											}
 										} else target->hp -= damage;
 										if (c.st->type == unit_types::mutalisk) damage /= 2;
-										//if (target->move) damage /= 2;
 										double damage_dealt = target->hp < 0 ? damage + target->hp : damage;
 										//log("%s dealt %g damage to %s\n", c.st->type->name, damage_dealt, target->st->type->name);
 										my_team.damage_dealt += damage_dealt;
@@ -249,11 +246,11 @@ namespace combat_eval {
 										int cooldown = w ? w->cooldown : frame_resolution;
 										if (c.st->type == unit_types::interceptor) cooldown = 60;
 										if (c.st->type == unit_types::marine) {
-// 											if (my_team.has_stim && c.stim_pack_timer == 0 && c.hp>10) {
-// 												c.stim_pack_timer = 220;
-// 												c.hp -= 10;
-// 												my_team.damage_taken += 10;
-// 											}
+											if (my_team.has_stim && c.stim_pack_timer == 0 && c.hp > 10) {
+												c.stim_pack_timer = 220;
+												c.hp -= 10;
+												my_team.damage_taken += 10;
+											}
 										}
 										if (c.stim_pack_timer) cooldown /= 2;
 										c.cooldown += cooldown;
@@ -270,21 +267,29 @@ namespace combat_eval {
 										attack(target, 0.5);
 										--c.spider_mine_count;
 									} else attack(target, 1.0);
-									if (c.st->type == unit_types::siege_tank_siege_mode || c.st->type == unit_types::valkyrie || c.st->type == unit_types::firebat || c.st->type == unit_types::lurker) {
+									if (c.st->type == unit_types::siege_tank_siege_mode || c.st->type == unit_types::valkyrie || c.st->type == unit_types::firebat || c.st->type == unit_types::lurker || c.st->type == unit_types::firebat) {
 										combatant*ntarget = target + 1;
 										int max_n = 1;
 										if (c.st->type == unit_types::valkyrie) max_n = 3;
 										if (c.st->type == unit_types::lurker) max_n = 3;
+										if (c.st->type == unit_types::firebat) {
+											if (target->st->ground_weapon && target->st->ground_weapon->max_range > 64) max_n = 0;
+											else max_n = 2;
+										}
 										for (int i = 0; i < max_n; ++i) {
 											if (ntarget < enemy_team.units.data() + enemy_team.units.size()) {
 												weapon_stats*nw = ntarget->st->type->is_flyer ? c.st->air_weapon : c.st->ground_weapon;
-												//if (w && c.move + ntarget->move<w->max_range && c.move + ntarget->move>w->min_range) {
 												if (nw == w && c.move + ntarget->move < w->max_range) {
-													//if (nw == w && ntarget->move<w->max_range) {
 													attack(ntarget, 1.0);
 												}
 											}
 											++ntarget;
+										}
+									}
+								} else {
+									if (c.st->type == unit_types::dragoon && (target->st->type == unit_types::marine || target->st->type == unit_types::firebat)) {
+										if (speed > 0 && c.move < 32 * 4) {
+											c.move += c.st->max_speed * frame_resolution;
 										}
 									}
 								}
