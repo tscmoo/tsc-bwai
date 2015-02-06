@@ -174,6 +174,7 @@ struct wall_builder {
 	a_vector<unit_type*> buildings;
 	a_vector<xy> buildings_pos;
 	bool built = false;
+	bool is_walled_off = false;
 
 	wall_builder();
 	~wall_builder();
@@ -386,6 +387,13 @@ struct wall_builder {
 				}
 			}
 		}
+		is_walled_off = true;
+		for (xy pos : buildings_pos) {
+			if (!grid::get_build_square(pos).building) {
+				is_walled_off = false;
+				break;
+			}
+		}
 		if (built) return false;
 		int remaining = 0;
 		for (size_t i = 0; i < buildings_pos.size(); ++i) {
@@ -511,10 +519,14 @@ void lift_wall_task() {
 						}
 						double op_army = 0;
 						for (unit*nu : enemy_units) {
+							if (!nu->visible) continue;
 							if (nu->building || nu->type->is_worker) continue;
 							if (diag_distance(nu->pos - u->pos) > 32 * 15) continue;
 							op_army += nu->type->required_supply;
 							eval.add_unit(nu, 1);
+							if (current_frame - nu->last_shown <= 15 * 3 && my_army < 8) {
+								for (int i = 0; i < 4; ++i) eval.add_unit(nu, 1);
+							}
 						}
 						eval.run();
 						log("lift - my_army %g op_army %g - scores %g %g\n", my_army, op_army, eval.teams[0].score, eval.teams[1].score);
