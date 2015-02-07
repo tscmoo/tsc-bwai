@@ -2980,7 +2980,9 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 		weapon_stats*splash_weapon = nullptr;
 		unit*targeted_by_lurker = nullptr;
 		int lurker_count = 0;
+		int reaver_count = 0;
 		for (unit*e : enemies) {
+			if (e->type == unit_types::reaver && units_distance(a->u, e) <= 32 * 8) ++reaver_count;
 			weapon_stats*e_weapon = a->u->is_flying ? target->stats->air_weapon : target->stats->ground_weapon;
 			if (!e_weapon) continue;
 			if (e_weapon->explosion_type != weapon_stats::explosion_type_radial_splash && e_weapon->explosion_type != weapon_stats::explosion_type_enemy_splash) continue;
@@ -2995,7 +2997,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 		}
 		if (lurker_count > 2) targeted_by_lurker = nullptr;
 		//if (splash_weapon && allies.size() < 20) {
-		if (splash_weapon) {
+		if (splash_weapon || reaver_count) {
 			bool do_lurker_dodge = targeted_by_lurker && current_frame - a->last_lurker_dodge >= 37;
 			if (do_lurker_dodge) {
 				//if (targeted_by_lurker->weapon_cooldown > latency_frames && targeted_by_lurker->weapon_cooldown <= a->last_lurker_dodge_cooldown) do_lurker_dodge = false;
@@ -3092,7 +3094,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 							npos.x += (int)(std::cos(ang + (avg_dang < 0 ? -add : add)) * 128.0);
 							npos.y += (int)(std::sin(ang + (avg_dang < 0 ? -add : add)) * 128.0);
 							bool okay = !test_pred(spread_positions, [&](xy p) {
-								return (p - npos).length() <= splash_weapon->outer_splash_radius;
+								return (p - npos).length() <= radius;
 							});
 							if (okay) break;
 							break;
@@ -3102,7 +3104,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 						a->target_pos = npos;
 					} else {
 						double d = units_distance(a->u, target);
-						if (splash_weapon->min_range && d > splash_weapon->min_range) {
+						if (splash_weapon && splash_weapon->min_range && d > splash_weapon->min_range) {
 							a->subaction = combat_unit::subaction_move_directly;
 							a->target_pos = target->pos;
 						}
