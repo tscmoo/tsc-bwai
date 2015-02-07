@@ -15,6 +15,7 @@ struct strat_tvz_opening {
 		get_upgrades::set_upgrade_value(upgrade_types::lockdown, 10000.0);
 		get_upgrades::set_upgrade_value(upgrade_types::restoration, 10000.0);
 		get_upgrades::set_upgrade_value(upgrade_types::optical_flare, 10000.0);
+		get_upgrades::set_upgrade_value(upgrade_types::caduceus_reactor, 10000.0);
 
 		scouting::scout_supply = 11;
 
