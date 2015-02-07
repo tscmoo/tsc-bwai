@@ -230,7 +230,7 @@ void process(resource_t&r) {
 	if (max_gas && current_gas < max_gas) minerals_to_gas_weight = 0.0125;
 	if (max_gas && current_gas >= max_gas) minerals_to_gas_weight = 100.0;
 
-	if (next_income > 0 && (current_frame - r.last_find_transfer >= 30 || my_workers.size()>r.last_find_transfer_my_workers_size) && combat::can_transfer_to(r.u)) {
+	if (next_income > 0 && (current_frame - r.last_find_transfer >= 30 || my_workers.size()>r.last_find_transfer_my_workers_size) && (my_resource_depots.size() <= 1 || combat::can_transfer_to(r.u))) {
 		r.last_find_transfer = current_frame;
 		r.last_find_transfer_my_workers_size = my_workers.size();
 		double next_income_weighted = r.u->type->is_gas ? next_income : next_income*minerals_to_gas_weight;
