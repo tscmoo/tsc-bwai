@@ -1018,11 +1018,19 @@ void execute_build(build_task&b) {
 									else {
 										std::array<xy, 1> starts;
 										starts[0] = building->last_registered_pos;
-										pos = build_spot_finder::find_best(starts, 32, [&](grid::build_square&bs) {
+										pos = build_spot_finder::find_best(starts, 128, [&](grid::build_square&bs) {
 											return pred(bs);
 										}, [&](xy pos) {
 											return diag_distance(building->build_pos - pos);
 										});
+										if (pos == xy()) {
+											starts[0] = default_build_pos;
+											pos = build_spot_finder::find_best(starts, 128, [&](grid::build_square&bs) {
+												return pred(bs);
+											}, [&](xy pos) {
+												return diag_distance(building->build_pos - pos);
+											});
+										}
 									}
 									b.land_pos = pos;
 								}
