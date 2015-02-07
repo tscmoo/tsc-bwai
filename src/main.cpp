@@ -328,7 +328,7 @@ struct module : BWAPI::AIModule {
 
 		if (!game->self()) return;
 
-		game->sendText("tsc-bwai v0.2.1 dev");
+		game->sendText("tsc-bwai v0.3.0 dev");
 
 		init();
 
