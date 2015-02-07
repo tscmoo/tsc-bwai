@@ -130,41 +130,90 @@ void scout::process() {
 			return e->type->is_resource_depot;
 		});
 		if (found_them && combat::my_closest_base != xy() && combat::op_closest_base != xy()) {
-			if (timer <= current_frame || (current_frame-timer<=20 && diag_distance(scout_unit->pos - scout_unit->controller->go_to) <= 32 * 2)) {
+			if (timer <= current_frame || (current_frame - timer <= 20 && diag_distance(scout_unit->pos - scout_unit->controller->go_to) <= 32 * 2)) {
 				timer = current_frame + 15 * 2;
-				path = combat::find_bigstep_path(scout_unit->type, combat::my_closest_base, combat::op_closest_base, square_pathing::pathing_map_index::no_enemy_buildings);
-				if (path.size() > 8) {
-					xy a = path[path.size() / 3];
-					xy b = path[path.size() / 3 + 4];
-					xy rel = b - a;
-					double ang = std::atan2(rel.y, rel.x);
-					ang += PI / 2;
-					xy origin = path[path.size() / 3 + 2];
-					auto look = [&](double mult) {
-						xy pos = origin;
-						for (double dist = 0; dist < 32 * 20; dist += 32) {
-							xy r = origin;
-							r.x += (int)(std::cos(ang)*dist*mult);
-							r.y += (int)(std::sin(ang)*dist*mult);
-							if (unit_pathing_distance(scout_unit->type, origin, r) >= 32 * 40) break;
-							pos = r;
-						}
-						return square_pathing::get_nearest_node_pos(scout_unit->type, pos);
-					};
-					xy left = look(-1);
-					xy right = look(1);
-					this->a = a;
-					this->b = b;
-					this->origin = origin;
-					this->left = left;
-					this->right = right;
-					scout_unit->controller->action = unit_controller::action_scout;
-					if (scout_unit->controller->go_to != left && scout_unit->controller->go_to != right) {
-						scout_unit->controller->go_to = left;
+
+				xy op_start_loc = get_best_score(start_locations, [&](xy pos) {
+					return diag_distance(pos - combat::op_closest_base);
+				});
+				resource_spots::spot*s = get_best_score_p(resource_spots::spots, [&](resource_spots::spot*s) {
+					return diag_distance(s->pos - op_start_loc);
+				});
+				bool patrol_scout = true;
+				if (s && current_used_total_supply < 24) {
+					xy go_to;
+					unit*gas = nullptr;
+					for (auto&v : s->resources) {
+						if (v.u->type->is_gas) gas = v.u;
+					}
+
+					a_vector<std::tuple<double, xy>> possible_expos;
+					for (auto&s : resource_spots::spots) {
+						if (s.cc_build_pos == op_start_loc) continue;
+						auto&bs = grid::get_build_square(s.cc_build_pos);
+						if (bs.building) continue;
+						possible_expos.emplace_back(unit_pathing_distance(unit_types::scv, op_start_loc, s.cc_build_pos), s.cc_build_pos);
+					}
+					std::sort(possible_expos.begin(), possible_expos.end());
+					if (possible_expos.size() > 2) possible_expos.resize(2);
+					auto*expo1s = possible_expos.size() >= 1 ? &grid::get_build_square(std::get<1>(possible_expos[0])) : nullptr;
+					auto*expo2s = possible_expos.size() >= 2 ? &grid::get_build_square(std::get<1>(possible_expos[1])) : nullptr;
+
+					if (gas && current_frame - gas->last_seen >= 15 * 30) {
+						go_to = gas->pos;
+					} else if (enemy_buildings.size() < 4 && expo1s && !expo1s->building && current_frame - expo1s->last_seen >= 15 * 30) {
+						go_to = expo1s->pos;
+					} else if (enemy_buildings.size() < 3 && expo2s && !expo2s->building && current_frame - expo2s->last_seen >= 15 * 30) {
+						go_to = expo2s->pos;
 					} else {
-						if (diag_distance(scout_unit->pos - scout_unit->controller->go_to) <= 32 * 2) {
-							if (scout_unit->controller->go_to == left) scout_unit->controller->go_to = right;
-							else scout_unit->controller->go_to = left;
+						combat::find_nearby_entirely_walkable_tiles(scout_unit->pos, [&](xy pos) {
+							if (diag_distance(pos - op_start_loc) >= 32 * 25) return false;
+							if (current_frame - grid::get_build_square(pos).last_seen >= 15 * 60) go_to = pos;
+							return go_to == xy();
+						}, 32 * 25);
+					}
+					if (go_to != xy()) {
+						scout_unit->controller->action = unit_controller::action_scout;
+						scout_unit->controller->go_to = go_to;
+						patrol_scout = false;
+					}
+				}
+
+				if (patrol_scout) {
+					path = combat::find_bigstep_path(scout_unit->type, combat::my_closest_base, combat::op_closest_base, square_pathing::pathing_map_index::no_enemy_buildings);
+					if (path.size() > 8) {
+						xy a = path[path.size() / 3];
+						xy b = path[path.size() / 3 + 4];
+						xy rel = b - a;
+						double ang = std::atan2(rel.y, rel.x);
+						ang += PI / 2;
+						xy origin = path[path.size() / 3 + 2];
+						auto look = [&](double mult) {
+							xy pos = origin;
+							for (double dist = 0; dist < 32 * 20; dist += 32) {
+								xy r = origin;
+								r.x += (int)(std::cos(ang)*dist*mult);
+								r.y += (int)(std::sin(ang)*dist*mult);
+								if (unit_pathing_distance(scout_unit->type, origin, r) >= 32 * 40) break;
+								pos = r;
+							}
+							return square_pathing::get_nearest_node_pos(scout_unit->type, pos);
+						};
+						xy left = look(-1);
+						xy right = look(1);
+						this->a = a;
+						this->b = b;
+						this->origin = origin;
+						this->left = left;
+						this->right = right;
+						scout_unit->controller->action = unit_controller::action_scout;
+						if (scout_unit->controller->go_to != left && scout_unit->controller->go_to != right) {
+							scout_unit->controller->go_to = left;
+						} else {
+							if (diag_distance(scout_unit->pos - scout_unit->controller->go_to) <= 32 * 2) {
+								if (scout_unit->controller->go_to == left) scout_unit->controller->go_to = right;
+								else scout_unit->controller->go_to = left;
+							}
 						}
 					}
 				}
@@ -345,7 +394,7 @@ void scan() {
 	xy best_pos;
 	a_vector<unit*> detectors;
 	for (unit*u : my_units) {
-		if (u->type->is_detector) detectors.push_back(u);
+		if (u->type->is_detector && u->is_completed) detectors.push_back(u);
 	}
 	for (auto&v : values) {
 		double s = 0.0;
