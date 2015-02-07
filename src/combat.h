@@ -260,6 +260,7 @@ struct combat_unit {
 	a_deque<xy> path;
 	int last_find_path = 0;
 	int strategy_busy_until = 0;
+	int strategy_attack_until = 0;
 	bool maybe_stuck = false;
 	unit*stuck_target = nullptr;
 	bool is_repairing = false;
@@ -928,6 +929,7 @@ void update_groups() {
 			}
 			if (inside_group && inside_group->enemies.size() == 1 && inside_group->enemies.front()->type->is_worker) inside_group = nullptr;
 		}
+		if (inside_group && current_frame < cu->strategy_busy_until) inside_group = nullptr;
 		if (inside_group) {
 			//log("%s is inside group %p\n", cu->u->type->name, inside_group);
 			inside_group->allies.push_back(cu);
@@ -4343,6 +4345,7 @@ void fight() {
 				if (my_workers.size() == current_used_total_supply) attack = true;
 				if (a->u->cloaked && !op_detectors) attack = true;
 				if (a->u->irradiate_timer && eval.teams[0].end_supply) attack = true;
+				if (current_frame < a->strategy_attack_until) attack = true;
 				if (attack) {
 					bool dont_attack = false;
 					/*bool unload = true;
