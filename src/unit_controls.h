@@ -500,8 +500,7 @@ void process(const a_vector<unit_controller*>&controllers) {
 
 				if (c->action != unit_controller::action_kite) {
 					if (u->type == unit_types::marine || u->type == unit_types::ghost || u->type == unit_types::firebat) {
-						if (!ew || w->max_range <= ew->max_range + 64 || d > ew->max_range + 64) do_state_machine = false;
-						//if (!ew || w->max_range <= ew->max_range + 64) do_state_machine = false;
+						if (!ew || w->max_range <= ew->max_range || d > ew->max_range + 64) do_state_machine = false;
 					}
 				}
 				if (u->type == unit_types::marine || u->type == unit_types::firebat) {
