@@ -235,13 +235,13 @@ void process(const a_vector<unit_controller*>&controllers) {
 	for (size_t i = 0; i < controllers.size(); ++i) {
 		auto*c = controllers[i];
 
-		// 		if (c->u->weapon_cooldown == 0) ++c->weapon_ready_frames;
-		// 		else {
-		// 			if (c->weapon_ready_frames) {
-		// 				log("%s: weapon was ready for %d frames\n", c->u->type->name, c->weapon_ready_frames);
-		// 				c->weapon_ready_frames = 0;
-		// 			}
-		// 		}
+// 		if (c->u->weapon_cooldown == 0) ++c->weapon_ready_frames;
+// 		else {
+// 			if (c->weapon_ready_frames) {
+// 				log("%s: weapon was ready for %d frames\n", c->u->type->name, c->weapon_ready_frames);
+// 				c->weapon_ready_frames = 0;
+// 			}
+// 		}
 
 		if (c->last_process == current_frame) continue;
 		c->last_process = current_frame;
@@ -489,12 +489,12 @@ void process(const a_vector<unit_controller*>&controllers) {
 				bool do_state_machine = c->can_move;
 
 				int wait_frames = 0;
-				if (u->type == unit_types::marine) wait_frames = 5;
-				if (u->type == unit_types::ghost) wait_frames = 5;
+				if (u->type == unit_types::marine) wait_frames = 6;
+				if (u->type == unit_types::ghost) wait_frames = 6;
 				if (u->type == unit_types::firebat) wait_frames = 8;
-				if (u->type == unit_types::vulture) wait_frames = 1;
-				if (u->type == unit_types::goliath) wait_frames = 1;
-				if (u->type == unit_types::siege_tank_tank_mode) wait_frames = 1;
+				if (u->type == unit_types::vulture) wait_frames = 2;
+				if (u->type == unit_types::goliath) wait_frames = 2;
+				if (u->type == unit_types::siege_tank_tank_mode) wait_frames = 2;
 				if (u->type == unit_types::wraith) wait_frames = 2;
 				if (u->type == unit_types::battlecruiser) wait_frames = 2;
 
