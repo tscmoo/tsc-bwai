@@ -45,7 +45,6 @@ struct strat_tvp_opening {
 		unit*scout_unit = nullptr;
 		size_t scout_index = 0;
 		bool opponent_has_fast_expanded = false;
-		bool has_bunker_rushed = false;
 		bool is_bunker_rushing = false;
 		a_vector<combat::combat_unit*> bunker_rushing_scvs;
 		a_set<combat::combat_unit*> bunker_rushing_marines;
@@ -70,9 +69,10 @@ struct strat_tvp_opening {
 				}
 				log("has_expanded is %d\n", has_expanded);
 				if (has_expanded) {
-					log("begin bunker rush!\n");
-					has_bunker_rushed = true;
-					is_bunker_rushing = true;
+					if (current_used_total_supply < 16) {
+						log("begin bunker rush!\n");
+						is_bunker_rushing = true;
+					}
 					opponent_has_fast_expanded = true;
 				}
 			}
@@ -162,7 +162,7 @@ struct strat_tvp_opening {
 
 			bool opponent_has_expanded = get_op_current_state().bases.size() >= 2;
 
-			bool being_zealot_rushed = attacking_zealot_count >= 2 && attacking_zealot_count > attacking_dragoon_count && attacking_zealot_count > my_vulture_count + my_marine_count / 3 && my_firebat_count < 8;
+			bool being_zealot_rushed = !opponent_has_expanded && attacking_zealot_count >= 2 && attacking_zealot_count > attacking_dragoon_count && attacking_zealot_count > my_vulture_count + my_marine_count / 3 && my_firebat_count < 8;
 			if (being_zealot_rushed && current_used_total_supply >= 60) being_zealot_rushed = false;
 
 			if (being_zealot_rushed && enemy_dragoon_count == 0) {
