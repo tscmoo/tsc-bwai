@@ -4104,7 +4104,7 @@ void fight() {
 				}
 				for (unit*e : nearby_enemies) add(use_workers_eval, e, 1);
 				use_workers_eval.run();
-				if (use_workers_eval.teams[0].score > eval.teams[0].score && use_workers_eval.teams[0].score >= use_workers_eval.teams[1].score*0.75) {
+				if ((use_workers_eval.teams[0].score > eval.teams[0].score && use_workers_eval.teams[0].score >= use_workers_eval.teams[1].score*0.75) || eval.teams[0].units.size() < 3) {
 					log("use workers! (%g vs %g > %g vs %g)\n", use_workers_eval.teams[0].score, use_workers_eval.teams[1].score, eval.teams[0].score, eval.teams[1].score);
 					eval = use_workers_eval;
 					run_with_workers = false;
