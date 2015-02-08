@@ -1827,7 +1827,7 @@ void finish_attack() {
 			}
 			return ned;
 		};
-		if (current_used_total_supply < 70 && no_aggressive_groups) {
+		if (current_used_total_supply - my_workers.size() < 30 && no_aggressive_groups) {
 			prio_unit = get_best_score(my_completed_units_of_type[unit_types::bunker], prio_score_func, std::numeric_limits<double>::infinity());
 			if (!prio_unit) prio_unit = get_best_score(my_completed_units_of_type[unit_types::siege_tank_tank_mode], prio_score_func, std::numeric_limits<double>::infinity());
 			if (!prio_unit) prio_unit = get_best_score(my_completed_units_of_type[unit_types::siege_tank_siege_mode], prio_score_func, std::numeric_limits<double>::infinity());
