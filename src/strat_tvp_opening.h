@@ -201,7 +201,7 @@ struct strat_tvp_opening {
 						}
 						if (all_dead) is_bunker_rushing = false;
 					}
-					if (enemy_zealot_count + enemy_dragoon_count && my_units_of_type[unit_types::bunker].empty()) is_bunker_rushing = false;
+					if (enemy_zealot_count + enemy_dragoon_count + enemy_cannon_count && my_units_of_type[unit_types::bunker].empty()) is_bunker_rushing = false;
 
 					if (my_units_of_type[unit_types::marine].size() >= 1) {
 						size_t use_scv_count = 4;
