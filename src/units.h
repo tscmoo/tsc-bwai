@@ -676,9 +676,11 @@ void update_unit_stuff(unit*u) {
 	u->detected = u->game_unit->isDetected();
 	u->invincible = u->game_unit->isInvincible();
 
-	u->energy = u->game_unit->getEnergy();
-	u->shields = u->game_unit->getShields();
-	u->hp = u->game_unit->getHitPoints();
+	if (!u->cloaked || u->detected) {
+		u->energy = u->game_unit->getEnergy();
+		u->shields = u->game_unit->getShields();
+		u->hp = u->game_unit->getHitPoints();
+	}
 	u->prev_weapon_cooldown = u->weapon_cooldown;
 	u->weapon_cooldown = std::max(u->game_unit->getGroundWeaponCooldown(), u->game_unit->getAirWeaponCooldown());
 
@@ -768,6 +770,9 @@ unit*new_unit(BWAPI_Unit game_unit) {
 	update_unit_owner(u);
 	update_unit_type(u);
 
+	u->energy = u->stats->energy;
+	u->shields = u->stats->shields;
+	u->hp = u->stats->hp;
 	u->visible = game_unit->isVisible();
 	update_unit_stuff(u);
 
