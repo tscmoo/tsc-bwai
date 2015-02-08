@@ -61,7 +61,7 @@ constexpr bool test_mode = true;
 int current_frame;
 
 struct simple_logger {
-	std::mutex mut;
+	std::mutex mut;	
 	tsc::a_string str, str2;
 	bool newline = true;
 	FILE*f = nullptr;
@@ -328,7 +328,7 @@ struct module : BWAPI::AIModule {
 
 		if (!game->self()) return;
 
-		game->sendText("tsc-bwai v0.3.0 dev");
+		game->sendText("tsc-bwai v0.3.1 dev");
 
 		init();
 
