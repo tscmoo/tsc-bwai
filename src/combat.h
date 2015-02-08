@@ -2853,38 +2853,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 		}
 	}
 
-	if (a->u->type->is_worker) {
-// 		unit*bunker = nullptr;
-// 		for (unit*u : my_units_of_type[unit_types::bunker]) {
-// 			if (!u->loaded_units.empty()) {
-// 				bunker = u;
-// 				break;
-// 			}
-// 			if (!my_units_of_type[unit_types::marine].empty()) {
-// 				for (unit*u2 : my_units_of_type[unit_types::marine]) {
-// 					if (diag_distance(u->pos - u2->pos) <= 32 * 4) {
-// 						bunker = u;
-// 						break;
-// 					}
-// 				}
-// 				if (bunker) break;
-// 			}
-// 		}
-// 		if (bunker) {
-// 			auto&repair_count = bunker_repair_count[bunker];
-// 			if (repair_count < 8) {
-// 				++repair_count;
-// 				a->subaction = combat_unit::subaction_repair;
-// 				a->target = bunker;
-// 			} else {
-// 				a->subaction = combat_unit::subaction_idle;
-// 				if (a->u->controller->action != unit_controller::action_gather && a->u->controller->action != unit_controller::action_build) {
-// 					a->u->controller->action = unit_controller::action_idle;
-// 				}
-// 			}
-// 			return;
-// 		}
-
+	if (a->u->type->is_worker && a->last_win_ratio < 16.0) {
 		bool enemy_has_bunker = false;
 		for (unit*e : enemies) {
 			if (e->type == unit_types::bunker) enemy_has_bunker = true;
@@ -2897,14 +2866,9 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 				}
 			}
 		}
-// 		if (enemies.size() >= 10 || current_used_total_supply >= 80) {
-// 			do_run(a, enemies);
-// 			return;
-// 		}
 	}
 
-	//if ((a->u->type == unit_types::marine || a->u->type == unit_types::firebat) && target && !a->u->is_loaded && !target->cloaked && allies.size() < 25) {
-	if ((a->u->type == unit_types::marine || a->u->type == unit_types::firebat) && target && !a->u->is_loaded && !target->cloaked && a->last_win_ratio < 4.0) {
+	if ((a->u->type == unit_types::marine || a->u->type == unit_types::firebat) && target && !a->u->is_loaded && a->last_win_ratio < 8.0) {
 		double distance_to_target = units_distance(a->u, target);
 		unit*bunker = get_best_score(my_completed_units_of_type[unit_types::bunker], [&](unit*u) {
 			if (space_left[u] < a->u->type->space_required) return std::numeric_limits<double>::infinity();
@@ -2918,25 +2882,20 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 		}
 		if (bunker) {
 			double d = units_distance(a->u, bunker);
-			bool run_to_bunker = a->last_win_ratio < 4.0;
+			bool run_to_bunker = a->last_win_ratio < 8.0;
 			if (!target->stats->ground_weapon) run_to_bunker = false;
-			else {
-				//if (units_distance(bunker, target) > 32 * 3 && target->stats->ground_weapon->max_range < 32 * 2) run_to_bunker = false;
-			}
-			//if (units_distance(bunker, target) > 32 * 7 && my_base.test(grid::build_square_index(target->pos))) run_to_bunker = false;
 			if (units_distance(bunker, target) > 32 * 7) {
 				unit*nearest_building = get_best_score(my_buildings, [&](unit*u) {
 					return diag_distance(u->pos - target->pos);
 				});
 				if (nearest_building != bunker) run_to_bunker = false;
 			}
-			//if (units_distance(bunker, target) < 32 * 6 && d < units_distance(target, bunker)) {
 			if (units_distance(bunker, target) < 32 * 10 && d < 32 * 40 && run_to_bunker) {
 				if (units_distance(a->u, bunker) <= 32 * 3) space_left[bunker] -= a->u->type->space_required;
 				a->subaction = combat_unit::subaction_idle;
 				a->u->controller->action = unit_controller::action_idle;
 				if (current_frame >= a->u->controller->noorder_until || a->u->order_target != bunker) {
-					if ((a->u->type == unit_types::marine || a->u->type == unit_types::firebat) && a->u->owner->has_upgrade(upgrade_types::stim_packs) && a->last_win_ratio < 4.0) {
+					if ((a->u->type == unit_types::marine || a->u->type == unit_types::firebat) && a->u->owner->has_upgrade(upgrade_types::stim_packs) && a->last_win_ratio < 8.0) {
 						if (a->u->stim_timer <= latency_frames && current_frame >= a->u->controller->nospecial_until) {
 							a->u->game_unit->useTech(upgrade_types::stim_packs->game_tech_type);
 							a->u->controller->noorder_until = current_frame + 2;
