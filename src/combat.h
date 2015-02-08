@@ -801,10 +801,6 @@ void update_groups() {
 					for (auto&g2 : new_groups) {
 						if (&g2 == &g) continue;
 						if (g2.is_defensive_group) continue;
-						if (c->u->type == unit_types::vulture) {
-							double dpf = c->u->is_flying ? g2.air_dpf : g2.ground_dpf;
-							if (dpf * 15 * 2 < c->u->hp) continue;
-						}
 						for (unit*e : g2.enemies) {
 							double wr = 0.0;
 							if (e->type == unit_types::bunker) {
@@ -867,10 +863,6 @@ void update_groups() {
 		size_t index = grid::build_square_index(cu->u->pos);
 		group_t*inside_group = nullptr;
 		for (auto&g : new_groups) {
-			if (cu->u->type == unit_types::vulture) {
-				double dpf = cu->u->is_flying ? g.air_dpf : g.ground_dpf;
-				if (dpf * 15 * 2 < cu->u->hp) continue;
-			}
 			if (cu->u->stats->air_weapon || cu->u->stats->ground_weapon) {
 				bool can_attack_any = false;
 				bool any_can_attack_me = false;
@@ -3112,35 +3104,6 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 				}
 			}
 		}
-		if ((target->type == unit_types::zergling || target->type == unit_types::zealot) && a->subaction == combat_unit::subaction_fight) {
-			if (allies.size() < 15) {
-				int workers = 0;
-				unit*nearest_worker = nullptr;
-				double nearest_worker_dist;
-				for (unit*u : allies) {
-					if (u->type->is_worker) {
-						++workers;
-						double d = diag_distance(u->pos - target->pos);
-						if (!nearest_worker || d < nearest_worker_dist) {
-							nearest_worker = u;
-							nearest_worker_dist = d;
-						}
-					}
-				}
-				if (nearest_worker && workers >= (int)allies.size() / 2) {
-					if (diag_distance(nearest_worker->pos - target->pos) >= diag_distance(a->u->pos - target->pos) + 32) {
-						xy dst = nearest_worker->pos;
-						if (defence_is_scared) dst = defence_choke.inside;
-						if (diag_distance(a->u->pos - dst)>32) {
-							a->subaction = combat_unit::subaction_move_directly;
-							a->target_pos = nearest_worker->pos;
-							if (defence_is_scared) a->target_pos = defence_choke.inside;
-							return;
-						}
-					}
-				}
-			}
-		}
 	}
 
 	if (target && a->u->type->is_worker) {
@@ -4105,7 +4068,7 @@ void fight() {
 				}
 				for (unit*e : nearby_enemies) add(use_workers_eval, e, 1);
 				use_workers_eval.run();
-				if ((use_workers_eval.teams[0].score > eval.teams[0].score && use_workers_eval.teams[0].score >= use_workers_eval.teams[1].score*0.75) || eval.teams[0].units.size() < 3) {
+				if (use_workers_eval.teams[0].score > eval.teams[0].score) {
 					log("use workers! (%g vs %g > %g vs %g)\n", use_workers_eval.teams[0].score, use_workers_eval.teams[1].score, eval.teams[0].score, eval.teams[1].score);
 					eval = use_workers_eval;
 					run_with_workers = false;
@@ -4342,6 +4305,9 @@ void fight() {
 					attack = false;
 					if (fight && a->u->controller->action == unit_controller::action_gather) continue;
 					if (eval.teams[0].score > eval.teams[1].score && a->u->controller->action == unit_controller::action_gather) continue;
+				}
+				if (a->u->type->is_worker && !a->u->force_combat_unit) {
+					if (!square_pathing::unit_can_reach(a->u, a->u->pos, g.enemies.front()->pos, square_pathing::pathing_map_index::include_liftable_wall)) continue;
 				}
 				//if (a->u->type == unit_types::firebat) attack = true;
 				if (a->u->type == unit_types::science_vessel) attack = true;
