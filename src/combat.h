@@ -3494,6 +3494,7 @@ void do_run(combat_unit*a, const a_vector<unit*>&enemies) {
 			if (a->u->type == unit_types::vulture) margin = 0;
 			if (a->u->type == unit_types::siege_tank_tank_mode) margin = 0;
 			if (a->u->type == unit_types::firebat) margin = 0;
+			if (a->u->type == unit_types::ghost) margin = 0;
 			if (net && !square_pathing::unit_can_reach(a->u, a->u->pos, net->pos, square_pathing::pathing_map_index::include_liftable_wall)) margin = 0.0;
 			bool too_close = net_d <= margin;
 			//if (d - wr < net_d - net_wr - margin && !too_close) {
