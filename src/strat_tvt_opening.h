@@ -110,10 +110,31 @@ struct strat_tvt_opening {
 				scouting::comsat_supply = 50;
 			} else scouting::comsat_supply = 70;
 
+			auto long_distance_miners = [&]() {
+				int count = 0;
+				for (auto&g : resource_gathering::live_gatherers) {
+					if (!g.resource) continue;
+					unit*ru = g.resource->u;
+					resource_spots::spot*rs = nullptr;
+					for (auto&s : resource_spots::spots) {
+						if (grid::get_build_square(s.cc_build_pos).building) continue;
+						for (auto&r : s.resources) {
+							if (r.u == ru) {
+								rs = &s;
+								break;
+							}
+						}
+						if (rs) break;
+					}
+					if (rs) ++count;
+				}
+				return count;
+			};
+
 			bool expand = false;
 			auto my_st = get_my_current_state();
 			bool has_bunker = !my_units_of_type[unit_types::bunker].empty();
-			if (my_st.bases.size() > 2 || vulture_count >= 16) break;
+			if (my_st.bases.size() > 2 || vulture_count >= 16 || long_distance_miners() >= 8) break;
 			if (my_st.bases.size() == 1) {
 				if (vulture_count >= 2 && vulture_count > enemy_vulture_count) {
 					expand = true;
@@ -130,7 +151,7 @@ struct strat_tvt_opening {
 					if (is_expo) expand = true;
 				}
 			} else if (my_st.bases.size() == 2) {
-				if (vulture_count > enemy_vulture_count) expand = true;
+				if (vulture_count > enemy_vulture_count && vulture_count >= 8) expand = true;
 			}
 			if (my_workers.size() < 18) expand = false;
 			if (expand && my_completed_units_of_type[unit_types::siege_tank_tank_mode].empty()) {
@@ -168,59 +189,6 @@ struct strat_tvt_opening {
 				}
 
 				combat::defence_is_scared = true;
-				if (my_units_of_type[unit_types::factory].empty()) {
-// 					int enemy_completed_bunkers = 0;
-// 					for (unit*u : enemy_buildings) {
-// 						if (!u->is_completed) continue;
-// 						if (u->type == unit_types::bunker) ++enemy_completed_bunkers;
-// 					}
-// 					if (!built_bunker && enemy_completed_bunkers && !my_units_of_type[unit_types::marine].empty()) {
-// 						combat::build_bunker_count = 1;
-// 						if (!my_units_of_type[unit_types::bunker].empty()) built_bunker = true;
-// 					} else combat::build_bunker_count = 0;
-
-// 					if (!built_bunker && defend_proxy) {
-// 						built_bunker = true;
-// 						auto*t = build::add_build_task(0, unit_types::bunker);
-// 					}
-// 					for (auto&b : build::build_tasks) {
-// 						if (b.built_unit) continue;
-// 						if (b.type->unit != unit_types::bunker) continue;
-// 						unit*nu = get_best_score(my_buildings, [&](unit*u) {
-// 							double ned = get_best_score_value(enemy_units, [&](unit*e) {
-// 								return units_distance(e, u);
-// 							});
-// 							if (ned <= 32 * 8) return std::numeric_limits<double>::infinity();
-// 							if (!enemy_buildings.empty()) {
-// 								return get_best_score_value(enemy_buildings, [&](unit*e) {
-// 									return units_pathing_distance(e, u);
-// 								});
-// 							}
-// 							return ned;
-// 						}, std::numeric_limits<double>::infinity());
-// 						if (nu) {
-// 							build::unset_build_pos(&b);
-// 							log("nu is %s\n", nu->type->name);
-// 							std::array<xy, 1> starts;
-// 							starts[0] = nu->pos;
-// 							unit_type*ut = unit_types::bunker;
-// 							xy pos = build_spot_finder::find_best(starts, 128, [&](grid::build_square&bs) {
-// 								return build_spot_finder::is_buildable_at(ut, bs);
-// 							}, [&](xy pos) {
-// 								int n = 0;
-// 								for (int y = 0; y < ut->tile_height; ++y) {
-// 									for (int x = 0; x < ut->tile_width; ++x) {
-// 										if (combat::entire_threat_area.test(grid::build_square_index(pos + xy(x * 32, y * 32)))) ++n;
-// 									}
-// 								}
-// 								return diag_distance(pos + xy(ut->tile_width * 16, ut->tile_height * 16) - nu->pos);
-// 								//return n + diag_distance(pos - nu->pos) / 32 * 4;
-// 							});
-// 							log("bunker - move from %d %d to %d %d\n", b.build_pos.x, b.build_pos.y, pos.x, pos.y);
-// 							build::set_build_pos(&b, pos);
-// 						}
-// 					}
-				}
 				if (!scouting::all_scouts.empty()) scouting::rm_scout(scouting::all_scouts.front().scout_unit);
 				expand = false;
 				if (my_workers.size() < 12 ) resource_gathering::max_gas = 1.0;
