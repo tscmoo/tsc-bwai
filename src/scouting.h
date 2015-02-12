@@ -298,6 +298,10 @@ int scan_enemy_base_until = 0;
 
 xy scan_best_pos;
 double scan_best_score;
+
+int previous_overlord_count = 0;
+int overlords_lost = 0;
+int overlords_created = 0;
 void scan() {
 
 	double scan_energy_cost = bwapi_tech_type_energy_cost(BWAPI::TechTypes::Scanner_Sweep);
@@ -308,10 +312,16 @@ void scan() {
 		if (u->energy < scan_energy_cost) continue;
 		scans_available += (int)(u->energy / scan_energy_cost);
 	}
+	int overlord_count = my_completed_units_of_type[unit_types::overlord].size();
+	if (overlord_count > previous_overlord_count) ++overlords_created;
+	if (overlord_count < previous_overlord_count) ++overlords_lost;
+	previous_overlord_count = overlord_count;
+	int overlords_available = overlords_created - overlords_lost * 2;
+	log("overlords  created: %d  lost: %d  available: %d\n", overlords_created, overlords_lost, overlords_available);
 
 	a_map<xy, double> values;
 
-	if (scans_available > 2) {
+	if (scans_available > 2 || overlords_available > 2) {
 		for (auto&s : resource_spots::spots) {
 			int t = (current_frame - grid::get_build_square(s.pos).last_seen) - 15 * 60 * 10;
 			if (t < 0) continue;
@@ -449,6 +459,53 @@ void scan() {
 			}
 		}
 	}
+
+	if (scans_available == 0 && overlords_available > 0) {
+
+		for (unit*u : my_completed_units_of_type[unit_types::overlord]) {
+			if (u->controller->action==unit_controller::action_scout) u->controller->action = unit_controller::action_idle;
+		}
+		xy pos = best_pos;
+		bool send_overlord = false;
+		send_overlord |= best_score >= 3000.0 && overlords_available > 4;
+		send_overlord |= best_score >= 6000.0 && overlords_available > 2;
+		send_overlord |= best_score >= 10000.0 && overlords_available > 0;
+		if (send_overlord) {
+			unit*u = get_best_score(my_completed_units_of_type[unit_types::overlord], [&](unit*u) {
+				if (u->controller->action != unit_controller::action_idle) return std::numeric_limits<double>::infinity();
+				return diag_distance(best_pos - u->pos);
+			}, std::numeric_limits<double>::infinity());
+			if (u) {
+				int iterations = 0;
+				struct node_data_t {
+					double total_cost = 0.0;
+				};
+				a_deque<xy> path = combat::find_path<node_data_t>(u->type, u->pos, [&](xy pos, xy npos, node_data_t&n) {
+					if (++iterations % 1024 == 0) multitasking::yield_point();
+					if (combat::entire_threat_area.test(grid::build_square_index(npos))) n.total_cost += 32 * 2;
+					return true;
+				}, [&](xy pos, xy npos, const node_data_t&n) {
+					return diag_distance(npos - best_pos) + n.total_cost;
+				}, [&](xy pos, const node_data_t&n) {
+					return diag_distance(pos - best_pos) <= 32 * 2;
+				});
+				xy go_to = best_pos;
+				if (!path.empty()) {
+					double move_distance = u->stats->max_speed * 15 * 5;
+					for (xy pos : path) {
+						if (diag_distance(pos - u->pos) >= move_distance) {
+							go_to = pos;
+							break;
+						}
+					}
+				}
+				u->controller->action = unit_controller::action_scout;
+				u->controller->go_to = go_to;
+			}
+		}
+
+	}
+
 }
 
 a_vector<scout> all_scouts;
@@ -478,7 +535,11 @@ void process_scouts() {
 		if (last_scout == 0 || current_frame - last_scout >= 15 * 60 * 3 || current_used_total_supply >= 100) {
 			if (current_used_total_supply >= scout_supply) {
 				unit*scout_unit = nullptr;
-				if (my_completed_units_of_type[unit_types::vulture].size() >= 15 && current_frame - last_vulture_scout >= 15 * 60 * 2) {
+				if (!my_completed_units_of_type[unit_types::zergling].empty()) {
+					scout_unit = get_best_score(my_completed_units_of_type[unit_types::zergling], [&](unit*u) {
+						return u->last_attacked;
+					}, std::numeric_limits<double>::infinity());
+				} else if (my_completed_units_of_type[unit_types::vulture].size() >= 15 && current_frame - last_vulture_scout >= 15 * 60 * 2) {
 					last_vulture_scout = current_frame;
 					scout_unit = get_best_score(my_completed_units_of_type[unit_types::vulture], [&](unit*u) {
 						return u->last_attacked;
