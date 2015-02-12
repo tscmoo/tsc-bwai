@@ -385,8 +385,10 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep, bool no
 					}
 				}
 				if (builder) {
-					if (builder->type == unit_types::larva) --builder->larva_count;
-					else builder->busy_until = st.frame + build->build_time;
+					if (build->builder_type == unit_types::larva) {
+						if (builder->larva_count == 3) builder->busy_until = st.frame + 333;
+						--builder->larva_count;
+					} else builder->busy_until = st.frame + build->build_time;
 					if (build == unit_types::nuclear_missile) builder->busy_until = st.frame + 15 * 60 * 30;
 					st.production.emplace(st.frame + build->build_time, build);
 					st.produced.emplace(st.frame, std::make_tuple(build, nullptr));
@@ -398,7 +400,7 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep, bool no
 					st.gas -= build->gas_cost;
 					st.used_supply[build->race] += build->required_supply;
 					if (build->is_addon) builder->has_addon = true;
-					if (builder->type == unit_types::drone) rm_unit(st, builder->type);
+					if (builder->type == unit_types::drone) rm_unit_and_supply(st, builder->type);
 					//log("%s successfully built\n", build->name);
 					return (unit_type*)nullptr;
 				}
@@ -688,8 +690,8 @@ static const auto nodelay_n = [](state&st, unit_type*ut, int n, const std::funct
 	}
 };
 static const auto nodelay = [](state&st, unit_type*ut, const std::function<bool(state&)>&func) {
-	if (ut->is_worker && st.units[ut].size() >= 70) return func(st);
-	if (ut->is_worker) {
+	if (ut->is_worker && ut != unit_types::drone && st.units[ut].size() >= 70) return func(st);
+	if (ut->is_worker && ut != unit_types::drone) {
 		if (count_production(st, ut) >= 3) return func(st);
 	}
 	return nodelay_n(st, ut, 0, func);
@@ -1230,13 +1232,14 @@ state get_my_current_state() {
 		if (u->type->is_addon) continue;
 		if (u->type == unit_types::larva) continue;
 		unit_type*ut = u->type;
+		if (ut->game_unit_type == BWAPI::UnitTypes::Zerg_Egg) {
+			ut = units::get_unit_type(u->game_unit->getBuildType());
+			if (!ut) continue;
+			if (ut->is_two_units_in_one_egg) add_unit(initial_state, ut);
+		}
 		if (!u->is_completed && !ut->provided_supply) {
 			initial_state.production.emplace(initial_state.frame + u->remaining_whatever_time, ut);
 			continue;
-		}
-		if (ut->game_unit_type == BWAPI::UnitTypes::Zerg_Egg) {
-			ut = units::get_unit_type(u->game_unit->getBuildType());
-			if (ut->is_two_units_in_one_egg) add_unit(initial_state, ut);
 		}
 		auto&st_u = add_unit(initial_state, ut);
 		if (u->addon) st_u.has_addon = true;
