@@ -34,6 +34,7 @@ struct unit_controller {
 	int weapon_ready_frames = 0;
 	int last_process = 0;
 	int not_moving_counter = 0;
+	int last_command_frame = 0;
 };
 
 namespace unit_controls {
@@ -244,10 +245,12 @@ void process(const a_vector<unit_controller*>&controllers) {
 // 		}
 
 		if (c->last_process == current_frame) continue;
+		if (c->last_command_frame == current_command_frame) continue;
 		c->last_process = current_frame;
 
 		unit*u = c->u;
 		if (u->building && c->action != unit_controller::action_building_movement) continue;
+
 
 		if (u->game_order == BWAPI::Orders::Move && u->speed == 0.0) {
 			++c->not_moving_counter;
@@ -452,6 +455,7 @@ void process(const a_vector<unit_controller*>&controllers) {
 						if (valkyrie_method) a += PI;
 						xy dst = movedst(u->pos, a, rel.length());
 						u->game_unit->patrol(BWAPI::Position(dst.x, dst.y));
+						c->last_command_frame = current_frame;
 
 						c->attack_timer = current_frame;
 						c->attack_state = 2;
@@ -498,8 +502,11 @@ void process(const a_vector<unit_controller*>&controllers) {
 				if (u->type == unit_types::wraith) wait_frames = 2;
 				if (u->type == unit_types::battlecruiser) wait_frames = 2;
 
+				if (u->type == unit_types::hydralisk) wait_frames = 6;
+				if (u->type == unit_types::mutalisk) wait_frames = 2;
+
 				if (c->action != unit_controller::action_kite) {
-					if (u->type == unit_types::marine || u->type == unit_types::ghost || u->type == unit_types::firebat) {
+					if (u->type == unit_types::marine || u->type == unit_types::ghost || u->type == unit_types::firebat || u->type == unit_types::hydralisk) {
 						if (!ew || w->max_range <= ew->max_range || d > ew->max_range + 64) do_state_machine = false;
 					}
 				}
@@ -545,6 +552,7 @@ void process(const a_vector<unit_controller*>&controllers) {
 							}
 						} else if (c->attack_state == 1) {
 							u->game_unit->attack(c->target->game_unit);
+							c->last_command_frame = current_command_frame;
 							c->attack_state = 2;
 						} else if (c->attack_state == 2) {
 							if (current_frame >= c->attack_timer) {
@@ -567,12 +575,13 @@ void process(const a_vector<unit_controller*>&controllers) {
 								if (turn_frames) {
 									u->game_unit->move(BWAPI::Position(c->target->pos.x, c->target->pos.y));
 									c->attack_state = 10;
+									c->attack_timer = current_frame + turn_frames;
 								} else {
 									u->game_unit->attack(c->target->game_unit);
+									c->last_command_frame = current_command_frame;
 									c->attack_state = 1;
+									c->attack_timer = current_frame + turn_frames + wait_frames + 1;
 								}
-
-								c->attack_timer = current_frame + turn_frames + wait_frames + 1;
 							} else {
 
 								xy dst = u->pos;
@@ -589,12 +598,15 @@ void process(const a_vector<unit_controller*>&controllers) {
 
 							}
 						} else if (c->attack_state == 10) {
-							if (turn_frames <= latency_frames || current_frame >= c->attack_timer) {
+							//if (turn_frames <= latency_frames || current_frame >= c->attack_timer) {
+							if (current_frame >= c->attack_timer) {
 								u->game_unit->attack(c->target->game_unit);
+								c->last_command_frame = current_command_frame;
 								c->attack_state = 1;
+								c->attack_timer = current_frame + turn_frames + wait_frames + 1;
 							}
 						} else if (c->attack_state == 1) {
-							if (current_frame >= c->attack_timer) {
+							if (current_frame >= c->attack_timer && current_command_frame != c->last_command_frame) {
 								xy dst = u->pos;
 								dst.x += (int)(std::cos(rel_angle) * 32 * -10);
 								dst.y += (int)(std::sin(rel_angle) * 32 * -10);
@@ -625,7 +637,7 @@ void process(const a_vector<unit_controller*>&controllers) {
 
 		if (current_frame < c->noorder_until) continue;
 
-		if (current_frame < c->move_away_until) {
+		if (current_frame < c->move_away_until && !u->is_flying) {
 			if (u->game_unit->isSieged()) u->game_unit->unsiege();
 			move_away(c);
 			continue;
@@ -848,6 +860,7 @@ void process(const a_vector<unit_controller*>&controllers) {
 							u->game_unit->attack(BWAPI::Position(c->target->pos.x, c->target->pos.y));
 						}
 					}
+					c->last_command_frame = current_command_frame;
 				}
 			}
 
