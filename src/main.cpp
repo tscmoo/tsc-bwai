@@ -223,7 +223,7 @@ bool bwapi_is_healing_order(BWAPI::Order order) {
 }
 
 int latency_frames;
-
+int current_command_frame;
 
 double current_minerals, current_gas;
 std::array<double,3> current_used_supply, current_max_supply;
@@ -370,6 +370,7 @@ struct module : BWAPI::AIModule {
 
 		current_frame = game->getFrameCount();
 		latency_frames = game->getRemainingLatencyFrames();
+		current_command_frame = current_frame + latency_frames;
 		if (!game->self()) return;
 
 		tsc::high_resolution_timer ht;
@@ -479,6 +480,9 @@ int main() {
 				break;
 			case BWAPI::EventType::UnitComplete:
 				m.onUnitComplete(e.getUnit());
+				break;
+			case BWAPI::EventType::SendText:
+				game->sendText("%s", e.getText().c_str());
 				break;
 			}
 		}
