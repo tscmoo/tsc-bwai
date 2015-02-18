@@ -40,6 +40,7 @@ struct unit_type {
 	int space_provided;
 	bool is_biological;
 	bool is_mechanical;
+	bool is_robotic;
 	bool is_hovering;
 	bool is_non_usable;
 	bool is_detector;
@@ -189,6 +190,7 @@ struct unit {
 	double defensive_matrix_hp;
 	int irradiate_timer;
 	int stim_timer;
+	int plague_timer;
 	int is_blind;
 	int scan_me_until;
 	bool is_powered;
@@ -221,9 +223,10 @@ namespace unit_types {
 	unit_type_pointer archon, dark_archon;
 	unit_type_pointer observer, shuttle, scout, carrier, interceptor, arbiter, corsair;
 	unit_type_pointer hatchery, lair, hive, creep_colony, sunken_colony, spore_colony, nydus_canal, spawning_pool, evolution_chamber;
-	unit_type_pointer hydralisk_den, spire, greater_spire, extractor;
+	unit_type_pointer hydralisk_den, spire, greater_spire, extractor, ultralisk_cavern, defiler_mound;
 	unit_type_pointer drone, overlord, zergling, larva, egg, hydralisk, lurker, lurker_egg, ultralisk, defiler;
 	unit_type_pointer mutalisk, cocoon, scourge, queen, guardian, devourer;
+	unit_type_pointer spell_dark_swarm;
 	unit_type_pointer vespene_geyser;
 	std::reference_wrapper<unit_type_pointer> units_that_produce_land_units[] = {
 		cc, barracks, factory,
@@ -315,6 +318,8 @@ namespace unit_types {
 		get(spire, BWAPI::UnitTypes::Zerg_Spire);
 		get(greater_spire, BWAPI::UnitTypes::Zerg_Greater_Spire);
 		get(extractor, BWAPI::UnitTypes::Zerg_Extractor);
+		get(ultralisk_cavern, BWAPI::UnitTypes::Zerg_Ultralisk_Cavern);
+		get(defiler_mound, BWAPI::UnitTypes::Zerg_Defiler_Mound);
 
 		get(drone, BWAPI::UnitTypes::Zerg_Drone);
 		get(egg, BWAPI::UnitTypes::Zerg_Egg);
@@ -332,6 +337,8 @@ namespace unit_types {
 		get(queen, BWAPI::UnitTypes::Zerg_Queen);
 		get(guardian, BWAPI::UnitTypes::Zerg_Guardian);
 		get(devourer, BWAPI::UnitTypes::Zerg_Devourer);
+
+		get(spell_dark_swarm, BWAPI::UnitTypes::Spell_Dark_Swarm);
 
 		get(vespene_geyser, BWAPI::UnitTypes::Resource_Vespene_Geyser);
 	}
@@ -435,6 +442,7 @@ unit_type*new_unit_type(BWAPI::UnitType game_unit_type,unit_type*ut) {
 	ut->space_provided = game_unit_type.spaceProvided();
 	ut->is_biological = game_unit_type.isOrganic();
 	ut->is_mechanical = game_unit_type.isMechanical();
+	ut->is_robotic = game_unit_type.isRobotic();
 	ut->is_hovering = ut->is_worker || ut == unit_types::vulture || ut == unit_types::archon || ut == unit_types::dark_archon;
 	ut->is_non_usable = ut == unit_types::spider_mine || ut == unit_types::nuclear_missile || ut == unit_types::larva;
 	ut->is_non_usable |= game_unit_type.maxHitPoints() <= 1;
@@ -715,6 +723,7 @@ void update_unit_stuff(unit*u) {
 	u->defensive_matrix_hp = u->game_unit->getDefenseMatrixPoints();
 	u->irradiate_timer = u->game_unit->getIrradiateTimer() * 8;
 	u->stim_timer = u->game_unit->getStimTimer() * 8;
+	u->plague_timer = u->game_unit->getPlagueTimer() * 8;
 	u->is_blind = u->game_unit->isBlind();
 	
 	u->is_powered = bwapi_is_powered(u->game_unit);
@@ -1069,6 +1078,11 @@ void update_units_task() {
 // 		}
 
 		for (unit*u : visible_units) {
+			if (!u->game_unit->exists()) {
+				// If BWAPI sends the hide and destroy events properly, then this should never trigger.
+				events.emplace_back(event_t::t_refresh, u->game_unit);
+				continue;
+			}
 			u->last_seen = current_frame;
 			bool prev_is_completed = u->is_completed;
 			update_unit_stuff(u);
