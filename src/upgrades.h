@@ -49,6 +49,11 @@ namespace upgrade_types {
 	upgrade_type_pointer zerg_flyer_carapace_1, zerg_flyer_carapace_2, zerg_flyer_carapace_3;
 
 	upgrade_type_pointer metabolic_boost, adrenal_glands;
+	upgrade_type_pointer muscular_augments, grooved_spines, lurker_aspect;
+	upgrade_type_pointer anabolic_synthesis, chitinous_plating;
+	upgrade_type_pointer infestation, parasite, ensnare, spawn_broodling, gamete_meiosis;
+	upgrade_type_pointer ventral_sacs, antennae, pneumatized_carapace;
+	upgrade_type_pointer dark_swarm, consume, plague, metasynaptic_node;
 
 	void init() {
 		get(terran_infantry_weapons_1, BWAPI::UpgradeTypes::Terran_Infantry_Weapons, 1);
@@ -112,6 +117,23 @@ namespace upgrade_types {
 
 		get(metabolic_boost, BWAPI::UpgradeTypes::Metabolic_Boost);
 		get(adrenal_glands, BWAPI::UpgradeTypes::Adrenal_Glands);
+		get(muscular_augments, BWAPI::UpgradeTypes::Muscular_Augments);
+		get(grooved_spines, BWAPI::UpgradeTypes::Grooved_Spines);
+		get(lurker_aspect, BWAPI::TechTypes::Lurker_Aspect);
+		get(anabolic_synthesis, BWAPI::UpgradeTypes::Anabolic_Synthesis);
+		get(chitinous_plating, BWAPI::UpgradeTypes::Chitinous_Plating);
+		get(infestation, BWAPI::TechTypes::Infestation);
+		get(parasite, BWAPI::TechTypes::Parasite);
+		get(ensnare, BWAPI::TechTypes::Ensnare);
+		get(spawn_broodling, BWAPI::TechTypes::Spawn_Broodlings);
+		get(gamete_meiosis, BWAPI::UpgradeTypes::Gamete_Meiosis);
+		get(ventral_sacs, BWAPI::UpgradeTypes::Ventral_Sacs);
+		get(antennae, BWAPI::UpgradeTypes::Antennae);
+		get(pneumatized_carapace, BWAPI::UpgradeTypes::Pneumatized_Carapace);
+		get(dark_swarm, BWAPI::TechTypes::Dark_Swarm);
+		get(consume, BWAPI::TechTypes::Consume);
+		get(plague, BWAPI::TechTypes::Plague);
+		get(metasynaptic_node, BWAPI::UpgradeTypes::Metasynaptic_Node);
 	}
 }
 
