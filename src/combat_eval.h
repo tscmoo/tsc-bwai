@@ -98,11 +98,9 @@ namespace combat_eval {
 		void run() {
 			total_frames = 0;
 			for (auto&t : teams) {
-				//if (t.units.empty()) xcept("empty team");
 				std::sort(t.units.begin(), t.units.end(), [&](const combatant&a, const combatant&b) {
 					double ar = a.st->ground_weapon ? a.st->ground_weapon->max_range : a.st->air_weapon ? a.st->air_weapon->max_range : 0;
 					double br = b.st->ground_weapon ? b.st->ground_weapon->max_range : b.st->air_weapon ? b.st->air_weapon->max_range : 0;
-					//return a.move + ar < b.move + br;
 					double am = (a.move - ar) / a.st->max_speed;
 					double bm = (b.move - br) / b.st->max_speed;
 					if (std::abs(am - bm) <= 15 * 2) return a.hp < b.hp;
@@ -134,7 +132,7 @@ namespace combat_eval {
 						//if (acc_width >= max_width) continue;
 						if (c.energy < c.st->energy) c.energy += 8.0 / 256 * frame_resolution;
 						if (c.st->type->race == race_zerg && c.hp < c.st->hp) c.hp += 4.0 / 256 * frame_resolution;
-						if ((c.st->type->is_worker || c.st->type == unit_types::zergling) && acc_width >= max_width) continue;
+						//if ((c.st->type->is_worker || c.st->type == unit_types::zergling) && acc_width >= max_width) continue;
 						if (c.loaded_until > total_frames) {
 							++target_count;
 							continue;
