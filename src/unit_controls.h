@@ -167,6 +167,8 @@ void move(unit_controller*c) {
 				u->loaded_into->game_unit->unload(u->game_unit);
 			} else if (u->game_unit->isSieged()) {
 				if (current_frame - u->last_attacked >= 90) u->game_unit->unsiege();
+			} else if (u->game_unit->isBurrowed()) {
+				if (current_frame - u->last_attacked >= 90) u->game_unit->unburrow();
 			} else if (u->type == unit_types::medic) {
 				if (!bwapi_is_healing_order(u->game_order)) {
 					u->game_unit->useTech(upgrade_types::healing->game_tech_type, BWAPI::Position(move_to.x, move_to.y));
@@ -820,7 +822,7 @@ void process(const a_vector<unit_controller*>&controllers) {
 			else {
 				xy upos = u->pos + xy((int)(u->hspeed*latency_frames), (int)(u->vspeed*latency_frames));
 				xy tpos = c->target->pos + xy((int)(c->target->hspeed*latency_frames), (int)(c->target->vspeed*latency_frames));
-				double d = units_distance(upos, u, tpos, c->target) - w->max_range;
+				double d = units_distance(upos, u, tpos, c->target) - (w ? w->max_range : 64.0);
 				if (c->u->type == unit_types::goliath) d += 32;
 				if (w && frames_to_reach(u, d) >= u->weapon_cooldown - latency_frames) do_attack = true;
 				else {
