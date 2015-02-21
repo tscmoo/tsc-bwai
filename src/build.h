@@ -24,6 +24,7 @@ struct build_task: refcounted {
 	int last_look_for_builder;
 	xy build_pos;
 	xy build_near;
+	bool require_existing_creep;
 	xy land_pos;
 	int last_find_build_pos;
 	int build_frame;
@@ -144,11 +145,11 @@ void update_prerequisites(build_task*t) {
 	auto add = [&](build_type*pt,bool if_needed) {
 		build_task*p = if_needed ? get_prerequisite_if_needed(t, pt) : get_prerequisite(pt);
 		if (p) {
-			if (t->priority<p->priority) prereq_override_priority(p,t->priority);
-			//p->priority = t->priority;
-			if (t->prerequisites.size()>n) {
-				if (t->prerequisites[n]!=p) {
-					cancel_prerequisite(t,t->prerequisites[n]);
+			if (t->require_existing_creep) p->require_existing_creep = true;
+			if (t->priority < p->priority) prereq_override_priority(p, t->priority);
+			if (t->prerequisites.size() > n) {
+				if (t->prerequisites[n] != p) {
+					cancel_prerequisite(t, t->prerequisites[n]);
 					t->prerequisites[n] = p;
 					p->prerequisite_for.push_back(t);
 				}
@@ -220,6 +221,7 @@ build_task*add_build_task(double priority,build_type*type) {
 	t->type = type;
 	t->builder = nullptr;
 	t->last_look_for_builder = 0;
+	t->require_existing_creep = false;
 	t->last_find_build_pos = 0;
 	t->build_frame = 0;
 	t->built_unit = 0;
@@ -447,6 +449,14 @@ void generate_build_order_task() {
 bool build_has_pylon(grid::build_square&bs, unit_type*ut) {
 	return pylons::is_in_pylon_range(bs.pos + xy(ut->tile_width * 16, ut->tile_height * 16), pylons::existing_completed_pylons);
 }
+bool build_has_existing_creep(grid::build_square&bs, unit_type*ut) {
+	for (int y = 0; y < ut->tile_height; ++y) {
+		for (int x = 0; x < ut->tile_width; ++x) {
+			if (!grid::get_build_square(bs.pos + xy(x * 32, y * 32)).has_creep) return false;
+		}
+	}
+	return true;
+}
 bool build_has_creep(grid::build_square&bs, unit_type*ut) {
 	for (int y = 0; y < ut->tile_height; ++y) {
 		for (int x = 0; x < ut->tile_width; ++x) {
@@ -467,7 +477,7 @@ bool build_has_not_creep(grid::build_square&bs, unit_type*ut) {
 }
 bool build_full_check(grid::build_square&bs, unit_type*ut, bool allow_large_path_around = false) {
 	bool okay = build_spot_finder::can_build_at(ut, bs, allow_large_path_around);
-	if (!ut->requires_creep && okay) okay &= build_has_not_creep(bs, ut);
+	if (!ut->requires_creep && ut != unit_types::hatchery && okay) okay &= build_has_not_creep(bs, ut);
 	if (ut->requires_creep && okay) okay &= build_has_creep(bs, ut);
 	if (ut->requires_pylon && okay) okay &= build_has_pylon(bs, ut);
 	return okay;
@@ -475,7 +485,7 @@ bool build_full_check(grid::build_square&bs, unit_type*ut, bool allow_large_path
 
 bool build_is_valid(grid::build_square&bs, unit_type*ut) {
 	bool okay = build_spot_finder::is_buildable_at(ut, bs);
-	if (!ut->requires_creep && okay) okay &= build_has_not_creep(bs, ut);
+	if (!ut->requires_creep && ut != unit_types::hatchery && okay) okay &= build_has_not_creep(bs, ut);
 	if (ut->requires_creep && okay) okay &= build_has_creep(bs, ut);
 	if (ut->requires_pylon && okay) okay &= build_has_pylon(bs, ut);
 	return okay;
@@ -592,7 +602,7 @@ void execute_build(build_task&b) {
 			grid::unreserve_build_squares(b.build_pos,b.type->unit);
 			bool okay = build_spot_finder::is_buildable_at(b.type->unit, b.build_pos);
 			auto&bs = grid::get_build_square(b.build_pos);
-			if (!b.type->unit->requires_creep && okay) okay &= pred_not_creep(bs);
+			if (!b.type->unit->requires_creep && !is_creep && okay) okay &= pred_not_creep(bs);
 			if (b.type->unit->requires_creep && !is_creep && okay) okay &= pred_creep(bs);
 			if (b.type->unit->requires_pylon && okay) okay &= pred_pylon(bs);
 			if (!okay) {
@@ -670,6 +680,7 @@ void execute_build(build_task&b) {
 			} else if (b.type->unit->requires_creep && (!is_creep || b.prerequisite_for.empty())) {
 				pos = build_spot_finder::find_best(starts,32,[&](grid::build_square&bs) {
 					if (!build_spot_finder::can_build_at(b.type->unit, bs)) return false;
+					if (b.require_existing_creep) return build_has_existing_creep(bs, b.type->unit);
 					return pred_creep(bs);
 				},[&](xy pos) {
 					int n = 0;
@@ -726,6 +737,7 @@ void execute_build(build_task&b) {
 					} else {
 						pos = build_spot_finder::find_best(starts,32,[&](grid::build_square&bs) {
 							if (!build_spot_finder::can_build_at(b.type->unit,bs)) return false;
+							if (b.require_existing_creep && !build_has_existing_creep(bs, b.type->unit)) return false;
 							if (is_creep_colony && !pred_creep(bs)) return false;
 							if (!ut) return true;
 							creep::creep_source cs(bs.pos,is_creep_colony ? creep::creep_source_creep_colony : creep::creep_source_hatchery);
@@ -1128,7 +1140,7 @@ bool match_new_unit(unit*u) {
 	for (build_task&b : build_tasks) {
 		if (b.built_unit) continue;
 		if (b.type->unit != u->type) continue;
-		if (u->build_unit == b.builder) {
+		if (u->build_unit == b.builder || b.type->unit->race == race_zerg) {
 			b.built_unit = u;
 			b.build_started_frame = current_frame;
 			return true;
@@ -1204,7 +1216,7 @@ void execute_build_task() {
 			}
 			if (b.built_unit) {
 				if (b.built_unit->is_completed) {
-					log("%s is no longer being constructed!\n",b.type->name);
+					log("%s is no longer being constructed!\n", b.type->name);
 					cancel_build_task(&b);
 					continue;
 				}
@@ -1226,8 +1238,8 @@ void execute_build_task() {
 					if (b.type->unit != unit_types::bunker) unset_build_pos(&b);
 				}
 			}
-			if (b.dead && b.reference_count==0) {
-				log("build task %s dead, no references\n",b.type->name);
+			if (b.dead && b.reference_count == 0) {
+				log("build task %s dead, no references\n", b.type->name);
 				cancel_build_task(&b);
 				continue;
 			}
@@ -1239,16 +1251,24 @@ void execute_build_task() {
 					continue;
 				}
 			}
+			if (b.type->unit && b.type->unit->is_refinery && !b.built_unit && b.build_pos != xy()) {
+				auto*building = grid::get_build_square(b.build_pos).building;
+				if (building && building->type != unit_types::vespene_geyser) {
+					log("build task %s is a refinery on top of a building\n", b.type->name);
+					cancel_build_task(&b);
+					continue;
+				}
+			}
 		}
 
 		for (build_task&b : build_tasks) {
 			if (b.dead) continue;
-			if (b.build_frame==0 && !b.built_unit) continue;
+			if (b.build_frame == 0 && !b.built_unit) continue;
 			execute_build(b);
 		}
 
 		for (unit*u : my_buildings) {
-			if (!u->is_completed) {
+			if (!u->is_completed && !u->is_morphing) {
 				bool found = false;
 				for (build_task&b : build_tasks) {
 					if (b.built_unit == u) {
