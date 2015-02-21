@@ -356,7 +356,7 @@ typename cont_T::pointer get_best_score_p(cont_T&cont,score_F&&score,const inval
 }
 template<typename cont_T, typename score_F, typename invalid_score_T = no_value_t, typename best_possible_score_T = no_value_t>
 typename std::result_of<score_F(typename cont_T::value_type)>::type get_best_score_value(cont_T&cont, score_F&&score, const invalid_score_T invalid_score = invalid_score_T(), const best_possible_score_T best_possible_score = best_possible_score_T()) {
-	auto&t_cont = make_transform_filter(cont, std::forward<score_F>(score));
+	auto t_cont = make_transform_filter(cont, std::forward<score_F>(score));
 	return get_best_score(t_cont, identity_any(), invalid_score, best_possible_score);
 }
 
