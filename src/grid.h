@@ -61,6 +61,7 @@ struct build_square {
 	bool entirely_walkable;
 	int last_seen;
 	bool reserved_for_resource_depot;
+	bool blocked_by_larva_or_egg;
 	template<int=0>
 	build_square*get_neighbor(int d) {
 		xy p;
@@ -170,6 +171,7 @@ void update_mineral_reserved_task() {
 			v.mineral_reserved = false;
 			v.no_resource_depot = false;
 			v.reserved_for_resource_depot = false;
+			v.blocked_by_larva_or_egg = false;
 		}
 		
 		for (unit*u : resource_units) {
@@ -207,6 +209,15 @@ void update_mineral_reserved_task() {
 			}
 		}
 
+		for (unit*u : visible_units) {
+			if (u->type != unit_types::larva && u->type != unit_types::egg && u->type != unit_types::lurker_egg) continue;
+			get_build_square(u->pos).blocked_by_larva_or_egg = true;
+			get_build_square(u->pos + xy(-u->type->dimension_left(), -u->type->dimension_up())).blocked_by_larva_or_egg = true;
+			get_build_square(u->pos + xy(u->type->dimension_right(), -u->type->dimension_up())).blocked_by_larva_or_egg = true;
+			get_build_square(u->pos + xy(u->type->dimension_right(), u->type->dimension_down())).blocked_by_larva_or_egg = true;
+			get_build_square(u->pos + xy(-u->type->dimension_left(), u->type->dimension_down())).blocked_by_larva_or_egg = true;
+		}
+
 		multitasking::sleep(15*10);
 	}
 }
@@ -235,6 +246,8 @@ void init() {
 			bs.no_resource_depot = false;
 			bs.entirely_walkable = false;
 			bs.last_seen = 0;
+			bs.reserved_for_resource_depot = false;
+			bs.blocked_by_larva_or_egg = false;
 		}
 	}
 
