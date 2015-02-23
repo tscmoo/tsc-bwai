@@ -283,9 +283,9 @@ void update_complete_creep_spread_task() {
 		complete_creep_spread.reset();
 		for (unit*u : my_units) {
 			if (!u->building) continue;
-			if (!u->is_completed) continue;
-			bool h = u->type->game_unit_type==BWAPI::UnitTypes::Zerg_Hatchery;
-			bool c = u->type->game_unit_type==BWAPI::UnitTypes::Zerg_Creep_Colony || u->type->game_unit_type==BWAPI::UnitTypes::Zerg_Sunken_Colony || u->type->game_unit_type==BWAPI::UnitTypes::Zerg_Spore_Colony;
+			if (!u->is_completed && !u->is_morphing) continue;
+			bool h = u->type == unit_types::hatchery || u->type==unit_types::lair || u->type==unit_types::hive;
+			bool c = u->type == unit_types::creep_colony || u->type == unit_types::sunken_colony || u->type == unit_types::spore_colony;
 			if (h || c) {
 				for (grid::build_square*bs : get_creep_from(u->building->build_pos,h ? creep_source_hatchery : creep_source_creep_colony)) {
 					complete_creep_spread.set(bs->pos.x/32 + bs->pos.y/32 * grid::build_grid_width);
