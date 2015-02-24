@@ -4,6 +4,7 @@ namespace scouting {
 
 double comsat_supply = 60.0;
 double scout_supply = 8;
+bool no_proxy_scout = false;
 
 struct scout {
 	unit*scout_unit = nullptr;
@@ -555,7 +556,7 @@ void process_scouts() {
 			}
 		}
 	}
-	if (current_frame <= 15 * 60 * 8 && my_completed_units_of_type[unit_types::marine].empty()) {
+	if (current_frame <= 15 * 60 * 8 && my_completed_units_of_type[unit_types::marine].empty() && !no_proxy_scout) {
 		if (current_frame - last_proxy_scout >= 15 * 60 * 3) {
 			last_proxy_scout = current_frame;
 			unit*scout_unit = get_best_score(my_workers, [&](unit*u) {
