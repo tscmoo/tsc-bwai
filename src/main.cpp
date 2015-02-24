@@ -328,7 +328,7 @@ struct module : BWAPI::AIModule {
 
 		if (!game->self()) return;
 
-		game->sendText("tsc-bwai v0.3.1 dev");
+		game->sendText("tsc-bwai v0.3.14 dev");
 
 		init();
 
@@ -428,15 +428,19 @@ struct module : BWAPI::AIModule {
 
 template<bool b = is_bwapi_4, typename std::enable_if<b>::type* = 0>
 void bwapi_connect() {
-	while (!BWAPI::BWAPIClient.connect()) std::this_thread::sleep_for(std::chrono::seconds(1));
+	while (!BWAPI::BWAPIClient.connect()) std::this_thread::sleep_for(std::chrono::milliseconds(250));
 	game = BWAPI::BroodwarPtr;
 }
 template<bool b = is_bwapi_4, typename std::enable_if<!b>::type* = 0>
 void bwapi_connect() {
 	BWAPI::BWAPI_init();
-	while (!BWAPI::BWAPIClient.connect()) std::this_thread::sleep_for(std::chrono::seconds(1));
+	while (!BWAPI::BWAPIClient.connect()) std::this_thread::sleep_for(std::chrono::milliseconds(250));
 	game = BWAPI::Broodwar;
 }
+
+//#define IS_DLL
+
+#ifndef IS_DLL
 
 int main() {
 
@@ -497,3 +501,18 @@ int main() {
 	return 0;
 }
 
+#else
+
+extern "C" __declspec(dllexport)
+void gameInit(BWAPI::Game* game) {
+	BWAPI::BroodwarPtr = game;
+	::game = game;
+}
+extern "C" __declspec(dllexport)
+BWAPI::AIModule*newAIModule() {
+	return new module();
+	static module m;
+	return &m;
+}
+
+#endif
