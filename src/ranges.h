@@ -65,12 +65,11 @@ struct transform_filter {
 
 	typename T::iterator it;
 
-	//typedef decltype(filter(std::declval<T::value_type>())) value_type;
 	typedef typename std::result_of<filter_F(typename T::reference)>::type value_type;
 	
 	template<typename iterator_T>
 	struct iterator_impl {
-		typedef decltype(std::declval<const transform_filter>().filter(std::declval<iterator_T::value_type>())) value_type;
+		typedef decltype(std::declval<const transform_filter>().filter(std::declval<iterator_T::reference>())) value_type;
 		const transform_filter&r;
 		iterator_T it;
 		iterator_impl(const transform_filter&r,iterator_T it) : r(r), it(it) {}
@@ -112,7 +111,9 @@ struct iterators_range {
 
 	typedef iter_T iterator;
 
-	typedef typename iter_T::value_type value_type;
+	typedef typename iterator::value_type value_type;
+	typedef typename iterator::pointer pointer;
+	typedef typename iterator::reference reference;
 
 	iterator begin() {
 		return begin_it;
