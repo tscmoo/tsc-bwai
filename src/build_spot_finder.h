@@ -106,6 +106,7 @@ bool is_buildable_at(unit_type*ut, const at_T&at) {
 			if (!ut->is_resource_depot && bs.mineral_reserved) return false;
 			if (!ut->is_resource_depot && bs.reserved_for_resource_depot) return false;
 			if (ut->is_resource_depot && bs.no_resource_depot) return false;
+			if (bs.blocked_by_larva_or_egg) return false;
 		}
 	}
 	return true;
