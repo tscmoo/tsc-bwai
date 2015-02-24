@@ -47,6 +47,7 @@ namespace combat_eval {
 			weapon_stats*spider_mine_weapon;
 			int bunker_count = 0;
 			bool has_static_defence = false;
+			bool run = false;
 		};
 		std::array<team_t, 2> teams;
 		int total_frames = 0;
@@ -188,7 +189,9 @@ namespace combat_eval {
 						if (c.cooldown > 0) c.cooldown -= frame_resolution;
 						if (c.irradiate_timer > 0) c.irradiate_timer -= frame_resolution;
 						//if (c.st->type == unit_types::dropship) log("frame %d: %s: target is %p (force_target %d)\n", total_frames, c.st->type->name, target, c.force_target);
-						if (target) {
+						if (teams[i].run) {
+							c.move += c.st->max_speed * frame_resolution;
+						} else if (target) {
 
 							double speed = c.st->max_speed;
 							if (c.st->type == unit_types::siege_tank_siege_mode) speed = 2;
