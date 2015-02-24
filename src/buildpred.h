@@ -1219,7 +1219,9 @@ state get_my_current_state() {
 	initial_state.max_supply = current_max_supply;
 
 	for (auto&s : resource_spots::spots) {
-		for (unit*u : my_resource_depots) {
+		//for (unit*u : my_resource_depots) {
+		for (unit*u : my_buildings) {
+			if (!u->type->is_resource_depot) continue;
 			if (u->building->is_lifted) continue;
 			if (diag_distance(u->building->build_pos - s.cc_build_pos) <= 32 * 4) {
 				add_base(initial_state, s).verified = true;
