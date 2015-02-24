@@ -162,12 +162,20 @@ void update_prerequisites(build_task*t) {
 	};
 	for (build_type*pt : t->type->prerequisites) {
 		if (pt->unit == unit_types::larva) continue;
-		add(pt,true);
+		if (pt->unit == unit_types::hatchery && (!my_units_of_type[unit_types::lair].empty() || !my_units_of_type[unit_types::hive].empty())) continue;
+		if (pt->unit == unit_types::lair && !my_units_of_type[unit_types::hive].empty()) continue;
+		if (t->type->unit == unit_types::lair && pt->unit == unit_types::hatchery) continue;
+		add(pt, true);
 	}
 	if (t->needs_pylon) add(get_build_type(unit_types::pylon),false);
 	if (t->needs_creep) {
-		if (t->type->unit==unit_types::creep_colony) add(get_build_type(unit_types::hatchery),false);
-		else add(get_build_type(unit_types::creep_colony),false);
+		if (t->type->unit == unit_types::creep_colony) {
+			log("%s needs creep, adding hatchery\n", t->type->name);
+			add(get_build_type(unit_types::hatchery), false);
+		} else {
+			log("%s needs creep, adding creep colony\n", t->type->name);
+			add(get_build_type(unit_types::creep_colony), false);
+		}
 	}
 	if (t->supply_req) {
 		unit_type*su = t->type->unit->race==race_zerg ? unit_types::overlord : t->type->unit->race==race_protoss ? unit_types::pylon : unit_types::supply_depot;
@@ -678,28 +686,41 @@ void execute_build(build_task&b) {
 				if (pos!=xy()) b.needs_pylon = false;
 				if (pos!=xy()) log("No longer needs pylon :D\n");
 			} else if (b.type->unit->requires_creep && (!is_creep || b.prerequisite_for.empty())) {
-				pos = build_spot_finder::find_best(starts,32,[&](grid::build_square&bs) {
+				pos = build_spot_finder::find_best(starts, 128, [&](grid::build_square&bs) {
 					if (!build_spot_finder::can_build_at(b.type->unit, bs)) return false;
 					if (b.require_existing_creep) return build_has_existing_creep(bs, b.type->unit);
 					return pred_creep(bs);
-				},[&](xy pos) {
+				}, [&](xy pos) {
 					int n = 0;
-					for (int y=0;y<b.type->unit->tile_height;++y) {
-						for (int x=0;x<b.type->unit->tile_width;++x) {
-							if (grid::get_build_square(pos + xy(x*32,y*32)).has_creep) ++n;
+					for (int y = 0; y < b.type->unit->tile_height; ++y) {
+						for (int x = 0; x < b.type->unit->tile_width; ++x) {
+							if (grid::get_build_square(pos + xy(x * 32, y * 32)).has_creep) ++n;
 						}
 					}
 					return -n;
 				});
 				log("find creep pos -> %d %d\n", pos.x, pos.y);
-				if (pos==xy() && !b.needs_creep) {
+				if (pos == xy() && !b.needs_creep && !b.require_existing_creep) {
 					log("maybe need creep\n");
-					xy pos2 = build_spot_finder::find(starts,b.type->unit);
-					if (pos2!=xy()) b.needs_creep= true;
-					if (pos2==xy()) log("failed to find even disregarding that :(\n");
+					//xy pos2 = build_spot_finder::find(starts, b.type->unit);
+					xy pos2 = build_spot_finder::find_best(starts, 128, [&](grid::build_square&bs) {
+						if (!build_spot_finder::can_build_at(b.type->unit, bs)) return false;
+						if (b.require_existing_creep) return build_has_existing_creep(bs, b.type->unit);
+						return true;
+					}, [&](xy pos) {
+						int n = 0;
+						for (int y = 0; y < b.type->unit->tile_height; ++y) {
+							for (int x = 0; x < b.type->unit->tile_width; ++x) {
+								if (grid::get_build_square(pos + xy(x * 32, y * 32)).has_creep) ++n;
+							}
+						}
+						return -n;
+					});
+					if (pos2 != xy()) b.needs_creep = true;
+					if (pos2 == xy()) log("failed to find even disregarding that :(\n");
 				}
-				if (pos!=xy()) b.needs_creep = false;
-				if (pos!=xy()) log("No longer needs creep:D\n");
+				if (pos != xy()) b.needs_creep = false;
+				if (pos != xy()) log("No longer needs creep:D\n");
 			} else {
 				if ((is_pylon || is_creep) && !b.prerequisite_for.empty()) {
 					int max_w = 2, max_h = 2;
@@ -763,7 +784,7 @@ void execute_build(build_task&b) {
 						});
 					}
 					if (b.type->unit->requires_creep) {
-						if (pos==xy() && !b.needs_creep) {
+						if (pos == xy() && !b.needs_creep && !b.require_existing_creep) {
 							xy pos2 = build_spot_finder::find(starts,b.type->unit);
 							if (pos2!=xy()) b.needs_creep = true;
 						}
@@ -1137,9 +1158,12 @@ void execute_build(build_task&b) {
 }
 
 bool match_new_unit(unit*u) {
+	if (u->type->builder_type == unit_types::larva && u->type != unit_types::egg) return false;
 	for (build_task&b : build_tasks) {
 		if (b.built_unit) continue;
-		if (b.type->unit != u->type) continue;
+		unit_type*ut = u->type;
+		if (ut == unit_types::egg) ut = units::get_unit_type(u->game_unit->getBuildType());
+		if (b.type->unit != ut) continue;
 		if (u->build_unit == b.builder || b.type->unit->race == race_zerg) {
 			b.built_unit = u;
 			b.build_started_frame = current_frame;
@@ -1225,7 +1249,9 @@ void execute_build_task() {
 					cancel_build_task(&b);
 					continue;
 				}
-				if (b.built_unit->dead || b.built_unit->type != b.type->unit || b.built_unit->owner != players::my_player) {
+				unit_type*built_type = b.built_unit->type;
+				if (built_type == unit_types::egg) built_type = units::get_unit_type(b.built_unit->game_unit->getBuildType());
+				if (b.built_unit->dead || built_type != b.type->unit || b.built_unit->owner != players::my_player) {
 					log("build task %s lost its built unit!\n", b.type->name);
 					b.built_unit = nullptr;
 					if (b.type->unit != unit_types::bunker) unset_build_pos(&b);
