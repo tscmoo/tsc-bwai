@@ -238,32 +238,28 @@ void process(resource_t&r) {
 		double best_dist = std::numeric_limits<double>::infinity();
 		for (auto&g : live_gatherers) {
 			if (g.is_carrying) continue;
-			double dist = units_pathing_distance(g.u,r.u) + units_pathing_distance(g.u->type,r.u,r.depot);
-			if (dist==std::numeric_limits<double>::infinity()) continue;
-			if (g.resource && g.resource->u->type->is_gas!=r.u->type->is_gas) {
-				if (current_frame<no_mineral_gas_transfer_until) continue;
+			double dist = units_pathing_distance(g.u, r.u) + units_pathing_distance(g.u->type, r.u, r.depot);
+			if (dist == std::numeric_limits<double>::infinity()) continue;
+			if (g.resource && g.resource->u->type->is_gas != r.u->type->is_gas) {
+				if (current_frame < no_mineral_gas_transfer_until) continue;
 				if (g.no_mineral_gas_transfer) continue;
 			}
 			if (r.gatherers.size() >= 4) continue;
 			double inc = 0;
-			if (g.resource && g.resource->income_rate.size()>=g.resource->gatherers.size()) inc = g.resource->income_rate[g.resource->gatherers.size()-1];
-			if (inc>0) {
+			if (g.resource && g.resource->income_rate.size() >= g.resource->gatherers.size()) inc = g.resource->income_rate[g.resource->gatherers.size() - 1];
+			if (inc > 0) {
 				double inc_weighted = g.resource->u->type->is_gas ? inc : inc*minerals_to_gas_weight;
-				//void*inc,*next_income;
-				if (g.u->is_carrying_minerals_or_gas && inc_weighted>=next_income_weighted) continue;
-				if (r.is_being_gathered && inc_weighted>=next_income_weighted) continue;
-				if (r.gatherers.size()>=g.resource->gatherers.size() && inc_weighted>=next_income_weighted) continue;
-// 				if (inc>=next_income*0.9375 && g.resource->u->resources/200>r.u->resources/200) continue;
-// 				if (inc>=next_income*1.0625) continue;
-				if (inc_weighted >= next_income_weighted*0.9375) continue;
-				if (diag_distance(r.u->pos - g.resource->u->pos) >= 32 * 8 && diag_distance(g.u->pos - g.resource->u->pos) < 32 * 8) {
-					if (inc_weighted >= next_income_weighted*0.75) continue;
-				}
-// 				double dist2 = units_pathing_distance(g.u,g.resource->u) + units_pathing_distance(g.u->type,g.resource->u,g.resource->depot);
-// 				//if (inc*(dist/dist2)>=next_income) continue;
-// 				if (dist>=dist2) continue;
+				if (g.u->is_carrying_minerals_or_gas && inc_weighted >= next_income_weighted) continue;
+				if (r.is_being_gathered && inc_weighted >= next_income_weighted) continue;
+				if (r.gatherers.size() >= g.resource->gatherers.size() && inc_weighted >= next_income_weighted) continue;
+				bool from_close = diag_distance(g.u->pos - g.resource->u->pos) <= 32 * 10;
+				bool to_close = diag_distance(g.u->pos - r.u->pos) <= 32 * 10;
+				double mult = 0.9375;
+				if (from_close && !to_close) mult = 0.875;
+				if (to_close && !from_close) mult = 1.0625;
+				if (inc_weighted >= next_income_weighted * mult) continue;
 			}
-			if (dist<best_dist) {
+			if (dist < best_dist) {
 				best_dist = dist;
 				best = &g;
 			}
@@ -371,12 +367,12 @@ void process(gatherer_t&g) {
 		g.resource = 0;
 	}
 	if (g.resource) {
-		if (u->controller->action == unit_controller::action_gather && current_frame >= 15 * 20) {
+		if (u->controller->action == unit_controller::action_gather && current_frame >= 15 * 120) {
 			u->controller->target = g.resource->u;
 		}
 		if (!is_mining) u->controller->wait_until = g.resource->busy_until;
 	} else {
-		if (u->controller->action == unit_controller::action_gather && current_frame >= 15 * 20) {
+		if (u->controller->action == unit_controller::action_gather && current_frame >= 15 * 120) {
 			u->controller->target = 0;
 		}
 		if (!u->is_carrying_minerals_or_gas) u->controller->depot = 0;
@@ -445,7 +441,7 @@ void resource_gathering_task() {
 				c->action = unit_controller::action_gather;
 				c->target = 0;
 				c->depot = 0;
-				if (current_frame < 15 * 20) {
+				if (current_frame < 15 * 120) {
 					unit*r = get_best_score(resource_units, [&](unit*u) {
 						if (u->type->is_gas) return std::numeric_limits<double>::infinity();
 						double d = units_distance(c->u, u);
