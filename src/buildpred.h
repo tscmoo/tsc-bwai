@@ -291,7 +291,8 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep, bool no
 					}
 				}
 			}
-			if (build->required_supply) {
+			// TODO: properly calculate the required supply for morphing units, instead of just checking for mutalisk
+			if (build->required_supply && build->builder_type != unit_types::mutalisk) {
 				if (st.used_supply[build->race] + build->required_supply > 200) return failed;
 				if (st.used_supply[build->race] + build->required_supply > st.max_supply[build->race]) {
 					//if (nodep) return failed;
