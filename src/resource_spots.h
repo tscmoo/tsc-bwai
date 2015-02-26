@@ -128,8 +128,8 @@ void update_spots_pos() {
 
 	for (auto&s : spots) {
 		if (s.cc_build_pos!=xy()) {
-			for (int y = -1; y < 32 * (1 + 3 + 1); y += 32) {
-				for (int x = -1; x < 32 * (1 + 4 + 1); x += 32) {
+ 			for (int y = -1; y < 32 * (1 + 3 + 1); y += 32) {
+ 				for (int x = -1; x < 32 * (1 + 4 + 1); x += 32) {
 					grid::get_build_square(s.cc_build_pos + xy(x, y)).reserved_for_resource_depot = true;
 				}
 			}
@@ -157,8 +157,7 @@ void update_incomes() {
 			round_trip_time = frames_to_reach(units::get_unit_stats(worker_type,players::my_player),0.0,(n_depot_pos - n_resource_pos).length()) * 2;
 			round_trip_time += 15 + 4;
 
-			round_trip_time = (int)(round_trip_time * resource_gathering::global_calculated_modifier);
-			int gather_time = (int)(r.u->type->is_gas ? 37*resource_gathering::global_gas_gather_time_modifier : 84*resource_gathering::global_minerals_gather_time_modifier);
+			int gather_time = r.u->type->is_gas ? 37 : 82;
 
 			int t = round_trip_time + gather_time;
 			double om = (double)t / (double)gather_time;
