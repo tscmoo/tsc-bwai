@@ -196,6 +196,8 @@ struct unit {
 	bool is_powered;
 	int marines_loaded;
 	int strategy_high_priority_until;
+	bool is_being_gathered;
+	int is_being_gathered_begin_frame;
 
 	std::array<size_t, std::extent<decltype(units::unit_containers)>::value> container_indexes;
 };
@@ -444,7 +446,7 @@ unit_type*new_unit_type(BWAPI::UnitType game_unit_type,unit_type*ut) {
 	ut->is_mechanical = game_unit_type.isMechanical();
 	ut->is_robotic = game_unit_type.isRobotic();
 	ut->is_hovering = ut->is_worker || ut == unit_types::vulture || ut == unit_types::archon || ut == unit_types::dark_archon;
-	ut->is_non_usable = ut == unit_types::spider_mine || ut == unit_types::nuclear_missile || ut == unit_types::larva;
+	ut->is_non_usable = ut == unit_types::spider_mine || ut == unit_types::nuclear_missile || ut == unit_types::larva || ut == unit_types::egg || ut == unit_types::lurker_egg;
 	ut->is_non_usable |= game_unit_type.maxHitPoints() <= 1;
 	ut->is_detector = game_unit_type.isDetector();
 	ut->is_liftable = game_unit_type.isFlyingBuilding();
@@ -728,6 +730,10 @@ void update_unit_stuff(unit*u) {
 	
 	u->is_powered = bwapi_is_powered(u->game_unit);
 
+	bool is_being_gathered = u->game_unit->isBeingGathered();
+	if (is_being_gathered && !u->is_being_gathered) u->is_being_gathered_begin_frame = current_frame;
+	u->is_being_gathered = is_being_gathered;
+
 	unit_building*b = u->building;
 	if (b) {
 		b->is_lifted = u->game_unit->isLifted();
@@ -775,6 +781,8 @@ unit*new_unit(BWAPI_Unit game_unit) {
 	u->high_priority_until = 0;
 	u->scan_me_until = 0;
 	u->strategy_high_priority_until = 0;
+	u->is_being_gathered = false;
+	u->is_being_gathered_begin_frame = 0;
 
 	update_unit_owner(u);
 	update_unit_type(u);
