@@ -321,7 +321,7 @@ void generate_build_order_task() {
 
 	std::array<double, max_time> minerals_at;
 	std::array<double, max_time> gas_at;
-	a_unordered_map<unit*, int> build_busy;
+	std::array<int, max_time> larva_at;
 
 	while (true) {
 		minerals_at.fill(current_minerals);
@@ -338,7 +338,23 @@ void generate_build_order_task() {
 			else if (f >= max_time) f = max_time - 1;
 			for (int i = f; i < max_time; ++i) gas_at[i] += v.second;
 		}
-		build_busy.clear();
+
+		larva_at.fill(0);
+		for (int i = 0; i < 3; ++i) {
+			for (unit*u : my_units_of_type[i == 0 ? unit_types::hive : i == 1 ? unit_types::lair : unit_types::hatchery]) {
+				int t = u->remaining_whatever_time;
+				int larva = u->game_unit->getLarva().size();
+				if (larva >= 3) t = 333;
+				for (int i = 0; i < max_time; ++i) {
+					larva_at[i] += larva;
+					t -= resolution;
+					if (t <= 0) {
+						++larva;
+						t += 333;
+					}
+				}
+			}
+		}
 
 		for (build_task&b : build_tasks) {
 			update_prerequisites(&b);
@@ -386,16 +402,16 @@ void generate_build_order_task() {
 				if (latest_prereq == -1) continue;
 				int build_delay = -1;
 				if (b.type->builder == unit_types::larva) {
-					for (int i = 0; i < 3 && build_delay != 0; ++i) {
-						for (unit*u : my_units_of_type[i == 0 ? unit_types::hive : i == 1 ? unit_types::lair : unit_types::hatchery]) {
-							if (!u->game_unit->getLarva().empty()) {
-								build_delay = 0;
-							} else {
-								if (build_delay == -1 || u->remaining_whatever_time < build_delay) build_delay = u->remaining_whatever_time;
-							}
-							if (build_delay == 0) break;
-						}
-					}
+// 					for (int i = 0; i < 3 && build_delay != 0; ++i) {
+// 						for (unit*u : my_units_of_type[i == 0 ? unit_types::hive : i == 1 ? unit_types::lair : unit_types::hatchery]) {
+// 							if (!u->game_unit->getLarva().empty()) {
+// 								build_delay = 0;
+// 							} else {
+// 								if (build_delay == -1 || u->remaining_whatever_time < build_delay) build_delay = u->remaining_whatever_time;
+// 							}
+// 							if (build_delay == 0) break;
+// 						}
+// 					}
 				} else {
 					for (unit*u : my_units_of_type[b.type->builder]) {
 						bool requires_addon = false;
@@ -414,14 +430,16 @@ void generate_build_order_task() {
 				else if (build_delay >= max_time) build_delay = max_time - 1;
 				if (build_delay > latest_prereq) latest_prereq = build_delay;
 				
-				for (int i = latest_prereq; i<max_time; ++i) {
-					bool m = minerals_at[i] >= b.type->minerals_cost;
-					bool g = gas_at[i] >= b.type->gas_cost;
-					if (m && g) {
+				for (int i = latest_prereq; i < max_time; ++i) {
+					bool m = b.type->minerals_cost == 0 || minerals_at[i] >= b.type->minerals_cost;
+					bool g = b.type->gas_cost == 0 || gas_at[i] >= b.type->gas_cost;
+					bool l = b.type->builder != unit_types::larva || larva_at[i] >= 1;
+					if (m && g && l) {
 						bool okay = true;
 						for (int i2 = i; i2 < max_time; ++i2) {
-							if (minerals_at[i2] - b.type->minerals_cost < 0) okay = false;
-							if (gas_at[i2] - b.type->gas_cost < 0) okay = false;
+							if (b.type->minerals_cost && minerals_at[i2] - b.type->minerals_cost < 0) okay = false;
+							if (b.type->gas_cost && gas_at[i2] - b.type->gas_cost < 0) okay = false;
+							if (b.type->builder == unit_types::larva && larva_at[i2] - 1 < 0) okay = false;
 							if (!okay) break;
 						}
 						if (!okay) continue;
@@ -438,6 +456,7 @@ void generate_build_order_task() {
 				for (int i = idx; i < max_time; ++i) {
 					minerals_at[i] -= b.type->minerals_cost;
 					gas_at[i] -= b.type->gas_cost;
+					--larva_at[i];
 				}
 			}
 
@@ -793,9 +812,10 @@ void execute_build(build_task&b) {
 				} else if (b.type->unit->is_refinery) {
 					unit*g = get_best_score(resource_units,[&](unit*r) {
 						if (r->type!=unit_types::vespene_geyser) return std::numeric_limits<double>::infinity();
-						double d = get_best_score_value(my_resource_depots,[&](unit*u) {
+						double d = get_best_score_value(my_buildings,[&](unit*u) {
+							if (!u->type->is_resource_depot) return std::numeric_limits<double>::infinity();
 							double d = units_pathing_distance(unit_types::scv, r, u) + rng(32.0);
-							if (!u->is_completed) d += 1000.0;
+							if (!u->is_completed && !u->is_morphing && u->remaining_build_time > b.type->unit->build_time + 15 * 10) d += 1000.0;
 							return d;
 						});
 						if (d >= 32 * 20) return std::numeric_limits<double>::infinity();
