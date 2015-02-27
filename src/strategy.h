@@ -108,6 +108,20 @@ std::function<void()> wrap() {
 	};
 }
 
+a_list<std::function<void(bool)>> on_end_funcs;
+struct register_on_end_func {
+	a_list<std::function<void(bool)>>::iterator it;
+	register_on_end_func(std::function<void(bool)>&&func) {
+		on_end_funcs.push_back(std::move(func));
+		it = --on_end_funcs.end();
+	}
+	~register_on_end_func() {
+		on_end_funcs.erase(it);
+	}
+};
+
+#include "strategy_util.h"
+
 #include "strat_proxy_rax.h"
 #include "strat_wraith.h"
 #include "strat_tvt_opening.h"
@@ -116,9 +130,11 @@ std::function<void()> wrap() {
 #include "strat_tvp.h"
 #include "strat_tvz_opening.h"
 #include "strat_tvz.h"
-//#include "strat_fd_push.h"
-//#include "strat_zvp_opening.h"
-//#include "strat_zvp.h"
+
+//#include "strat_zvtp_opening.h"
+//#include "strat_zvtp.h"
+//#include "strat_zvz_opening.h"
+//#include "strat_zvz.h"
 
 a_map<a_string, std::function<void()>> strat_map = {
 	{ "proxy rax", wrap<proxy_rax>() },
@@ -129,9 +145,10 @@ a_map<a_string, std::function<void()>> strat_map = {
 	{ "tvp", wrap<strat_tvp>() },
 	{ "tvz opening", wrap<strat_tvz_opening>() },
 	{ "tvz", wrap<strat_tvz>() },
-//	{ "fd push", wrap<strat_fd_push>() },
-//	{ "zvp opening", wrap<strat_zvp_opening>() },
-//	{ "zvp", wrap<strat_zvp>() },
+//	{ "zvtp opening", wrap<strat_zvtp_opening>() },
+//	{ "zvtp", wrap<strat_zvtp>() },
+//	{ "zvz opening", wrap<strat_zvz_opening>() },
+//	{ "zvz", wrap<strat_zvz>() },
 };
 
 bool run_strat(const char*name) {
@@ -174,8 +191,16 @@ void strategy_task() {
 	} else if (players::my_player->race == race_protoss) {
 
 	} else if (players::my_player->race == race_zerg) {
-		run_strat("zvp opening");
-		run_strat("zvp");
+		if (players::opponent_player->race == race_terran) {
+			run_strat("zvtp opening");
+			run_strat("zvtp");
+		} else if (players::opponent_player->race == race_protoss) {
+			run_strat("zvtp opening");
+			run_strat("zvtp");
+		} else if (players::opponent_player->race == race_zerg) {
+			run_strat("zvz opening");
+			run_strat("zvz");
+		}
 	}
 
 	while (true) {
@@ -191,6 +216,12 @@ void init() {
 
 	multitasking::spawn(strategy_task, "strategy");
 
+}
+
+void on_end(bool won) {
+	for (auto&f : on_end_funcs) {
+		f(won);
+	}
 }
 
 }
