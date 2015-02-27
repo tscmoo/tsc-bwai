@@ -317,7 +317,7 @@ void scan() {
 	if (overlord_count > previous_overlord_count) ++overlords_created;
 	if (overlord_count < previous_overlord_count) ++overlords_lost;
 	previous_overlord_count = overlord_count;
-	int overlords_available = overlords_created - overlords_lost * 2;
+	int overlords_available = overlords_created - overlords_lost * 2 - 6;
 	log("overlords  created: %d  lost: %d  available: %d\n", overlords_created, overlords_lost, overlords_available);
 
 	a_map<xy, double> values;
