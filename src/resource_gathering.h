@@ -169,6 +169,7 @@ void process(gatherer_t&g) {
 		}
 	}
 
+	if (my_workers.size() < 15 && current_gas < current_minerals) minerals_to_gas_weight = 4.0;
 	if (my_workers.size() >= 15 && current_gas < 400) minerals_to_gas_weight = 0.25;
 	if (my_workers.size() >= 30 && current_gas < 1000) minerals_to_gas_weight = 0.25;
 	if (max_gas && current_gas < max_gas) minerals_to_gas_weight = 0.125;
