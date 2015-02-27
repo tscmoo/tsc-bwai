@@ -16,6 +16,7 @@ namespace combat_eval {
 		int heal_frame = 0;
 		int spider_mine_count = 0;
 		int irradiate_timer = 0;
+		int target_count = 0;
 	};
 
 	double get_damage_type_modifier(int damage_type, int target_size) {
@@ -123,6 +124,11 @@ namespace combat_eval {
 				if (max_frames && total_frames >= max_frames) break;
 				int target_count = 0;
 				for (int i = 0; i < 2; ++i) {
+					for (auto&c : teams[i].units) {
+						c.target_count = 0;
+					}
+				}
+				for (int i = 0; i < 2; ++i) {
 					team_t&my_team = teams[i];
 					team_t&enemy_team = teams[i ^ 1];
 					double max_width = 32 * 4;
@@ -163,6 +169,7 @@ namespace combat_eval {
 							target = nullptr;
 							for (int i = 0; i < 2 && !target; ++i) {
 								for (auto&ec : enemy_team.units) {
+									if (ec.hp <= 0) continue;
 									if (i == 0) {
 										if (!ec.st->air_weapon && !ec.st->ground_weapon) continue;
 										if (c.force_target && ec.st->type->is_flyer) continue;
@@ -173,15 +180,14 @@ namespace combat_eval {
 									if (!c.force_target && (!c.irradiate_timer || !ec.st->type->is_biological)) {
 										weapon_stats*w = ec.st->type->is_flyer ? c.st->air_weapon : c.st->ground_weapon;
 										if (!w) continue;
-										//if (c.move + ec.move < w->min_range) continue;
-										//if (ec.move < w->min_range) continue;
+										if (w->max_range <= 32 && i == 0) {
+											if (ec.target_count >= 3) continue;
+										}
 									}
 									if (ec.loaded_until > total_frames) continue;
 									if (enemy_team.bunker_count && ec.st->type == unit_types::marine) continue;
-									if (ec.hp > 0) {
-										target = &ec;
-										break;
-									}
+									++ec.target_count;
+									target = &ec;
 								}
 							}
 							c.target = target;
@@ -189,7 +195,7 @@ namespace combat_eval {
 						if (c.cooldown > 0) c.cooldown -= frame_resolution;
 						if (c.irradiate_timer > 0) c.irradiate_timer -= frame_resolution;
 						//if (c.st->type == unit_types::dropship) log("frame %d: %s: target is %p (force_target %d)\n", total_frames, c.st->type->name, target, c.force_target);
-						if (teams[i].run) {
+						if (my_team.run) {
 							c.move += c.st->max_speed * frame_resolution;
 						} else if (target) {
 
@@ -203,14 +209,14 @@ namespace combat_eval {
 							if (!w && !c.irradiate_timer) {
 								if (c.st->max_speed > 0 && c.move > 0) {
 									++target_count;
-									if (teams[i].has_static_defence) c.move -= c.st->max_speed * frame_resolution / 4;
+									if (my_team.has_static_defence) c.move -= c.st->max_speed * frame_resolution / 4;
 									else c.move -= c.st->max_speed * frame_resolution;
 									my_team.score += c.st->max_speed / 1000.0 * frame_resolution;
 								}
 							} else if (c.move + target->move > (use_spider_mine ? 0 : (w ? w->max_range : 32 * 2))) {
 								if (speed > 0) {
 									++target_count;
-									if (teams[i].has_static_defence) c.move -= c.st->max_speed * frame_resolution / 4;
+									if (my_team.has_static_defence) c.move -= c.st->max_speed * frame_resolution / 4;
 									else c.move -= c.st->max_speed * frame_resolution;
 									my_team.score += c.st->max_speed / 1000.0 * frame_resolution;
 								}
@@ -290,6 +296,11 @@ namespace combat_eval {
 								} else {
 									if (c.st->type == unit_types::dragoon && (target->st->type == unit_types::marine || target->st->type == unit_types::firebat)) {
 										if (speed > 0 && c.move < 32 * 4) {
+											c.move += c.st->max_speed * frame_resolution;
+										}
+									}
+									if (c.st->type == unit_types::mutalisk) {
+										if (speed > 0 && (target->st->type == unit_types::archon)) {
 											c.move += c.st->max_speed * frame_resolution;
 										}
 									}
