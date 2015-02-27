@@ -35,6 +35,12 @@ struct unit_controller {
 	int last_process = 0;
 	int not_moving_counter = 0;
 	int last_command_frame = 0;
+	int last_re_evaluate_target = 0;
+	unit*re_evaluate_target = nullptr;
+	xy defensive_concave_position;
+	int return_minerals_frame = 0;
+	unit*last_gather_target = nullptr;
+	int last_gather_issued_frame = 0;
 };
 
 namespace unit_controls {
@@ -235,6 +241,188 @@ void process(const a_vector<unit_controller*>&controllers) {
 		c->can_move = can_move;
 	}
 
+
+	auto re_evaluate_target = [&](unit_controller*c) {
+		//return false;
+		if (c->action != unit_controller::action_attack || !c->target) return false;
+		unit*u = c->u;
+		if (u->is_flying) return false;
+		weapon_stats*w = c->target->is_flying ? u->stats->air_weapon : u->stats->ground_weapon;
+		if (!w) return false;
+
+		if (current_frame - c->last_re_evaluate_target <= 4) {
+			if (c->re_evaluate_target && !c->re_evaluate_target->dead) c->target = c->re_evaluate_target;
+			return false;
+		}
+
+		c->last_re_evaluate_target = current_frame;
+		c->re_evaluate_target = nullptr;
+
+		a_vector<unit*> path_units;
+		for (unit*nu : visible_units) {
+			if (nu->is_flying || nu->burrowed) continue;
+			if (diag_distance(nu->pos - u->pos) >= 32 * 4) continue;
+			if (nu == u) continue;
+			path_units.push_back(nu);
+		}
+
+		auto&dims = u->type->dimensions;
+
+		auto can_move_to = [&](xy pos) {
+			auto test = [&](xy pos) {
+				int right = pos.x + dims[0];
+				int bottom = pos.y + dims[1];
+				int left = pos.x - dims[2];
+				int top = pos.y - dims[3];
+				for (unit*u : path_units) {
+					if (u->is_flying || u->burrowed) continue;
+					int uright = u->pos.x + u->type->dimension_right();
+					int ubottom = u->pos.y + u->type->dimension_down();
+					int uleft = u->pos.x - u->type->dimension_left();
+					int utop = u->pos.y - u->type->dimension_up();
+					if (right >= uleft && bottom >= utop && uright >= left && ubottom >= top) return false;
+				}
+				return true;
+			};
+			pos.x &= -8;
+			pos.y &= -8;
+			if (test(pos)) return true;
+			if (test(pos + xy(7, 0))) return true;
+			if (test(pos + xy(0, 7))) return true;
+			if (test(pos + xy(7, 7))) return true;
+			for (int x = 1; x < 7; ++x) {
+				if (test(pos + xy(x, 0))) return true;
+				if (test(pos + xy(x, 7))) return true;
+			}
+			for (int y = 1; y < 7; ++y) {
+				if (test(pos + xy(0, y))) return true;
+				if (test(pos + xy(7, y))) return true;
+			}
+			return false;
+		};
+
+		struct node_data_t {
+			double len = 0.0;
+		};
+		double path_len = 0.0;
+		a_deque<xy> path = square_pathing::find_square_path<node_data_t>(square_pathing::get_pathing_map(u->type), u->pos, [&](xy pos, xy npos, node_data_t&n) {
+			if (diag_distance(pos - u->pos) >= 32 * 3) return false;
+			if (!can_move_to(npos)) return false;
+			n.len += diag_distance(npos - pos);
+			return true;
+		}, [&](xy pos, xy npos, const node_data_t&n) {
+			return 0.0;
+		}, [&](xy pos, const node_data_t&n) {
+			bool r = units_distance(pos, u->type, c->target->pos, c->target->type) <= w->max_range;
+			if (r) path_len = n.len;
+			return r;
+		});
+		log("%s -> %s target path: %d (len %g)\n", u->type->name, c->target->type->name, path.size(), path_len);
+		//bool find_lowest_hp_target = c->u->type == unit_types::zergling && c->target->type == unit_types::zealot;
+		bool find_lowest_hp_target = u->type == unit_types::zergling;
+		if (path.empty() || path_len >= w->max_range || c->target->dead || !c->target->visible || find_lowest_hp_target) {
+			a_vector<unit*> target_units;
+			for (unit*nu : visible_enemy_units) {
+				if (nu->type != c->target->type || nu->is_flying != c->target->is_flying) continue;
+				if (diag_distance(nu->pos - u->pos) >= 32 * 4 + w->max_range) continue;
+				target_units.push_back(nu);
+			}
+			log("%d potential targets\n", target_units.size());
+			if (!target_units.empty()) {
+				struct node_data_t {
+					double len = 0.0;
+				};
+				double path_len = 0.0;
+				unit*target = nullptr;
+				double lowest_hp = std::numeric_limits<double>::infinity();
+				a_deque<xy> path = square_pathing::find_square_path<node_data_t>(square_pathing::get_pathing_map(u->type), u->pos, [&](xy pos, xy npos, node_data_t&n) {
+					if (diag_distance(pos - u->pos) >= 32 * 3) return false;
+					if (!can_move_to(npos)) return false;
+					n.len += diag_distance(npos - pos);
+					return true;
+				}, [&](xy pos, xy npos, const node_data_t&n) {
+					return 0.0;
+				}, [&](xy pos, const node_data_t&n) {
+					for (unit*e : target_units) {
+						bool r = units_distance(pos, u->type, e->pos, e->type) <= w->max_range;
+						if (find_lowest_hp_target) {
+							double hp = e->shields + e->hp;
+							if (hp < lowest_hp) {
+								lowest_hp = hp;
+								target = e;
+								path_len = n.len;
+							}
+						} else {
+							if (r) {
+								target = e;
+								path_len = n.len;
+								return true;
+							}
+						}
+					}
+					return false;
+				});
+				if (target) {
+					log("%s -> %s new target path: %d (len %g)\n", u->type->name, target->type->name, path.size(), path_len);
+					c->target = target;
+					c->re_evaluate_target = target;
+				} else {
+					log("no better target\n");
+				}
+			}
+
+		}
+
+		return false;
+	};
+	for (auto*c : controllers) {
+		if (c->defensive_concave_position == xy()) continue;
+		log("%s: c->defensive_concave_position is %d %d (%g away)\n", c->u->type->name, c->defensive_concave_position.x, c->defensive_concave_position.y, (c->defensive_concave_position - c->u->pos).length());
+		if (c->action != unit_controller::action_attack || !c->target) continue;
+		if (c->last_process == current_frame) continue;
+		if (c->last_command_frame == current_command_frame) continue;
+		unit*u = c->u;
+		weapon_stats*w = c->target->is_flying ? u->stats->air_weapon : u->stats->ground_weapon;
+		if (!w) continue;
+		if (units_distance(u, c->target) < w->max_range && (c->defensive_concave_position - u->pos).length() <= 48) {
+			log("in range, attacking\n");
+			continue;
+		}
+		if (u->is_flying) continue;
+
+		re_evaluate_target(c);
+// 		if (c->target->shields + c->target->hp < c->target->stats->shields + c->target->stats->hp) {
+// 			if (units_distance(c->defensive_concave_position, u->type, c->target->pos, c->target->type) <= w->max_range + 32) {
+// 				log("hurt and close, attacking\n");
+// 				continue;
+// 			}
+// 		}
+		if (units_distance(c->defensive_concave_position, u->type, c->target->pos, c->target->type) <= w->max_range + 32) {
+			log("close, attacking\n");
+			continue;
+		}
+		c->last_process = current_frame;
+
+		log("wait\n");
+		if (current_frame >= c->noorder_until) {
+			if ((c->defensive_concave_position - u->pos).length() <= 8) {
+				if (u->game_order != BWAPI::Orders::HoldPosition) {
+					u->game_unit->holdPosition();
+					c->noorder_until = current_frame + rng(8);
+				}
+			} else {
+				c->last_move = current_frame;
+				if (c->last_move_to_pos != c->defensive_concave_position || current_frame >= c->last_move_to + 30) {
+					c->last_move_to = current_frame;
+					c->last_move_to_pos = c->defensive_concave_position;
+					c->u->game_unit->move(BWAPI::Position(c->defensive_concave_position.x, c->defensive_concave_position.y));
+					c->noorder_until = current_frame + rng(8);
+				}
+			}
+		}
+
+	}
+
 	for (size_t i = 0; i < controllers.size(); ++i) {
 		auto*c = controllers[i];
 
@@ -317,7 +505,7 @@ void process(const a_vector<unit_controller*>&controllers) {
 				xy upos = u->pos + xy((int)(u->hspeed*latency_frames), (int)(u->vspeed*latency_frames));
 				xy tpos = c->target->pos + xy((int)(c->target->hspeed*latency_frames), (int)(c->target->vspeed*latency_frames));
 				double d = units_distance(upos, u, tpos, c->target);
-				if (w && (d > w->max_range || (d > w->max_range*0.75 && c->u->weapon_cooldown > latency_frames)) && c->target->speed > 4 && d < 32 * 20) {
+				if (w && (d > w->max_range || (d > w->max_range*0.75 && c->u->weapon_cooldown > latency_frames)) && c->target->speed > 4 && d < 32 * 20 && d >= 64) {
 					double target_heading = std::atan2(c->target->vspeed, c->target->hspeed);
 					xy relpos = c->target->pos - u->pos;
 					double rel_angle = std::atan2(relpos.y, relpos.x);
@@ -506,17 +694,63 @@ void process(const a_vector<unit_controller*>&controllers) {
 
 				if (u->type == unit_types::hydralisk) wait_frames = 6;
 				if (u->type == unit_types::mutalisk) wait_frames = 2;
+				if (u->type == unit_types::guardian) wait_frames = 2;
 
+				bool do_close_up = false;
 				if (c->action != unit_controller::action_kite) {
 					if (u->type == unit_types::marine || u->type == unit_types::ghost || u->type == unit_types::firebat || u->type == unit_types::hydralisk) {
 						if (!ew || w->max_range <= ew->max_range || d > ew->max_range + 64) do_state_machine = false;
+					}
+
+					if (!ew && do_state_machine) {
+						bool found = false;
+						for (unit*e : visible_enemy_units) {
+							weapon_stats*w = u->is_flying ? e->stats->air_weapon : e->stats->ground_weapon;
+							if (!w) continue;
+							if (units_distance(u, e) <= w->max_range + 128) {
+								found = true;
+								break;
+							}
+						}
+						if (!found) {
+							do_close_up = true;
+						}
 					}
 				}
 				if (u->type == unit_types::marine || u->type == unit_types::firebat) {
 					if (u->stim_timer > latency_frames) do_state_machine = false;
 				}
 
-				if (do_state_machine && wait_frames) {
+				if (!do_state_machine && !do_close_up) {
+					if (re_evaluate_target(c)) continue;
+				}
+
+				if (do_close_up) {
+
+					if (c->attack_state == 0) {
+						bool next = d <= w->max_range && u->weapon_cooldown <= latency_frames;
+						if (next) {
+							u->game_unit->attack(c->target->game_unit);
+							c->last_command_frame = current_command_frame;
+							c->attack_state = 1;
+						} else {
+							xy dst = c->target->pos;
+
+							if (d >= w->max_range / 2) {
+								xy movepos = (bwapi_pos)u->game_unit->getTargetPosition();
+								if (u->game_unit->getOrder() != BWAPI::Orders::Move || diag_distance(dst - movepos) >= 32) {
+									if (current_frame - c->last_move_to >= 6) {
+										u->game_unit->move(BWAPI::Position(dst.x, dst.y));
+										c->last_move_to = current_frame;
+									}
+								}
+							}
+						}
+					} else if (c->attack_state == 1) {
+						if (c->u->weapon_cooldown) c->attack_state = 0;
+					} else c->attack_state = 0;
+
+				} else if (do_state_machine && wait_frames) {
 
 					xy relpos = c->target->pos - u->pos;
 					double rel_angle = std::atan2(relpos.y, relpos.x);
@@ -586,15 +820,24 @@ void process(const a_vector<unit_controller*>&controllers) {
 								}
 							} else {
 
-								xy dst = u->pos;
-								dst.x += (int)(std::cos(rel_angle) * 32 * 10);
-								dst.y += (int)(std::sin(rel_angle) * 32 * 10);
+								if (!c->target->visible || c->target->cloaked) {
+									xy dst = u->pos;
+									dst.x += (int)(std::cos(rel_angle) * 32 * 10);
+									dst.y += (int)(std::sin(rel_angle) * 32 * 10);
 
-								xy movepos = (bwapi_pos)u->game_unit->getTargetPosition();
-								if (u->game_unit->getOrder() != BWAPI::Orders::Move || diag_distance(dst - movepos) >= 32) {
-									if (current_frame - c->attack_timer >= 6) {
-										u->game_unit->move(BWAPI::Position(dst.x, dst.y));
-										c->attack_timer = current_frame;
+									xy movepos = (bwapi_pos)u->game_unit->getTargetPosition();
+									if (u->game_unit->getOrder() != BWAPI::Orders::Move || diag_distance(dst - movepos) >= 32) {
+										if (current_frame - c->attack_timer >= 6) {
+											u->game_unit->move(BWAPI::Position(dst.x, dst.y));
+											c->attack_timer = current_frame;
+										}
+									}
+								} else {
+									if (u->game_unit->getOrder() != BWAPI::Orders::Follow || u->game_unit->getOrderTarget() != c->target->game_unit) {
+										if (current_frame - c->attack_timer >= 6) {
+											u->game_unit->follow(c->target->game_unit);
+											c->attack_timer = current_frame;
+										}
 									}
 								}
 
@@ -720,90 +963,100 @@ void process(const a_vector<unit_controller*>&controllers) {
 					c->noorder_until = current_frame + 8;
 				}
 			} else {
-				if (c->target && o!=BWAPI::Orders::MiningMinerals && o!=BWAPI::Orders::HarvestGas) {
-					if ((o!=(c->target->type->is_gas ? BWAPI::Orders::MoveToGas : BWAPI::Orders::MoveToMinerals) && o!=(c->target->type->is_gas ? BWAPI::Orders::WaitForGas : BWAPI::Orders::WaitForMinerals)) || u->game_unit->getOrderTarget()!=c->target->game_unit) {
-						if (current_frame+latency_frames<c->wait_until) {
-							xy pos = u->pos;
-							pos.x += (int)(u->hspeed * latency_frames);
-							pos.y += (int)(u->vspeed * latency_frames);
-							int f = frames_to_reach(u,units_distance(u,c->target));
-							if (f>=c->wait_until || (f<c->wait_until-8)) {
-								u->game_unit->gather(c->target->game_unit);
-								c->noorder_until = current_frame + 3;
-							}
-						} else {
+				if (c->target && o != BWAPI::Orders::MiningMinerals && o != BWAPI::Orders::HarvestGas) {
+					if ((o != (c->target->type->is_gas ? BWAPI::Orders::MoveToGas : BWAPI::Orders::MoveToMinerals) && o != (c->target->type->is_gas ? BWAPI::Orders::WaitForGas : BWAPI::Orders::WaitForMinerals)) || u->game_unit->getOrderTarget() != c->target->game_unit) {
+						bool issue_gather = true;
+						if (issue_gather) {
+							c->last_gather_target = c->target;
+							c->last_gather_issued_frame = current_frame;
 							if (!u->game_unit->gather(c->target->game_unit)) {
 								c->go_to = c->target->pos;
 								move(c);
-								//u->game_unit->move(BWAPI::Position(c->target->pos.x,c->target->pos.y));
-							} else log("gather failed\n");
-							c->noorder_until = current_frame + 4;
-							if (c->target->type->is_gas) c->noorder_until += 15;
+							}
+							c->noorder_until = current_frame + 2;
+							if (!c->target->is_being_gathered || current_frame + latency_frames >= c->target->is_being_gathered_begin_frame + 75 + 8) {
+								c->noorder_until = current_frame + std::max(8, latency_frames + 1);
+							}
 						}
 					}
 				}
 			}
-// 			if (!c->target && !c->depot && o!=BWAPI::Orders::Move) {
-// 				u->game_unit->move(BWAPI::Position(grid::map_width/2,grid::map_height/2));
-// 				c->noorder_until = current_frame + 4;
-// 			}
 
 		}
+
+		auto wait_for_return_resources = [&]() {
+			if (c->u->type->is_worker && c->u->is_carrying_minerals_or_gas) {
+				if (c->return_minerals_frame == 0) c->return_minerals_frame = current_frame;
+				if (current_frame - c->return_minerals_frame < 15 * 10) {
+					auto o = u->game_order;
+					if (u->game_unit->isCarryingMinerals() || u->game_unit->isCarryingGas()) {
+						if (o != BWAPI::Orders::ReturnMinerals && o != BWAPI::Orders::ReturnGas) {
+							u->game_unit->returnCargo();
+							c->noorder_until = current_frame + 8;
+						}
+					}
+					return true;
+				}
+			} else c->return_minerals_frame = 0;
+			return false;
+		};
+
 		if (c->action != unit_controller::action_build) {
 			if (c->fail_build_count) c->fail_build_count = 0;
 		}
 		if (c->action==unit_controller::action_build) {
 
-			if (c->target_type->is_building) {
+			if (!wait_for_return_resources()) {
+				if (c->target_type->is_building) {
 
-				xy build_pos = c->target_pos;
-				bool is_inside = units_distance(u->pos, u->type, build_pos + xy(c->target_type->tile_width * 16, c->target_type->tile_height * 16), c->target_type) <= 32;
-				if (c->target) {
-					c->fail_build_count = 0;
-					if (u->build_unit && u->build_unit!=c->target) {
-						//log("building wrong thing, halt!\n");
-						u->game_unit->haltConstruction();
-						c->noorder_until = current_frame + 8;
-					} else if (!u->build_unit) {
-						if (units_pathing_distance(u,c->target)>=32) {
-							//log("move to resume building!\n");
-							c->go_to = c->target->pos;
-							move(c);
-							//u->game_unit->move(BWAPI::Position(c->go_to.x,c->go_to.y));
-							c->noorder_until = current_frame + 5;
-						} else {
-							//log("right click!\n");
-							u->game_unit->rightClick(c->target->game_unit);
-							c->noorder_until = current_frame + 4;
+					xy build_pos = c->target_pos;
+					bool is_inside = units_distance(u->pos, u->type, build_pos + xy(c->target_type->tile_width * 16, c->target_type->tile_height * 16), c->target_type) <= 32;
+					if (c->target) {
+						c->fail_build_count = 0;
+						if (u->build_unit && u->build_unit != c->target) {
+							//log("building wrong thing, halt!\n");
+							u->game_unit->haltConstruction();
+							c->noorder_until = current_frame + 8;
+						} else if (!u->build_unit) {
+							if (units_pathing_distance(u, c->target) >= 32) {
+								//log("move to resume building!\n");
+								c->go_to = c->target->pos;
+								move(c);
+								//u->game_unit->move(BWAPI::Position(c->go_to.x,c->go_to.y));
+								c->noorder_until = current_frame + 5;
+							} else {
+								//log("right click!\n");
+								u->game_unit->rightClick(c->target->game_unit);
+								c->noorder_until = current_frame + 4;
+							}
+						}// else log("building, lalala\n");
+					} else if (is_inside && current_frame + latency_frames >= c->wait_until) {
+						//log("build!\n");
+						bool enough_minerals = c->target_type->minerals_cost == 0 || current_minerals >= c->target_type->minerals_cost;
+						bool enough_gas = c->target_type->gas_cost == 0 || current_gas >= c->target_type->gas_cost;
+						bool prereq_ok = true;
+						for (auto*ut : c->target_type->required_units) {
+							if (my_completed_units_of_type[ut].empty()) {
+								prereq_ok = false;
+								break;
+							}
 						}
-					}// else log("building, lalala\n");
-				} else if (is_inside && current_frame+latency_frames>=c->wait_until) {
-					//log("build!\n");
-					bool enough_minerals = c->target_type->minerals_cost==0 || current_minerals>=c->target_type->minerals_cost;
-					bool enough_gas = c->target_type->gas_cost == 0 || current_gas >= c->target_type->gas_cost;
-					bool prereq_ok = true;
-					for (auto*ut : c->target_type->required_units) {
-						if (my_completed_units_of_type[ut].empty()) {
-							prereq_ok = false;
-							break;
+						if (enough_minerals && enough_gas && prereq_ok) {
+							bwapi_call_build(u->game_unit, c->target_type->game_unit_type, BWAPI::TilePosition(build_pos.x / 32, build_pos.y / 32));
+							bool something_in_the_way = move_stuff_away_from_build_pos(build_pos, c->target_type, c);
+							if (!something_in_the_way) ++c->fail_build_count;
+							log("c->fail_build_count is now %d\n", c->fail_build_count);
 						}
+						c->noorder_until = current_frame + 7;
+					} else {
+						//log("move to %d %d!\n",build_pos.x,build_pos.y);
+						c->go_to = build_pos + xy(c->target_type->tile_width * 16, c->target_type->tile_height * 16);
+						move(c);
+						//u->game_unit->move(BWAPI::Position(c->go_to.x,c->go_to.y));
+						c->noorder_until = current_frame + 5;
 					}
-					if (enough_minerals && enough_gas && prereq_ok) {
-						bwapi_call_build(u->game_unit, c->target_type->game_unit_type, BWAPI::TilePosition(build_pos.x / 32, build_pos.y / 32));
-						bool something_in_the_way = move_stuff_away_from_build_pos(build_pos, c->target_type, c);
-						if (!something_in_the_way) ++c->fail_build_count;
-						log("c->fail_build_count is now %d\n", c->fail_build_count);
-					}
-					c->noorder_until = current_frame + 7;
-				} else {
-					//log("move to %d %d!\n",build_pos.x,build_pos.y);
-					c->go_to = build_pos + xy(c->target_type->tile_width * 16, c->target_type->tile_height * 16);
-					move(c);
-					//u->game_unit->move(BWAPI::Position(c->go_to.x,c->go_to.y));
-					c->noorder_until = current_frame + 5;
-				}
+				} else log("don't know how to build %s\n", c->target_type->name);
 			}
-			else log("don't know how to build %s\n",c->target_type->name);
 
 		} else if (u->build_unit && !u->is_being_constructed) {
 			if (u->type==unit_types::scv) {
@@ -870,8 +1123,10 @@ void process(const a_vector<unit_controller*>&controllers) {
 		}
 
 		if (c->action == unit_controller::action_scout && c->can_move && current_frame - c->last_move >= move_resolution) {
-			c->last_move = current_frame;
-			move(c);
+			if (!wait_for_return_resources()) {
+				c->last_move = current_frame;
+				move(c);
+			}
 		}
 
 		if (c->action == unit_controller::action_building_movement) {
@@ -951,17 +1206,17 @@ void render() {
 		
 	}
 
-	for (unit*u : my_units) {
-		if (current_frame - u->controller->last_move_to < 15) {
-			game->drawLineMap(u->pos.x, u->pos.y, u->controller->last_move_to_pos.x, u->controller->last_move_to_pos.y, BWAPI::Colors::White);
-		}
-	}
-
-	for (unit*u : my_units) {
-		if (current_frame - u->controller->last_move_to < 15 * 2) {
-			game->drawLineMap(u->pos.x, u->pos.y, u->controller->go_to.x, u->controller->go_to.y, BWAPI::Colors::Purple);
-		}
-	}
+// 	for (unit*u : my_units) {
+// 		if (current_frame - u->controller->last_move_to < 15) {
+// 			game->drawLineMap(u->pos.x, u->pos.y, u->controller->last_move_to_pos.x, u->controller->last_move_to_pos.y, BWAPI::Colors::White);
+// 		}
+// 	}
+// 
+// 	for (unit*u : my_units) {
+// 		if (current_frame - u->controller->last_move_to < 15 * 2) {
+// 			game->drawLineMap(u->pos.x, u->pos.y, u->controller->go_to.x, u->controller->go_to.y, BWAPI::Colors::Purple);
+// 		}
+// 	}
 
 // 	for (unit*u : my_units) {
 // 		unit_controller*c = u->controller;
