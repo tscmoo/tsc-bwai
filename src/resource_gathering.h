@@ -72,14 +72,20 @@ void update_deliveries(resource_t&r) {
 void process(resource_t&r) {
 
 	if ((r.u->type->is_gas && r.u->owner != players::my_player) || (!r.u->is_completed && r.u->remaining_build_time >= 15 * 4)) {
-		r.depot = 0;
+		r.depot = nullptr;
 		return;
 	}
-	unit*depot = 0;
+	unit*depot = nullptr;
 	if (!resource_depots.empty()) {
 		depot = get_best_score(resource_depots, [&](unit*u) {
+			if (!u->is_completed && !u->is_morphing && u->remaining_build_time > 15 * 20) return std::numeric_limits<double>::infinity();
 			return units_pathing_distance(unit_types::scv, r.u, u);
-		});
+		}, std::numeric_limits<double>::infinity());
+		if (!depot && current_frame < 15 * 60) {
+			depot = get_best_score(resource_depots, [&](unit*u) {
+				return units_distance(r.u, u);
+			}, std::numeric_limits<double>::infinity());
+		}
 	}
 	bool depot_changed = false;
 	if (depot != r.depot) {
@@ -169,48 +175,29 @@ void process(gatherer_t&g) {
 		}
 	}
 
-	if (my_workers.size() < 15 && current_gas < current_minerals) minerals_to_gas_weight = 4.0;
-	if (my_workers.size() >= 15 && current_gas < 400) minerals_to_gas_weight = 0.25;
-	if (my_workers.size() >= 30 && current_gas < 1000) minerals_to_gas_weight = 0.25;
+	double gas_limit = 0.0;
+	if (my_workers.size() < 15) gas_limit = current_minerals;
+	if (my_workers.size() >= 15) gas_limit = 400;
+	if (my_workers.size() >= 30) gas_limit = 1000;
+	if (current_minerals > gas_limit) gas_limit = current_minerals;
+	if (current_gas<gas_limit) minerals_to_gas_weight = 0.25;
+	else minerals_to_gas_weight = 4.0;
+	if (max_gas) gas_limit = max_gas;
 	if (max_gas && current_gas < max_gas) minerals_to_gas_weight = 0.125;
 	if (max_gas && current_gas >= max_gas) minerals_to_gas_weight = 8.0;
 
-// 	if (g.resource) {
-// 		if (u->controller->action == unit_controller::action_gather && u->controller->last_gather_target == g.resource->u) {
-// 			auto o = u->game_order;
-// 			if (o == (g.resource->u->type->is_gas ? BWAPI::Orders::MoveToGas : BWAPI::Orders::MoveToMinerals)) {
-// 				if (u->order_target != g.resource->u) {
-// 					resource_t*new_r = nullptr;
-// 					for (auto&r : live_resources) {
-// 						if (r.u == u->order_target) {
-// 							new_r = &r;
-// 							break;
-// 						}
-// 					}
-// 					if (new_r) {
-// 						find_and_erase(g.resource->gatherers, &g);
-// 						g.resource = nullptr;
-// 						new_r->gatherers.push_back(&g);
-// 						g.resource = new_r;
-// 						g.round_trip_begin = 0;
-// 						g.last_find_transfer = 0;
-// 					}
-// 				}
-// 			}
-// 		}
-// 	}
-
 	if (g.last_find_transfer == 0 || current_frame - g.last_find_transfer >= 15 * 30 || delivered) {
 		g.last_find_transfer = current_frame;
-		resource_t*prev_r = g.resource;
 		if (g.resource) {
 			find_and_erase(g.resource->gatherers, &g);
 			g.resource = nullptr;
 		}
 		resource_t*new_r = get_best_score_p(live_resources, [&](resource_t*r) {
+			if (!r->depot) return 0.0;
+			if (r->u->type->is_gas && r->gatherers.size() >= 3) return 0.0;
+			if (r->u->type->is_gas && current_gas + 8 * r->gatherers.size() >= gas_limit) return 0.0;
 			double next_income = 0.0;
 			if (r->income_rate.size() > r->gatherers.size()) next_income = r->income_rate[r->gatherers.size()];
-			if (r->u->type->is_gas && r->gatherers.size() >= 3) next_income = 0.0;
 			double distance;
 			if (diag_distance(g.u->pos - r->u->pos) <= 32 * 10) distance = 0.0;
 			else distance = units_pathing_distance(g.u, r->u);
@@ -218,15 +205,8 @@ void process(gatherer_t&g) {
 			double distance_cost = distance / (32 * 1800);
 			double mult = r->u->type->is_gas ? 1.0 : minerals_to_gas_weight;
 			return -(std::max(next_income - distance_cost, 1e-8)) * mult;
-		});
+		}, 0.0);
 		if (new_r) {
-// 			if (new_r && prev_r) {
-// 				if (units_distance(new_r->u, prev_r->u) <= 32 * 8) {
-// 					if (prev_r->gatherers.empty() && !new_r->gatherers.empty()) {
-// 						new_r = prev_r;
-// 					}
-// 				}
-// 			}
 			new_r->gatherers.push_back(&g);
 			g.resource = new_r;
 			if (!delivered) g.round_trip_begin = 0;
