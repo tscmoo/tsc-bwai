@@ -752,8 +752,8 @@ void update_groups() {
 					if (w) can_attack_any = true;
 					weapon_stats*ew = cu->u->is_flying ? e->stats->air_weapon : e->stats->ground_weapon;
 					if (ew) any_can_attack_me = true;
-					if (can_attack_any && any_can_attack_me) break;
 					if (e->stats->air_weapon || e->stats->ground_weapon) any_can_attack = true;
+					if (can_attack_any && any_can_attack_me) break;
 				}
 				if (!can_attack_any && !any_can_attack_me) continue;
 				if (!any_can_attack && !any_buildings) continue;
@@ -2657,7 +2657,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 			});
 			weapon_stats*w = target->is_flying ? a->u->stats->air_weapon : a->u->stats->ground_weapon;
 			weapon_stats*ew = a->u->is_flying ? target->stats->ground_weapon : target->stats->air_weapon;
-			bool up_close = (!w || !ew || ew->max_range > w->max_range) || a->last_win_ratio >= 1.25;
+			bool up_close = (!w || !ew || ew->max_range > w->max_range) || a->last_win_ratio >= 8.0;
 			xy upos = a->u->pos + xy((int)(a->u->hspeed*latency_frames), (int)(a->u->vspeed*latency_frames));
 			xy tpos = target->pos + xy((int)(target->hspeed*latency_frames), (int)(target->vspeed*latency_frames));
 			double d = units_distance(upos, a->u, tpos, target);
@@ -2675,7 +2675,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 				}
 			}
 
-			if (current_frame - a->last_used_special >= 120) {
+			if (current_frame - a->last_used_special >= 30) {
 				if (a->u->burrowed && !burrow) {
 					if (current_frame - a->u->last_attacked >= 15 * 2) {
 						a->u->game_unit->unburrow();
@@ -2689,7 +2689,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 			}
 
 		} else {
-			if (current_frame - a->last_used_special >= 120) {
+			if (current_frame - a->last_used_special >= 30) {
 				if (a->u->burrowed) {
 					a->u->game_unit->unburrow();
 					a->last_used_special = current_frame;
@@ -4563,10 +4563,6 @@ void fight() {
 				for (auto*a : nearby_combat_units) {
 					a->u->controller->defensive_concave_position = xy();
 				}
-			}
-
-			for (auto*a : nearby_combat_units) {
-				a->snipe_target = snipe_target;
 			}
 
 
