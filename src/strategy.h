@@ -131,10 +131,10 @@ struct register_on_end_func {
 #include "strat_tvz_opening.h"
 #include "strat_tvz.h"
 
-//#include "strat_zvtp_opening.h"
-//#include "strat_zvtp.h"
-//#include "strat_zvz_opening.h"
-//#include "strat_zvz.h"
+#include "strat_zvtp_opening.h"
+#include "strat_zvtp.h"
+#include "strat_zvz_opening.h"
+#include "strat_zvz.h"
 
 a_map<a_string, std::function<void()>> strat_map = {
 	{ "proxy rax", wrap<proxy_rax>() },
@@ -145,10 +145,10 @@ a_map<a_string, std::function<void()>> strat_map = {
 	{ "tvp", wrap<strat_tvp>() },
 	{ "tvz opening", wrap<strat_tvz_opening>() },
 	{ "tvz", wrap<strat_tvz>() },
-//	{ "zvtp opening", wrap<strat_zvtp_opening>() },
-//	{ "zvtp", wrap<strat_zvtp>() },
-//	{ "zvz opening", wrap<strat_zvz_opening>() },
-//	{ "zvz", wrap<strat_zvz>() },
+	{ "zvtp opening", wrap<strat_zvtp_opening>() },
+	{ "zvtp", wrap<strat_zvtp>() },
+	{ "zvz opening", wrap<strat_zvz_opening>() },
+	{ "zvz", wrap<strat_zvz>() },
 };
 
 bool run_strat(const char*name) {
