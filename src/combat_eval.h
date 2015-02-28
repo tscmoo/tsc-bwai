@@ -209,16 +209,16 @@ namespace combat_eval {
 							if (!w && !c.irradiate_timer) {
 								if (c.st->max_speed > 0 && c.move > 0) {
 									++target_count;
-									if (my_team.has_static_defence) c.move -= c.st->max_speed * frame_resolution / 4;
-									else c.move -= c.st->max_speed * frame_resolution;
-									my_team.score += c.st->max_speed / 1000.0 * frame_resolution;
+									if (my_team.has_static_defence) c.move -= speed * frame_resolution / 4;
+									else c.move -= speed * frame_resolution;
+									my_team.score += speed / 1000.0 * frame_resolution;
 								}
 							} else if (c.move + target->move > (use_spider_mine ? 0 : (w ? w->max_range : 32 * 2))) {
 								if (speed > 0) {
 									++target_count;
-									if (my_team.has_static_defence) c.move -= c.st->max_speed * frame_resolution / 4;
-									else c.move -= c.st->max_speed * frame_resolution;
-									my_team.score += c.st->max_speed / 1000.0 * frame_resolution;
+									if (my_team.has_static_defence) c.move -= speed * frame_resolution / 4;
+									else c.move -= speed * frame_resolution;
+									my_team.score += speed / 1000.0 * frame_resolution;
 								}
 							} else {
 								++target_count;
@@ -286,7 +286,7 @@ namespace combat_eval {
 										for (int i = 0; i < max_n; ++i) {
 											if (ntarget < enemy_team.units.data() + enemy_team.units.size()) {
 												weapon_stats*nw = ntarget->st->type->is_flyer ? c.st->air_weapon : c.st->ground_weapon;
-												if (nw == w && c.move + ntarget->move < w->max_range) {
+												if (nw == w && c.move + ntarget->move < w->max_range && ntarget->hp > 0) {
 													attack(ntarget, 1.0);
 												}
 											}
@@ -296,12 +296,17 @@ namespace combat_eval {
 								} else {
 									if (c.st->type == unit_types::dragoon && (target->st->type == unit_types::marine || target->st->type == unit_types::firebat)) {
 										if (speed > 0 && c.move < 32 * 4) {
-											c.move += c.st->max_speed * frame_resolution;
+											c.move += speed * frame_resolution;
 										}
 									}
 									if (c.st->type == unit_types::mutalisk) {
 										if (speed > 0 && (target->st->type == unit_types::archon)) {
-											c.move += c.st->max_speed * frame_resolution;
+											c.move += speed * frame_resolution;
+										}
+									}
+									if (c.st->type == unit_types::marine) {
+										if (speed > 0 && (target->st->type == unit_types::zergling)) {
+											c.move += speed * frame_resolution / 2;
 										}
 									}
 								}
