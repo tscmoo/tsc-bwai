@@ -1078,12 +1078,12 @@ void update_units_task() {
 			update_groups(u);
 		}
 
-// 		if (current_frame - last_refresh >= 90) {
-// 			for (unit*u : live_units) {
-// 				events.emplace_back(event_t::t_refresh, u->game_unit);
-// 			}
-// 			last_refresh = current_frame;
-// 		}
+		if (current_frame - last_refresh >= 90) {
+			last_refresh = current_frame;
+			for (unit*u : live_units) {
+				events.emplace_back(event_t::t_refresh, u->game_unit);
+			}
+		}
 
 		for (unit*u : visible_units) {
 			if (!u->game_unit->exists()) {
