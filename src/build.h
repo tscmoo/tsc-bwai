@@ -165,6 +165,8 @@ void update_prerequisites(build_task*t) {
 		if (pt->unit == unit_types::hatchery && (!my_units_of_type[unit_types::lair].empty() || !my_units_of_type[unit_types::hive].empty())) continue;
 		if (pt->unit == unit_types::lair && !my_units_of_type[unit_types::hive].empty()) continue;
 		if (t->type->unit == unit_types::lair && pt->unit == unit_types::hatchery) continue;
+		if (t->type->unit == unit_types::sunken_colony && pt->unit == unit_types::creep_colony) continue;
+		if (t->type->unit == unit_types::spore_colony && pt->unit == unit_types::creep_colony) continue;
 		add(pt, true);
 	}
 	if (t->needs_pylon) add(get_build_type(unit_types::pylon),false);
