@@ -76,7 +76,7 @@ void process(resource_t&r) {
 		return;
 	}
 	unit*depot = nullptr;
-	if (!resource_depots.empty()) {
+	if (!resource_depots.empty() && combat::can_transfer_to(r.u)) {
 		depot = get_best_score(resource_depots, [&](unit*u) {
 			if (!u->is_completed && !u->is_morphing && u->remaining_build_time > 15 * 20) return std::numeric_limits<double>::infinity();
 			return units_pathing_distance(unit_types::scv, r.u, u);
