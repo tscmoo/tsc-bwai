@@ -103,7 +103,7 @@ struct unit_building {
 
 struct unit;
 namespace units {
-	a_vector<unit*> unit_containers[14];
+	a_vector<unit*> unit_containers[15];
 }
 
 a_vector<unit*>&all_units_ever = units::unit_containers[0];
@@ -122,6 +122,7 @@ a_vector<unit*>&my_detector_units = units::unit_containers[10];
 a_vector<unit*>&enemy_units = units::unit_containers[11];
 a_vector<unit*>&visible_enemy_units = units::unit_containers[12];
 a_vector<unit*>&enemy_buildings = units::unit_containers[13];
+a_vector<unit*>&enemy_detector_units = units::unit_containers[14];
 
 a_unordered_map<unit_type*, a_vector<unit*>> my_units_of_type;
 a_unordered_map<unit_type*, a_vector<unit*>> my_completed_units_of_type;
@@ -1003,6 +1004,7 @@ void update_units_task() {
 		update_unit_container(u, enemy_units, !u->dead && u->owner->is_enemy);
 		update_unit_container(u, visible_enemy_units, u->visible && u->owner->is_enemy);
 		update_unit_container(u, enemy_buildings, !u->dead && !u->gone && u->building && u->owner->is_enemy);
+		update_unit_container(u, enemy_detector_units, !u->dead && u->owner->is_enemy && u->type->is_detector);
 
 		my_units_of_type.clear();
 		for (unit*u : my_units) {
