@@ -37,10 +37,12 @@ struct unit_controller {
 	int last_command_frame = 0;
 	int last_re_evaluate_target = 0;
 	unit*re_evaluate_target = nullptr;
+	xy re_evalute_move_to;
 	xy defensive_concave_position;
 	int return_minerals_frame = 0;
 	unit*last_gather_target = nullptr;
 	int last_gather_issued_frame = 0;
+	int last_burrow = 0;
 };
 
 namespace unit_controls {
@@ -174,7 +176,7 @@ void move(unit_controller*c) {
 			} else if (u->game_unit->isSieged()) {
 				if (current_frame - u->last_attacked >= 90) u->game_unit->unsiege();
 			} else if (u->game_unit->isBurrowed()) {
-				if (current_frame - u->last_attacked >= 90) u->game_unit->unburrow();
+				if (current_frame - c->last_burrow >= 120) u->game_unit->unburrow();
 			} else if (u->type == unit_types::medic) {
 				if (!bwapi_is_healing_order(u->game_order)) {
 					u->game_unit->useTech(upgrade_types::healing->game_tech_type, BWAPI::Position(move_to.x, move_to.y));
@@ -209,6 +211,12 @@ bool move_stuff_away_from_build_pos(xy build_pos, unit_type*ut, unit_controller*
 		if (builder && nu == builder->u) continue;
 		xy upper_left = nu->pos - xy(nu->type->dimension_left(), nu->type->dimension_up());
 		xy bottom_right = nu->pos + xy(nu->type->dimension_right(), nu->type->dimension_down());
+		if (nu->owner == players::my_player && nu->controller->can_move) {
+			upper_left.x -= 32 * 2;
+			upper_left.y -= 32 * 2;
+			bottom_right.x += 32 * 2;
+			bottom_right.y += 32 * 2;
+		}
 		int x1 = build_pos.x;
 		int y1 = build_pos.y;
 		int x2 = build_pos.x + ut->tile_width * 32;
@@ -241,8 +249,9 @@ void process(const a_vector<unit_controller*>&controllers) {
 		c->can_move = can_move;
 	}
 
+	a_unordered_map<unit*, xy> re_eval_move_to;
 
-	auto re_evaluate_target = [&](unit_controller*c) {
+	auto re_evaluate_target = [&](unit_controller*c, bool allow_actions) {
 		//return false;
 		if (c->action != unit_controller::action_attack || !c->target) return false;
 		unit*u = c->u;
@@ -250,20 +259,40 @@ void process(const a_vector<unit_controller*>&controllers) {
 		weapon_stats*w = c->target->is_flying ? u->stats->air_weapon : u->stats->ground_weapon;
 		if (!w) return false;
 
+		auto&re_eval_move_to_bug_workaround = re_eval_move_to;
+
 		if (current_frame - c->last_re_evaluate_target <= 4) {
 			if (c->re_evaluate_target && !c->re_evaluate_target->dead) c->target = c->re_evaluate_target;
+			if (allow_actions && c->re_evalute_move_to != xy()) {
+				if (current_frame >= c->noorder_until) {
+					c->last_move = current_frame;
+					if (c->last_move_to_pos != c->re_evalute_move_to || current_frame >= c->last_move_to + 30) {
+						c->last_move_to = current_frame;
+						c->last_move_to_pos = c->re_evalute_move_to;
+						c->u->game_unit->move(BWAPI::Position(c->re_evalute_move_to.x, c->re_evalute_move_to.y));
+						c->noorder_until = current_frame + rng(8);
+					}
+				}
+				return true;
+			}
 			return false;
 		}
 
 		c->last_re_evaluate_target = current_frame;
 		c->re_evaluate_target = nullptr;
+		c->re_evalute_move_to = xy();
 
-		a_vector<unit*> path_units;
+		a_vector<std::tuple<unit*, xy>> path_units;
 		for (unit*nu : visible_units) {
 			if (nu->is_flying || nu->burrowed) continue;
 			if (diag_distance(nu->pos - u->pos) >= 32 * 4) continue;
 			if (nu == u) continue;
-			path_units.push_back(nu);
+			xy pos = nu->pos;
+			auto i = re_eval_move_to.find(nu);
+			if (i != re_eval_move_to.end()) {
+				pos = i->second;
+			}
+			path_units.emplace_back(nu, pos);
 		}
 
 		auto&dims = u->type->dimensions;
@@ -274,12 +303,15 @@ void process(const a_vector<unit_controller*>&controllers) {
 				int bottom = pos.y + dims[1];
 				int left = pos.x - dims[2];
 				int top = pos.y - dims[3];
-				for (unit*u : path_units) {
+				for (auto&v : path_units) {
+					unit*u;
+					xy pos;
+					std::tie(u, pos) = v;
 					if (u->is_flying || u->burrowed) continue;
-					int uright = u->pos.x + u->type->dimension_right();
-					int ubottom = u->pos.y + u->type->dimension_down();
-					int uleft = u->pos.x - u->type->dimension_left();
-					int utop = u->pos.y - u->type->dimension_up();
+					int uright = pos.x + u->type->dimension_right();
+					int ubottom = pos.y + u->type->dimension_down();
+					int uleft = pos.x - u->type->dimension_left();
+					int utop = pos.y - u->type->dimension_up();
 					if (right >= uleft && bottom >= utop && uright >= left && ubottom >= top) return false;
 				}
 				return true;
@@ -320,6 +352,7 @@ void process(const a_vector<unit_controller*>&controllers) {
 		log("%s -> %s target path: %d (len %g)\n", u->type->name, c->target->type->name, path.size(), path_len);
 		//bool find_lowest_hp_target = c->u->type == unit_types::zergling && c->target->type == unit_types::zealot;
 		bool find_lowest_hp_target = u->type == unit_types::zergling;
+		//bool find_lowest_hp_target = false;
 		if (path.empty() || path_len >= w->max_range || c->target->dead || !c->target->visible || find_lowest_hp_target) {
 			a_vector<unit*> target_units;
 			for (unit*nu : visible_enemy_units) {
@@ -335,6 +368,7 @@ void process(const a_vector<unit_controller*>&controllers) {
 				double path_len = 0.0;
 				unit*target = nullptr;
 				double lowest_hp = std::numeric_limits<double>::infinity();
+				xy target_pos;
 				a_deque<xy> path = square_pathing::find_square_path<node_data_t>(square_pathing::get_pathing_map(u->type), u->pos, [&](xy pos, xy npos, node_data_t&n) {
 					if (diag_distance(pos - u->pos) >= 32 * 3) return false;
 					if (!can_move_to(npos)) return false;
@@ -351,11 +385,13 @@ void process(const a_vector<unit_controller*>&controllers) {
 								lowest_hp = hp;
 								target = e;
 								path_len = n.len;
+								target_pos = pos;
 							}
 						} else {
 							if (r) {
 								target = e;
 								path_len = n.len;
+								target_pos = pos;
 								return true;
 							}
 						}
@@ -366,6 +402,7 @@ void process(const a_vector<unit_controller*>&controllers) {
 					log("%s -> %s new target path: %d (len %g)\n", u->type->name, target->type->name, path.size(), path_len);
 					c->target = target;
 					c->re_evaluate_target = target;
+					re_eval_move_to_bug_workaround[c->u] = target_pos;
 				} else {
 					log("no better target\n");
 				}
@@ -373,8 +410,75 @@ void process(const a_vector<unit_controller*>&controllers) {
 
 		}
 
+		if (allow_actions) {
+			if (!c->target->is_flying) {
+				weapon_stats*w = c->target->is_flying ? u->stats->air_weapon : u->stats->ground_weapon;
+				if (w && w->max_range <= 32 && c->target->speed > 2.0) {
+					bool chase = true;
+					if (units_distance(u, c->target) <= w->max_range + 16) {
+						chase = false;
+					}
+					if (chase) {
+						double target_heading = std::atan2(c->target->vspeed, c->target->hspeed);
+						xy relpos = c->target->pos - u->pos;
+						double rel_angle = std::atan2(relpos.y, relpos.x);
+						double da = target_heading - rel_angle;
+						if (da < -PI) da += PI * 2;
+						if (da > PI) da -= PI * 2;
+						if (std::abs(da) <= PI / 2) {
+
+							double offset_heading;
+							if (da >= 0) offset_heading = PI / 2;
+							else offset_heading = PI / 2;
+
+							xy target_pos = c->target->pos;
+							double max_distance = 32 * 4;
+							for (double distance = 0; distance < max_distance; distance += 32) {
+								xy pos = c->target->pos;
+								pos.x += (int)(std::cos(target_heading)*distance);
+								pos.y += (int)(std::sin(target_heading)*distance);
+								pos.x += (int)(std::cos(offset_heading) * 32 * 1);
+								pos.y += (int)(std::sin(offset_heading) * 32 * 1);
+								pos = square_pathing::get_pos_in_square(pos, c->target->type);
+								if (pos == xy()) break;
+								target_pos = pos;
+							}
+							log("chase, target_pos is %g away\n", (target_pos - c->target->pos).length());
+
+							if (diag_distance(target_pos - c->target->pos) > 32) {
+
+								c->re_evalute_move_to = target_pos;
+								if (current_frame >= c->noorder_until) {
+									c->last_move = current_frame;
+									if (c->last_move_to_pos != c->re_evalute_move_to || current_frame >= c->last_move_to + 30) {
+										c->last_move_to = current_frame;
+										c->last_move_to_pos = c->re_evalute_move_to;
+										c->u->game_unit->move(BWAPI::Position(c->re_evalute_move_to.x, c->re_evalute_move_to.y));
+										c->noorder_until = current_frame + rng(8);
+									}
+								}
+
+								return true;
+							}
+						}
+					}
+				}
+			}
+		}
+
 		return false;
 	};
+	for (auto*c : controllers) {
+		if (c->action == unit_controller::action_idle) continue;
+		if (c->last_process == current_frame) continue;
+		if (c->u->type == unit_types::lurker) continue;
+		if (!c->u->burrowed) continue;
+		c->last_process = current_frame;
+		if (current_frame - c->last_burrow >= 15) {
+			c->last_burrow = current_frame;
+			c->u->game_unit->unburrow();
+		}
+	}
 	for (auto*c : controllers) {
 		if (c->defensive_concave_position == xy()) continue;
 		log("%s: c->defensive_concave_position is %d %d (%g away)\n", c->u->type->name, c->defensive_concave_position.x, c->defensive_concave_position.y, (c->defensive_concave_position - c->u->pos).length());
@@ -390,7 +494,7 @@ void process(const a_vector<unit_controller*>&controllers) {
 		}
 		if (u->is_flying) continue;
 
-		re_evaluate_target(c);
+		re_evaluate_target(c, false);
 // 		if (c->target->shields + c->target->hp < c->target->stats->shields + c->target->stats->hp) {
 // 			if (units_distance(c->defensive_concave_position, u->type, c->target->pos, c->target->type) <= w->max_range + 32) {
 // 				log("hurt and close, attacking\n");
@@ -680,7 +784,6 @@ void process(const a_vector<unit_controller*>&controllers) {
 					continue;
 				}
 
-				bool do_state_machine = c->can_move;
 
 				int wait_frames = 0;
 				if (u->type == unit_types::marine) wait_frames = 6;
@@ -695,6 +798,9 @@ void process(const a_vector<unit_controller*>&controllers) {
 				if (u->type == unit_types::hydralisk) wait_frames = 6;
 				if (u->type == unit_types::mutalisk) wait_frames = 2;
 				if (u->type == unit_types::guardian) wait_frames = 2;
+				if (u->type == unit_types::devourer) wait_frames = 12;
+
+				bool do_state_machine = c->can_move && wait_frames;
 
 				bool do_close_up = false;
 				if (c->action != unit_controller::action_kite) {
@@ -720,9 +826,14 @@ void process(const a_vector<unit_controller*>&controllers) {
 				if (u->type == unit_types::marine || u->type == unit_types::firebat) {
 					if (u->stim_timer > latency_frames) do_state_machine = false;
 				}
+				if (u->game_unit->isSieged() || u->game_unit->isBurrowed()) {
+					do_state_machine = false;
+					do_close_up = false;
+				}
 
+				//log("%s: do_state_machine: %d do_close_up: %d\n", u->type->name, do_state_machine, do_close_up);
 				if (!do_state_machine && !do_close_up) {
-					if (re_evaluate_target(c)) continue;
+					if (re_evaluate_target(c, true)) continue;
 				}
 
 				if (do_close_up) {
