@@ -54,6 +54,7 @@ namespace upgrade_types {
 	upgrade_type_pointer infestation, parasite, ensnare, spawn_broodling, gamete_meiosis;
 	upgrade_type_pointer ventral_sacs, antennae, pneumatized_carapace;
 	upgrade_type_pointer dark_swarm, consume, plague, metasynaptic_node;
+	upgrade_type_pointer burrow;
 
 	void init() {
 		get(terran_infantry_weapons_1, BWAPI::UpgradeTypes::Terran_Infantry_Weapons, 1);
@@ -134,6 +135,7 @@ namespace upgrade_types {
 		get(consume, BWAPI::TechTypes::Consume);
 		get(plague, BWAPI::TechTypes::Plague);
 		get(metasynaptic_node, BWAPI::UpgradeTypes::Metasynaptic_Node);
+		get(burrow, BWAPI::TechTypes::Burrowing);
 	}
 }
 
