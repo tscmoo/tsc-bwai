@@ -837,12 +837,14 @@ void update_groups() {
 		}
 		int non_worker_allies = 0;
 		int worker_allies = 0;
+		bool done = false;
 		while (true) {
 			multitasking::yield_point();
 
 			a_unordered_set<combat_unit*> blacklist;
 			auto get_nearest_unit = [&](bool allow_worker) {
 				return get_best_score(available_units, [&](combat_unit*c) {
+					if (c->u->type == unit_types::overlord) return std::numeric_limits<double>::infinity();
 					if (c->u->type->is_worker && !c->u->force_combat_unit && !allow_worker) return std::numeric_limits<double>::infinity();
 					if (no_aggressive_groups && (c->u->type != unit_types::vulture || !aggressive_vultures) && (c->u->type != unit_types::wraith || !aggressive_wraiths) && (c->u->type != unit_types::valkyrie || !aggressive_valkyries) && (c->u->type != unit_types::zergling || !aggressive_zerglings) && (c->u->type != unit_types::mutalisk || !aggressive_mutalisks)) {
 						if (g.is_aggressive_group) return std::numeric_limits<double>::infinity();
@@ -908,7 +910,7 @@ void update_groups() {
 			for (unit*e : g.enemies) addu(e, 1);
 			addu(nearest_unit->u, 0);
 			eval.run();
-			bool done = eval.teams[0].score > eval.teams[1].score*1.5;
+			done = eval.teams[0].score > eval.teams[1].score*1.5;
 // 			if (nearest_unit->u->type->is_worker) {
 // 				done |= eval.teams[0].score > eval.teams[1].score;
 // 				done |= eval.teams[0].end_supply >= eval.teams[1].end_supply;
@@ -920,6 +922,30 @@ void update_groups() {
 			if (done) break;
 			if (is_just_one_worker) break;
 		}
+
+		if (done || g.allies.size() >= 4) {
+			int cloaked_units = 0;
+			for (unit*e : g.enemies) {
+				if (e->cloaked) ++cloaked_units;
+			}
+			if (cloaked_units) log("group has %d cloaked units\n", cloaked_units);
+			for (int detectors = 0; detectors < std::min(cloaked_units, 3);) {
+				combat_unit*c = get_best_score(available_units, [&](combat_unit*c) {
+					if (!c->u->type->is_detector) return std::numeric_limits<double>::infinity();
+					double d;
+					if (c->u->is_loaded) d = diag_distance(g.enemies.front()->pos - c->u->pos);
+					else d = units_pathing_distance(c->u, g.enemies.front());
+					return d;
+				}, std::numeric_limits<double>::infinity());
+				if (c) {
+					g.allies.push_back(c);
+					available_units.erase(c);
+					++detectors;
+					log("assigned %s\n", c->u->type->name);
+				} else break;
+			}
+		}
+
 		log("group %d: %d allies %d enemies\n", g.idx, g.allies.size(), g.enemies.size());
 	}
 
@@ -975,6 +1001,7 @@ void update_groups() {
 					if (c->u->type->is_worker && !c->u->force_combat_unit) skip = true;
 					if (c->u->type->is_worker && !c->u->force_combat_unit && largest_group->is_defensive_group) skip = true;
 					if (c->u->type == unit_types::wraith && hide_wraiths) skip = true;
+					if (c->u->type == unit_types::overlord) skip = true;
 					if (skip) ++ci;
 					else {
 						largest_group->allies.push_back(c);
@@ -1051,6 +1078,8 @@ a_unordered_map<unit*, std::tuple<combat_unit*, int>> optical_flare_target_taken
 a_map<xy, std::tuple<combat_unit*, int>> dark_swarm_target_taken;
 a_map<xy, std::tuple<combat_unit*, int>> plague_target_taken;
 tsc::dynamic_bitset existing_dark_swarm;
+
+a_vector<std::tuple<combat_unit*, unit*>> need_detector;
 
 void prepare_attack() {
 	for (auto i = registered_focus_fire.begin(); i != registered_focus_fire.end();) {
@@ -1178,6 +1207,8 @@ void prepare_attack() {
 		if (current_frame >= std::get<1>(i->second)) i = plague_target_taken.erase(i);
 		else ++i;
 	}
+
+	need_detector.clear();
 
 }
 
@@ -1645,6 +1676,39 @@ void finish_attack() {
 					c->u->game_unit->useTech(upgrade_types::defensive_matrix->game_tech_type, target->u->game_unit);
 					c->last_used_special = current_frame;
 					c->u->controller->noorder_until = current_frame + 8;
+				}
+			}
+		}
+	}
+
+	a_vector<combat_unit*> overlords;
+	for (auto*c : live_combat_units) {
+		if (current_frame < c->strategy_busy_until) continue;
+		if (c->u->type == unit_types::overlord) overlords.push_back(c);
+	}
+	if (!overlords.empty()) {
+		if (!need_detector.empty()) {
+			a_unordered_set<combat_unit*> ov_sent;
+			a_vector<xy> pos_sent;
+			for (auto&v : need_detector) {
+				xy pos = std::get<0>(v)->u->pos;
+				bool covered = false;
+				for (xy pos2 : pos_sent) {
+					if (diag_distance(pos - pos2) <= 32 * 4) {
+						covered = true;
+						break;
+					}
+				}
+				if (covered) break;
+				auto*c = get_best_score(overlords, [&](combat_unit*c) {
+					if (ov_sent.count(c)) return std::numeric_limits<double>::infinity();
+					return diag_distance(pos - c->u->pos);
+				}, std::numeric_limits<double>::infinity());
+				if (c) {
+					c->subaction = combat_unit::subaction_move;
+					c->target_pos = pos;
+					ov_sent.insert(c);
+					pos_sent.push_back(pos);
 				}
 			}
 		}
@@ -2494,7 +2558,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 		if (e->type == unit_types::egg || e->type == unit_types::lurker_egg)  return std::make_tuple(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
 		if (e->dead)  return std::make_tuple(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
 		weapon_stats*w = e->is_flying ? u->stats->air_weapon : u->stats->ground_weapon;
-		if (u->type == unit_types::scourge && e->type == unit_types::overlord) w = nullptr;
+		if (u->type == unit_types::scourge && (e->type == unit_types::overlord || e->type == unit_types::interceptor)) w = nullptr;
 		if (!w) return std::make_tuple(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
 		double d = units_distance(u, e);
 		bool is_weaponless_target = false;
@@ -2674,25 +2738,28 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 					burrow = true;
 				}
 			}
+			if (a->u->burrowed && units_distance(a->u, target) <= w->max_range) burrow = true;
 
-			if (current_frame - a->last_used_special >= 30) {
+			if (current_frame - a->u->controller->last_burrow >= 30) {
 				if (a->u->burrowed && !burrow) {
-					if (current_frame - a->u->last_attacked >= 15 * 2) {
+					if (current_frame >= a->u->controller->noorder_until) {
 						a->u->game_unit->unburrow();
-						a->last_used_special = current_frame;
+						a->u->controller->noorder_until = current_frame + 8;
 					}
 				}
 				if (!a->u->burrowed && burrow) {
 					a->u->game_unit->burrow();
-					a->last_used_special = current_frame;
+					a->u->controller->last_burrow = current_frame;
 				}
 			}
 
 		} else {
-			if (current_frame - a->last_used_special >= 30) {
+			if (current_frame - a->u->controller->last_burrow >= 30) {
 				if (a->u->burrowed) {
-					a->u->game_unit->unburrow();
-					a->last_used_special = current_frame;
+					if (current_frame >= a->u->controller->noorder_until) {
+						a->u->game_unit->unburrow();
+						a->u->controller->noorder_until = current_frame + 8;
+					}
 				}
 			}
 		}
@@ -2769,6 +2836,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 			if (a->u->type == unit_types::siege_tank_tank_mode || a->u->type == unit_types::siege_tank_siege_mode) min_scans_available = 1;
 			if (scans_available < min_scans_available) ignore = true;
 		}
+		need_detector.emplace_back(a, target);
 		if (!ignore) {
 			weapon_stats*ew = a->u->is_flying ? target->stats->air_weapon : target->stats->ground_weapon;
 			bool scan = false;
@@ -3292,7 +3360,8 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 		}
 	}
 
-	if (target && a->u->type == unit_types::science_vessel) {
+	if (target && (a->u->type == unit_types::science_vessel || a->u->type == unit_types::overlord)) {
+	//if (target && a->u->type == unit_types::science_vessel) {
 		bool moved = false;
 		if (a->u->irradiate_timer) {
 			unit*target = get_best_score(enemies, [&](unit*e) {
@@ -3431,6 +3500,17 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 // 	}
 
 	if (target && a->subaction == combat_unit::subaction_fight) {
+		if (a->u->type == unit_types::scourge) {
+			double ehp = target->shields + target->hp;
+			ehp -= focus_fire[target];
+			if (ehp <= 0) {
+				a->subaction = combat_unit::subaction_move;
+				a->target_pos = target->pos;
+			}
+		}
+	}
+
+	if (target && a->subaction == combat_unit::subaction_fight) {
 		weapon_stats*my_weapon = target->is_flying ? a->u->stats->air_weapon : a->u->stats->ground_weapon;
 		weapon_stats*e_weapon = a->u->is_flying ? target->stats->air_weapon : target->stats->ground_weapon;
 		double max_range = 1000.0;
@@ -3469,7 +3549,9 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 				}
 			} else {
 				if (a->u->type != unit_types::lurker) {
-					if (my_weapon && d <= my_weapon->max_range && a->u->weapon_cooldown <= latency_frames && current_frame >= a->registered_focus_fire_until) {
+					double range = my_weapon ? my_weapon->max_range : 0.0;
+					if (a->u->type == unit_types::scourge) range = 64;
+					if (my_weapon && d <= range && a->u->weapon_cooldown <= latency_frames && current_frame >= a->registered_focus_fire_until) {
 						focus_fire[target] += damage;
 						auto i = registered_focus_fire.find(a);
 						if (i != registered_focus_fire.end()) {
@@ -3637,7 +3719,9 @@ void do_run(combat_unit*a, const a_vector<unit*>&enemies) {
 					a->subaction = combat_unit::subaction_fight;
 					a->target = ne;
 				} else {
-					if (a->last_win_ratio > 0.25 || true) {
+					bool kite = true;
+					if (a->u->type == unit_types::hydralisk) kite = a->last_win_ratio > 0.5;
+					if (kite) {
 						a->subaction = combat_unit::subaction_kite;
 						a->target = ne;
 					}
@@ -3678,6 +3762,28 @@ void do_run(combat_unit*a, const a_vector<unit*>&enemies) {
 
 	unit*u = a->u;
 
+	auto can_burrow = [&]() {
+		return u->type==unit_types::drone || u->type==unit_types::zergling || u->type==unit_types::hydralisk || u->type==unit_types::defiler;
+	};
+
+// 	if (a->subaction == combat_unit::subaction_move && players::my_player->has_upgrade(upgrade_types::burrow) && can_burrow()) {
+// 		bool detected = false;
+// 		for (unit*e : enemy_detector_units) {
+// 			if (units_distance(e, u) <= e->stats->sight_range) {
+// 				detected = true;
+// 				break;
+// 			}
+// 		}
+// 		if (!detected) {
+// 			a->subaction = combat_unit::subaction_idle;
+// 			u->controller->action = unit_controller::action_idle;
+// 			if (current_frame - u->controller->last_burrow >= 15) {
+// 				u->controller->last_burrow = current_frame;
+// 				u->game_unit->burrow();
+// 			}
+// 		}
+// 	}
+
 	unit*ne = get_best_score(enemies, [&](unit*e) {
 		return units_distance(u, e);
 	});
@@ -3707,7 +3813,6 @@ void do_run(combat_unit*a, const a_vector<unit*>&enemies) {
 
 		a->target_pos = path.empty() ? a->goal_pos : path.back();
 //	}
-
 
 	a->target_pos.x = a->target_pos.x&-32 + 16;
 	a->target_pos.y = a->target_pos.y&-32 + 16;
@@ -4309,8 +4414,13 @@ void fight() {
 				for (unit*a : nearby_allies) {
 					add(use_workers_eval, a, 0);
 				}
-				for (unit*e : nearby_enemies) add(use_workers_eval, e, 1);
+// 				int zealots = 0;
+				for (unit*e : nearby_enemies) {
+					//if (e->type == unit_types::zealot) ++zealots;
+					add(use_workers_eval, e, 1);
+				}
 				use_workers_eval.run();
+				//if (use_workers_eval.teams[0].score > eval.teams[0].score && zealots < 2) {
 				if (use_workers_eval.teams[0].score > eval.teams[0].score) {
 					log("use workers! (%g vs %g > %g vs %g)\n", use_workers_eval.teams[0].score, use_workers_eval.teams[1].score, eval.teams[0].score, eval.teams[1].score);
 					eval = use_workers_eval;
@@ -4357,26 +4467,26 @@ void fight() {
 				log("result: score %g %g  supply %g %g  damage %g %g  in %d frames\n", eval.teams[0].score, eval.teams[1].score, eval.teams[0].end_supply, eval.teams[1].end_supply, eval.teams[0].damage_dealt, eval.teams[1].damage_dealt, eval.total_frames);
 			}
 
-			double fact = 1.0;
-			bool already_fighting = test_pred(nearby_combat_units, [&](combat_unit*cu) {
-				return current_frame - cu->last_fight <= 60 && cu->last_fight - cu->last_run > 0;
-			});
-			if (already_fighting) fact = 0.5;
-			else if (current_used_total_supply >= 20) fact = 1.5;
+// 			double fact = 1.0;
+// 			bool already_fighting = test_pred(nearby_combat_units, [&](combat_unit*cu) {
+// 				return current_frame - cu->last_fight <= 60 && cu->last_fight - cu->last_run > 0;
+// 			});
+// 			if (already_fighting) fact = 0.5;
+// 			else if (current_used_total_supply >= 20) fact = 1.5;
+// 
+// 			if (players::my_player->has_upgrade(upgrade_types::dark_swarm) && players::my_player->has_upgrade(upgrade_types::consume)) {
+// 				bool has_defilers = false;
+// 				for (auto*a : nearby_combat_units) {
+// 					if (a->u->type == unit_types::defiler) {
+// 						has_defilers = true;
+// 						break;
+// 					}
+// 				}
+// 				if (has_defilers) fact *= 0.75;
+// 			}
 
-			if (players::my_player->has_upgrade(upgrade_types::dark_swarm) && players::my_player->has_upgrade(upgrade_types::consume)) {
-				bool has_defilers = false;
-				for (auto*a : nearby_combat_units) {
-					if (a->u->type == unit_types::defiler) {
-						has_defilers = true;
-						break;
-					}
-				}
-				if (has_defilers) fact *= 0.75;
-			}
-
-			//bool fight = eval.teams[0].score >= eval.teams[1].score;
-			bool fight = eval.teams[0].score >= eval.teams[1].score * fact;
+			bool fight = eval.teams[0].score >= eval.teams[1].score;
+			//bool fight = eval.teams[0].score >= eval.teams[1].score * fact;
 			log("scores: %g %g\n", eval.teams[0].score, eval.teams[1].score);
 			if (is_base_defence) {
 				fight |= eval.teams[1].start_supply - eval.teams[1].end_supply > eval.teams[0].start_supply - eval.teams[0].end_supply;
@@ -4393,10 +4503,22 @@ void fight() {
 			if (air_fight) log("air fight!\n");
 
 
+			int op_detectors = 0;
+			for (unit*u : nearby_enemies) {
+				if (u->type->is_detector) ++op_detectors;
+			}
+
 			if (!fight && !ground_fight && !air_fight) {
 				combat_eval::eval run_eval;
 				run_eval.max_frames = eval_frames;
-				for (unit*a : nearby_allies) add(run_eval, a, 0);
+				for (unit*a : nearby_allies) {
+// 					if (op_detectors == 0 && players::my_player->has_upgrade(upgrade_types::burrow)) {
+// 						if (a->type == unit_types::drone || a->type == unit_types::zergling || a->type == unit_types::hydralisk || a->type == unit_types::defiler) {
+// 							continue;
+// 						}
+// 					}
+					add(run_eval, a, 0);
+				}
 				for (unit*e : nearby_enemies) add(run_eval, e, 1);
 				run_eval.teams[0].run = true;
 				run_eval.run();
@@ -4456,11 +4578,6 @@ void fight() {
 				}, std::numeric_limits<double>::infinity());
 			}
 
-			int op_detectors = 0;
-			for (unit*u : nearby_enemies) {
-				if (u->type->is_detector) ++op_detectors;
-			}
-
 			for (unit*e : enemy_units) {
 				if (!e->visible) continue;
 				if (e->type != unit_types::spider_mine) continue;
@@ -4498,7 +4615,7 @@ void fight() {
 				}
 				return false;
 			};
-			if (current_used_total_supply < 50 && !g.is_aggressive_group && !is_outranged_or_not_focused()) {
+			if (current_used_total_supply < 50 && !g.is_aggressive_group && no_aggressive_groups && !is_outranged_or_not_focused()) {
 
 				bool is_defensive_concave = false;
 				a_vector<xy> defensive_positions;
@@ -4592,13 +4709,15 @@ void fight() {
 					if (!square_pathing::unit_can_reach(a->u, a->u->pos, g.enemies.front()->pos, square_pathing::pathing_map_index::include_liftable_wall)) continue;
 				}
 				if (a->u->type == unit_types::science_vessel) attack = true;
+				if (a->u->type == unit_types::overlord) attack = true;
 				if (my_workers.size() == current_used_total_supply) attack = true;
-				if (a->u->cloaked && !op_detectors) attack = true;
-				if (a->u->type == unit_types::lurker && !op_detectors) attack = true;
+				if (a->u->cloaked && !a->u->burrowed && !op_detectors) attack = true;
+				//if (a->u->type == unit_types::lurker && !op_detectors) attack = true;
+				if (a->u->type == unit_types::lurker && a->u->burrowed && !op_detectors) attack = true;
 				if (a->u->irradiate_timer && eval.teams[0].end_supply) attack = true;
 				if (current_frame < a->strategy_attack_until) attack = true;
 				if (existing_dark_swarm.test(grid::build_square_index(a->u->pos))) attack = true;
-				if (attack && have_static_defence && win_ratio < 8.0 && !static_defence_in_range) attack = false;
+				if (attack && have_static_defence && win_ratio < 32.0 && !static_defence_in_range && current_used_total_supply < 40) attack = false;
 				if (careless_aggression) attack = true;
 				if (attack) {
 					do_attack(a, nearby_allies, nearby_enemies);
