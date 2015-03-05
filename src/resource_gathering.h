@@ -186,7 +186,9 @@ void process(gatherer_t&g) {
 	if (max_gas && current_gas < max_gas) minerals_to_gas_weight = 0.125;
 	if (max_gas && current_gas >= max_gas) minerals_to_gas_weight = 8.0;
 
-	if (g.last_find_transfer == 0 || current_frame - g.last_find_transfer >= 15 * 30 || delivered) {
+	bool relocate = current_frame - g.last_find_transfer >= 15 && g.resource && !g.resource->depot;
+
+	if (g.last_find_transfer == 0 || current_frame - g.last_find_transfer >= 15 * 30 || delivered || relocate) {
 		g.last_find_transfer = current_frame;
 		if (g.resource) {
 			find_and_erase(g.resource->gatherers, &g);
