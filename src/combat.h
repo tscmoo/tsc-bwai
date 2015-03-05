@@ -342,6 +342,7 @@ bool can_transfer_to(unit*r) {
 }
 
 bool no_aggressive_groups = false;
+bool aggressive_groups_done_only = false;
 bool aggressive_wraiths = false;
 bool aggressive_vultures = true;
 bool aggressive_valkyries = false;
@@ -385,9 +386,13 @@ void update_groups() {
 		if (enemy_non_building_units == 0) no_aggressive_groups = false;
 		if (enemy_non_building_units == 0 && enemy_building_units == 0) search_and_destroy = true;
 	}
-	if (current_frame >= 15 * 60 * 60) no_aggressive_groups = false;
+	if (current_frame >= 15 * 60 * 60) {
+		no_aggressive_groups = false;
+		aggressive_groups_done_only = false;
+	}
 
 	log("no_aggressive_groups is %d\n", no_aggressive_groups);
+	log("aggressive_groups_done_only is %d\n", aggressive_groups_done_only);
 	unit*first_enemy_building = nullptr;
 	for (auto&v : sorted_enemy_units) {
 		unit*e = std::get<1>(v);
@@ -470,7 +475,7 @@ void update_groups() {
 		g->enemies.push_back(e);
 		if (!is_aggressive) g->is_aggressive_group = false;
 	}
-	if (!live_units.empty() && (new_groups.empty() || no_aggressive_groups)) {
+	if (!live_units.empty() && (new_groups.empty() || (no_aggressive_groups || aggressive_groups_done_only))) {
 		if (defence_choke.center != xy()) {
 			new_groups.emplace_back();
 			group_t*g = &new_groups.back();
@@ -838,6 +843,7 @@ void update_groups() {
 		int non_worker_allies = 0;
 		int worker_allies = 0;
 		bool done = false;
+		a_vector<combat_unit*> added;
 		while (true) {
 			multitasking::yield_point();
 
@@ -848,7 +854,7 @@ void update_groups() {
 					if (c->u->type->is_worker && !c->u->force_combat_unit && !allow_worker) return std::numeric_limits<double>::infinity();
 					if (no_aggressive_groups && (c->u->type != unit_types::vulture || !aggressive_vultures) && (c->u->type != unit_types::wraith || !aggressive_wraiths) && (c->u->type != unit_types::valkyrie || !aggressive_valkyries) && (c->u->type != unit_types::zergling || !aggressive_zerglings) && (c->u->type != unit_types::mutalisk || !aggressive_mutalisks)) {
 						if (g.is_aggressive_group) return std::numeric_limits<double>::infinity();
-					} else if (g.is_defensive_group) return std::numeric_limits<double>::infinity();
+					} else if (!aggressive_groups_done_only && g.is_defensive_group) return std::numeric_limits<double>::infinity();
 					if (c->u->type->is_worker && !c->u->force_combat_unit && g.is_defensive_group) return std::numeric_limits<double>::infinity();
 					if (!c->u->stats->ground_weapon && !c->u->stats->air_weapon) return std::numeric_limits<double>::infinity();
 					//if (is_just_one_worker && !is_attacking && c->u->type->is_worker) return std::numeric_limits<double>::infinity();
@@ -896,6 +902,12 @@ void update_groups() {
 			}
 			if (!nearest_unit) {
 				log("failed to find unit for group %d\n", g.idx);
+				if (aggressive_groups_done_only && g.is_aggressive_group) {
+					for (auto*c : added) {
+						find_and_erase(g.allies, c);
+						available_units.insert(c);
+					}
+				}
 				break;
 			}
 			//log("assign %s to group %d\n", nearest_unit->u->type->name, g.idx);
@@ -919,6 +931,7 @@ void update_groups() {
 
 			g.allies.push_back(nearest_unit);
 			available_units.erase(nearest_unit);
+			added.push_back(nearest_unit);
 			if (done) break;
 			if (is_just_one_worker) break;
 		}
@@ -967,7 +980,7 @@ void update_groups() {
 
 	if (!new_groups.empty()) {
 		auto*largest_air_group = get_best_score_p(new_groups, [&](const group_t*g) {
-			if (no_aggressive_groups && g->is_aggressive_group) return 2;
+			if ((no_aggressive_groups || aggressive_groups_done_only) && g->is_aggressive_group) return 2;
 			int flyers = 0;
 			for (auto*e : g->enemies) {
 				if (e->is_flying) ++flyers;
@@ -976,7 +989,7 @@ void update_groups() {
 			return -(int)g->allies.size();
 		});
 		auto*largest_ground_group = get_best_score_p(new_groups, [&](const group_t*g) {
-			if (no_aggressive_groups && g->is_aggressive_group) return 2;
+			if ((no_aggressive_groups || aggressive_groups_done_only) && g->is_aggressive_group) return 2;
 			int non_flyers = 0;
 			for (auto*e : g->enemies) {
 				if (!e->is_flying) ++non_flyers;
@@ -985,8 +998,8 @@ void update_groups() {
 			return -(int)g->allies.size();
 		});
 		auto*largest_total_group = get_best_score_p(new_groups, [&](const group_t*g) {
-			if (no_aggressive_groups && g->is_aggressive_group) return 2;
-			if (g->allies.empty() && !g->is_defensive_group && no_aggressive_groups) return 1;
+			if ((no_aggressive_groups || aggressive_groups_done_only) && g->is_aggressive_group) return 2;
+			if (g->allies.empty() && !g->is_defensive_group && (no_aggressive_groups || aggressive_groups_done_only)) return 1;
 			return -(int)g->allies.size();
 		});
 		for (int i = 0; i < 3; ++i) {
@@ -3691,6 +3704,7 @@ void do_run(combat_unit*a, const a_vector<unit*>&enemies) {
 		}, std::numeric_limits<double>::infinity());
 		unit*net = get_best_score(enemies, [&](unit*e) {
 			weapon_stats*ew = a->u->is_flying ? e->stats->air_weapon : e->stats->ground_weapon;
+			if (e->type == unit_types::bunker) return units_distance(e, a->u) - 32 * 6;
 			if (!ew) return std::numeric_limits<double>::infinity();
 			return units_distance(e, a->u) - ew->max_range;
 		}, std::numeric_limits<double>::infinity());
@@ -3700,7 +3714,8 @@ void do_run(combat_unit*a, const a_vector<unit*>&enemies) {
 			double d = units_distance(ne, a->u);
 			double wr = w->max_range;
 			double net_d = net ? units_distance(net, a->u) : 1000.0;
-			double net_wr = net ? ew->max_range : 0.0;
+			double net_wr = ew ? ew->max_range : 0.0;
+			if (net && net->type == unit_types::bunker) net_wr = 32 * 6;
 			double margin = 32;
 			if (a->u->type == unit_types::vulture) margin = 0;
 			if (a->u->type == unit_types::siege_tank_tank_mode) margin = 0;
@@ -4485,7 +4500,7 @@ void fight() {
 // 				if (has_defilers) fact *= 0.75;
 // 			}
 
-			bool fight = eval.teams[0].score >= eval.teams[1].score;
+			bool fight = eval.teams[0].score >= eval.teams[1].score * 1.25;
 			//bool fight = eval.teams[0].score >= eval.teams[1].score * fact;
 			log("scores: %g %g\n", eval.teams[0].score, eval.teams[1].score);
 			if (is_base_defence) {
@@ -4524,7 +4539,10 @@ void fight() {
 				run_eval.run();
 
 				log("run_eval: supply %g %g  damage %g %g  in %d frames\n", run_eval.teams[0].end_supply, run_eval.teams[1].end_supply, run_eval.teams[0].damage_dealt, run_eval.teams[1].damage_dealt, run_eval.total_frames);
-				if (run_eval.teams[0].damage_taken >= eval.teams[0].damage_taken*0.75) {
+				//if (run_eval.teams[0].damage_taken >= eval.teams[0].damage_taken*0.75) {
+				double fight_diff = eval.teams[1].score - eval.teams[0].score;
+				double run_diff = run_eval.teams[1].score - run_eval.teams[0].score;
+				if (run_diff > fight_diff) {
 					log("would take too much damage from running, fight instead!\n");
 					fight = true;
 				}
