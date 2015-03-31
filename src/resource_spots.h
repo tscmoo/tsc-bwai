@@ -122,14 +122,31 @@ void update_spots_pos() {
 		}
 
 		s.cc_build_pos = best_pos;
-		s.pos = best_pos + xy(32*4,32*3)/2;
+		s.pos = best_pos + xy(32 * 4, 32 * 3) / 2;
 
 	}
 
 	for (auto&s : spots) {
 		if (s.cc_build_pos!=xy()) {
- 			for (int y = -1; y < 32 * (1 + 3 + 1); y += 32) {
- 				for (int x = -1; x < 32 * (1 + 4 + 1); x += 32) {
+			int fx = 0;
+			int fy = 0;
+			int tx = 32 * 4;
+			int ty = 32 * 3;
+			xy avg_pos;
+			for (auto&r : s.resources) avg_pos += r.u->pos;
+			if (!s.resources.empty()) avg_pos /= s.resources.size();
+			xy relpos = avg_pos - s.pos;
+			std::pair<double, int> dirarr[] = { {relpos.x,0}, {relpos.y,1}, {-relpos.x,2}, {-relpos.y,3} };
+			std::sort(std::begin(dirarr), std::end(dirarr));
+			for (int i = 0; i < 2; ++i) {
+				int n = dirarr[i].second;
+				if (n == 0) --fx;
+				else if (n == 1) --fy;
+				else if (n == 2) ++tx;
+				else if (n == 3) ++ty;
+			}
+ 			for (int y = fy; y < ty; y += 32) {
+ 				for (int x = fx; x < tx; x += 32) {
 					grid::get_build_square(s.cc_build_pos + xy(x, y)).reserved_for_resource_depot = true;
 				}
 			}
