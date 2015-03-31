@@ -265,6 +265,7 @@ namespace combat_eval {
 										if (target->hp <= 0) {
 											double value = target->st->type->total_minerals_cost + target->st->type->total_gas_cost;
 											my_team.score += value;
+											if (target->st->type->is_worker) my_team.score += value;
 											if (target->st->type == unit_types::bunker) --enemy_team.bunker_count;
 										}
 									};
