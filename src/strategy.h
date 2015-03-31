@@ -15,10 +15,11 @@ void update_possible_start_locations() {
 			double nearest_building = get_best_score_value(enemy_buildings, [&](unit*e) {
 				return diag_distance(e->pos - p);
 			});
-			if (nearest_building > 15 * 30) continue;
-			possible_start_locations.clear();
-			possible_start_locations.push_back(p);
-			break;
+			if (nearest_building < 15 * 30) {
+				possible_start_locations.clear();
+				possible_start_locations.push_back(p);
+				break;
+			}
 		}
 		possible_start_locations.push_back(p);
 	}
