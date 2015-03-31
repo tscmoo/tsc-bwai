@@ -164,9 +164,12 @@ void update_prerequisites(build_task*t) {
 		if (pt->unit == unit_types::larva) continue;
 		if (pt->unit == unit_types::hatchery && (!my_units_of_type[unit_types::lair].empty() || !my_units_of_type[unit_types::hive].empty())) continue;
 		if (pt->unit == unit_types::lair && !my_units_of_type[unit_types::hive].empty()) continue;
+		if (pt->unit == unit_types::greater_spire && !my_units_of_type[unit_types::spire].empty()) continue;
 		if (t->type->unit == unit_types::lair && pt->unit == unit_types::hatchery) continue;
+		if (t->type->unit == unit_types::hive && pt->unit == unit_types::lair) continue;
 		if (t->type->unit == unit_types::sunken_colony && pt->unit == unit_types::creep_colony) continue;
 		if (t->type->unit == unit_types::spore_colony && pt->unit == unit_types::creep_colony) continue;
+		if (t->type->unit == unit_types::greater_spire && pt->unit == unit_types::spire) continue;
 		add(pt, true);
 	}
 	if (t->needs_pylon) add(get_build_type(unit_types::pylon),false);
@@ -635,6 +638,7 @@ void execute_build(build_task&b) {
 			if (b.type->unit->requires_creep && !is_creep && okay) okay &= pred_creep(bs);
 			if (b.type->unit->requires_pylon && okay) okay &= pred_pylon(bs);
 			if (!okay) {
+				log("%s: invalid build pos, reset\n", b.type->name);
 				b.build_pos = xy();
 			} else {
 				grid::reserve_build_squares(b.build_pos, b.type->unit);
