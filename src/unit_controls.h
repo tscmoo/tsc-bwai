@@ -205,9 +205,10 @@ void move_away(unit_controller*c) {
 
 bool move_stuff_away_from_build_pos(xy build_pos, unit_type*ut, unit_controller*builder) { 
 	bool something_in_the_way = false;
-	for (unit*nu : my_units) {
+	for (unit*nu : visible_units) {
 		if (nu->building) continue;
 		if (nu->is_flying) continue;
+		if (nu->owner->is_enemy && nu->cloaked && !nu->detected) continue;
 		if (builder && nu == builder->u) continue;
 		xy upper_left = nu->pos - xy(nu->type->dimension_left(), nu->type->dimension_up());
 		xy bottom_right = nu->pos + xy(nu->type->dimension_right(), nu->type->dimension_down());
@@ -227,15 +228,21 @@ bool move_stuff_away_from_build_pos(xy build_pos, unit_type*ut, unit_controller*
 		if (upper_left.y > y2) continue;
 		something_in_the_way = true;
 		if (builder) {
-			if (!nu->controller->can_move && nu->type != unit_types::siege_tank_siege_mode) {
+			if (nu->owner != players::my_player || (!nu->controller->can_move && nu->type != unit_types::siege_tank_siege_mode)) {
+				if (current_used_total_supply - my_workers.size() == 0) {
+					int&blocked_until = grid::get_build_square(build_pos + xy(ut->tile_width * 16, ut->tile_height * 16)).blocked_until;
+					if (blocked_until < current_frame + 15 * 30) blocked_until = current_frame + 15 * 30;
+				}
 				if (builder->u->game_unit->attack(nu->game_unit)) {
 					builder->noorder_until = current_frame + 15;
 					break;
 				}
 			}
 		}
-		nu->controller->move_away_from = xy((x1 + x2) / 2, (y1 + y2) / 2);
-		nu->controller->move_away_until = current_frame + 15 * 2;
+		if (nu->owner == players::my_player) {
+			nu->controller->move_away_from = xy((x1 + x2) / 2, (y1 + y2) / 2);
+			nu->controller->move_away_until = current_frame + 15 * 2;
+		}
 	}
 	return something_in_the_way;
 }
