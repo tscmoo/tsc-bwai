@@ -806,6 +806,25 @@ void update_groups() {
 		} else ++i;
 	}
 
+	a_vector<combat_unit*> overlords;
+	for (auto*c : live_combat_units) {
+		if (current_frame < c->strategy_busy_until) continue;
+		if (c->u->type == unit_types::overlord) overlords.push_back(c);
+	}
+	for (auto*c : overlords) {
+		c->action = combat_unit::action_idle;
+		c->subaction = combat_unit::subaction_idle;
+		c->u->controller->action = unit_controller::action_idle;
+		unit*n = get_best_score(my_resource_depots, [&](unit*u) {
+			return diag_distance(u->pos - c->u->pos);
+		});
+		if (n && diag_distance(n->pos - c->u->pos) > 32 * 10) {
+			c->action = combat_unit::action_offence;
+			c->subaction = combat_unit::subaction_move;
+			c->target_pos = n->pos;
+		}
+	}
+
 	for (auto&g : new_groups) {
 		bool is_attacking = false;
 		bool is_base_defence = false;
@@ -943,19 +962,30 @@ void update_groups() {
 			}
 			if (cloaked_units) log("group has %d cloaked units\n", cloaked_units);
 			for (int detectors = 0; detectors < std::min(cloaked_units, 3);) {
-				combat_unit*c = get_best_score(available_units, [&](combat_unit*c) {
+				auto pred = [&](combat_unit*c) {
 					if (!c->u->type->is_detector) return std::numeric_limits<double>::infinity();
 					double d;
 					if (c->u->is_loaded) d = diag_distance(g.enemies.front()->pos - c->u->pos);
 					else d = units_pathing_distance(c->u, g.enemies.front());
 					return d;
-				}, std::numeric_limits<double>::infinity());
+				};
+				combat_unit*c = get_best_score(available_units, pred, std::numeric_limits<double>::infinity());
 				if (c) {
 					g.allies.push_back(c);
 					available_units.erase(c);
 					++detectors;
 					log("assigned %s\n", c->u->type->name);
-				} else break;
+				} else {
+					c = get_best_score(overlords, pred, std::numeric_limits<double>::infinity());
+					if (c) {
+						g.allies.push_back(c);
+						find_and_erase(overlords, c);
+						++detectors;
+						log("assigned %s\n", c->u->type->name);
+					} else {
+						break;
+					}
+				}
 			}
 		}
 
@@ -1701,6 +1731,7 @@ void finish_attack() {
 	}
 	if (!overlords.empty()) {
 		if (!need_detector.empty()) {
+			log("need_detector.size() is %d\n", need_detector.size());
 			a_unordered_set<combat_unit*> ov_sent;
 			a_vector<xy> pos_sent;
 			for (auto&v : need_detector) {
@@ -1718,10 +1749,12 @@ void finish_attack() {
 					return diag_distance(pos - c->u->pos);
 				}, std::numeric_limits<double>::infinity());
 				if (c) {
+					c->action = combat_unit::action_offence;
 					c->subaction = combat_unit::subaction_move;
 					c->target_pos = pos;
 					ov_sent.insert(c);
 					pos_sent.push_back(pos);
+					log("sent overlord to %d %d\n", pos.x, pos.y);
 				}
 			}
 		}
@@ -2061,15 +2094,15 @@ void finish_attack() {
 		}
 	}
 
-	if (!my_completed_units_of_type[unit_types::overlord].empty()) {
-		for (auto*a : live_combat_units) {
-			if (current_frame < a->strategy_busy_until) continue;
-			if (a->u->type != unit_types::overlord) continue;
-			a->action = combat_unit::action_offence;
-			a->subaction = combat_unit::subaction_idle;
-			a->u->controller->action = unit_controller::action_idle;
-		}
-	}
+// 	if (!my_completed_units_of_type[unit_types::overlord].empty()) {
+// 		for (auto*a : live_combat_units) {
+// 			if (current_frame < a->strategy_busy_until) continue;
+// 			if (a->u->type != unit_types::overlord) continue;
+// 			a->action = combat_unit::action_offence;
+// 			a->subaction = combat_unit::subaction_idle;
+// 			a->u->controller->action = unit_controller::action_idle;
+// 		}
+// 	}
 
 	if (!my_completed_units_of_type[unit_types::wraith].empty()) {
 
@@ -4035,12 +4068,12 @@ void update_defence_choke() {
 		}
 		xy my_closest = get_best_score(all_inter_base_positions, [&](xy pos) {
 			return get_best_score_value(op_bases, [&](xy pos2) {
-				return unit_pathing_distance(unit_types::zealot, pos, pos2);
+				return unit_pathing_distance(unit_types::siege_tank_tank_mode, pos, pos2);
 			});
 		});
 		xy op_closest = get_best_score(op_bases, [&](xy pos) {
 			return get_best_score_value(my_bases, [&](xy pos2) {
-				return unit_pathing_distance(unit_types::zealot, pos, pos2);
+				return unit_pathing_distance(unit_types::siege_tank_tank_mode, pos, pos2);
 			});
 		});
 		if (current_frame <= my_closest_base_override_until) {
@@ -5336,6 +5369,11 @@ void render() {
 
 		}
 	}
+
+
+	game->drawCircleMap(my_closest_base.x, my_closest_base.y, 32 * 3, BWAPI::Color(128, 128, 0));
+	game->drawCircleMap(op_closest_base.x, op_closest_base.y, 32 * 3, BWAPI::Color(192, 128, 0));
+	
 }
 
 void init() {
