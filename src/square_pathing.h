@@ -386,6 +386,31 @@ path_node*get_nearest_path_node(pathing_map&map, xy pos) {
 	return map.nearest_path_node[nearest_path_node_index(pos)];
 }
 
+std::pair<path_node*,path_node*> get_nearest_path_nodes(pathing_map&map, xy a, xy b) {
+	path_node*na = get_nearest_path_node(map, a);
+	path_node*nb = get_nearest_path_node(map, b);
+	if (!na || !nb) return std::make_pair(na, nb);
+	if (na->root_index != nb->root_index) {
+		auto getpos = [&](int index) {
+			if (index == 0) return xy(-32, 0);
+			if (index == 1) return xy(0, -32);
+			if (index == 2) return xy(32, 0);
+			if (index == 3) return xy(0, 32);
+			return xy();
+		};
+		for (int ia = 0; ia < 4;++ia) {
+			xy pa = a + getpos(ia);
+			path_node*npa = get_nearest_path_node(map, pa);
+			for (int ib = 0; ib < 4; ++ib) {
+				xy pb = b + getpos(ib);
+				path_node*npb = get_nearest_path_node(map, pb);
+				if (npa && npb && npa->root_index == npb->root_index) return std::make_pair(npa, npb);
+			}
+		}
+	}
+	return std::make_pair(na, nb);
+}
+
 xy get_nearest_node_pos(unit_type*ut, xy pos) {
 	auto*n = square_pathing::get_nearest_path_node(square_pathing::get_pathing_map(ut), pos);
 	if (!n) return xy();
@@ -398,8 +423,8 @@ xy get_nearest_node_pos(unit*u) {
 bool unit_can_reach(unit_type*ut, xy from, xy to, pathing_map_index index = pathing_map_index::default) {
 	if (ut->is_flyer) return true;
 	auto&map = square_pathing::get_pathing_map(ut, index);
-	path_node*a = square_pathing::get_nearest_path_node(map, from);
-	path_node*b = square_pathing::get_nearest_path_node(map, to);
+	path_node*a, *b;
+	std::tie(a, b) = get_nearest_path_nodes(map, from, to);
 	if (!a) return !b;
 	if (!b) return !a;
 	return a->root_index==b->root_index;
@@ -467,8 +492,8 @@ void find_path(pathing_map&map, path_node*from, path_node*to, xy from_pos, xy to
 }
 
 double get_distance(pathing_map&map, xy from_pos, xy to_pos) {
-	path_node*from = get_nearest_path_node(map, from_pos);
-	path_node*to = get_nearest_path_node(map, to_pos);
+	path_node*from, *to;
+	std::tie(from, to) = get_nearest_path_nodes(map, from_pos, to_pos);
 	double r = std::numeric_limits<double>::infinity();
 	if (!from || !to) return r;
 	if (from->root_index != to->root_index) return r;
@@ -533,7 +558,9 @@ a_deque<path_node*> find_path(pathing_map&map, path_node*from, path_node*to) {
 }
 
 a_deque<path_node*> find_path(pathing_map&map, xy from, xy to) {
-	return find_path(map, get_nearest_path_node(map, from), get_nearest_path_node(map, to));
+	path_node*a, *b;
+	std::tie(a, b) = get_nearest_path_nodes(map, from, to);
+	return find_path(map, a, b);
 }
 
 template<typename node_data_t, typename goal_T>
@@ -696,8 +723,8 @@ a_deque<xy> render_path;
 xy get_move_to(unit*u, xy goal, int priority, xy last_move_to_pos) {
 
 	auto&map = get_pathing_map(u->type);
-	path_node*from_node = get_nearest_path_node(map, u->pos);
-	path_node*to_node = get_nearest_path_node(map, goal);
+	path_node*from_node, *to_node;
+	std::tie(from_node, to_node) = get_nearest_path_nodes(map, u->pos, goal);
 	auto path = find_path(map, from_node, to_node);
 	if (path.empty()) return goal;
 	path_node*middle_node = path.front();
