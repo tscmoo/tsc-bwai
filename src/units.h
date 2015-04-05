@@ -220,7 +220,7 @@ namespace unit_types {
 	unit_type_pointer wraith, battlecruiser, dropship, science_vessel, valkyrie;
 	unit_type_pointer spider_mine, nuclear_missile;
 	unit_type_pointer nexus, pylon, gateway, photon_cannon, robotics_facility, stargate, forge, citadel_of_adun, templar_archives;
-	unit_type_pointer fleet_beacon, assimilator, observatory;
+	unit_type_pointer fleet_beacon, assimilator, observatory, cybernetics_core;
 	unit_type_pointer probe;
 	unit_type_pointer zealot, dragoon, dark_templar, high_templar, reaver;
 	unit_type_pointer archon, dark_archon;
@@ -289,6 +289,7 @@ namespace unit_types {
 		get(fleet_beacon, BWAPI::UnitTypes::Protoss_Fleet_Beacon);
 		get(assimilator, BWAPI::UnitTypes::Protoss_Assimilator);
 		get(observatory, BWAPI::UnitTypes::Protoss_Observatory);
+		get(cybernetics_core, BWAPI::UnitTypes::Protoss_Cybernetics_Core);
 
 		get(probe, BWAPI::UnitTypes::Protoss_Probe);
 		get(zealot, BWAPI::UnitTypes::Protoss_Zealot);
@@ -1054,8 +1055,10 @@ void update_units_task() {
 				break;
 			case event_t::t_morph:
 				log("morph %s -> %s\n", u->type->name, u->game_unit->getType().getName());
+				if (u->visible) update_unit_owner(u);
 				if (u->visible) update_unit_type(u);
 				morphed_units.push_back(u);
+				if (u->type == unit_types::extractor) u->owner->minerals_lost -= 50;
 				break;
 			case event_t::t_destroy:
 				log("destroy %s\n", u->type->name);
@@ -1073,6 +1076,11 @@ void update_units_task() {
 // 				log("%s completed\n",u->type->name);
 // 				u->is_completed = true;
 // 				break;
+			case event_t::t_refresh:
+				if (u->visible) update_unit_owner(u);
+				if (u->visible) update_unit_type(u);
+				if (u->visible) update_unit_stuff(u);
+				break;
 			}
 			//log("event %d - %s visible ? %d\n", e.t, u->type->name, u->visible);
 			if (b && u->building != b) update_building_squares();
