@@ -169,6 +169,7 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep, bool no
 	//log("%d idle workers\n", st.idle_workers);
 
 	unit_type*addon_required = nullptr;
+	bool prereq_in_prod = false;
 	if (build) {
 		for (unit_type*prereq : build->required_units) {
 			if (prereq == unit_types::larva) continue;
@@ -189,6 +190,7 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep, bool no
 				for (auto&v : st.production) {
 					if (v.second == prereq) {
 						found = true;
+						prereq_in_prod = true;
 						break;
 					}
 				}
@@ -223,6 +225,20 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep, bool no
 				if (v.second->is_worker) {
 					transfer_workers(st, false);
 					transfer_workers(st, true);
+				}
+				if (prereq_in_prod) {
+					prereq_in_prod = false;
+					for (unit_type*prereq : build->required_units) {
+						if (prereq == unit_types::larva) continue;
+						if (prereq->is_addon && prereq->builder_type == build->builder_type && !build->builder_type->is_addon) {
+							addon_required = prereq;
+							continue;
+						}
+						if (st.units[prereq].empty()) {
+							prereq_in_prod = true;
+							break;
+						}
+					}
 				}
 			}
 		}
@@ -305,7 +321,7 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep, bool no
 					continue;
 				}
 			}
-			if (has_enough_minerals && has_enough_gas) {
+			if (has_enough_minerals && has_enough_gas && !prereq_in_prod) {
 				st_unit*builder = nullptr;
 				st_unit*builder_without_addon = nullptr;
 				bool builder_exists = false;
