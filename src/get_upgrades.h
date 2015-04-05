@@ -84,7 +84,7 @@ void get_upgrades() {
 				} else {
 					double mult = 3.0;
 					if (!my_units_of_type[upg.builder_type].empty()) mult = 9.0;
-					if (sum >= val * mult && !no_auto_upgrades) {
+					if (val > 0.0 && sum >= val * mult && !no_auto_upgrades) {
 						build::add_build_sum(prio, upg.builder_type, 1);
 						//break;
 					}
