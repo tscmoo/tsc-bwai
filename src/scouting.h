@@ -525,6 +525,12 @@ void rm_scout(unit*u) {
 		}
 	}
 }
+bool is_scout(unit*u) {
+	for (auto&v : all_scouts) {
+		if (v.scout_unit == u) return true;
+	}
+	return false;
+}
 
 int last_scout = 0;
 int last_vulture_scout = 0;
