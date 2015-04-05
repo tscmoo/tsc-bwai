@@ -76,7 +76,8 @@ void process(resource_t&r) {
 		return;
 	}
 	unit*depot = nullptr;
-	if (!resource_depots.empty() && combat::can_transfer_to(r.u)) {
+	//if (!resource_depots.empty() && combat::can_transfer_to(r.u)) {
+	if (!resource_depots.empty()) {
 		depot = get_best_score(resource_depots, [&](unit*u) {
 			if (!u->is_completed && !u->is_morphing && u->remaining_build_time > 15 * 20) return std::numeric_limits<double>::infinity();
 			return units_pathing_distance(unit_types::scv, r.u, u);
@@ -194,8 +195,24 @@ void process(gatherer_t&g) {
 			find_and_erase(g.resource->gatherers, &g);
 			g.resource = nullptr;
 		}
+		a_unordered_set<resource_t*> reachable;
+		if (!g.u->is_flying) {
+			for (auto&r : live_resources) {
+				bool can_reach = true;
+				for (auto*n : square_pathing::find_path(square_pathing::get_pathing_map(g.u->type), g.u->pos, r.u->pos)) {
+					xy pos = n->pos;
+					if (!combat::can_transfer_through(n->pos)) {
+						can_reach = false;
+						break;
+					}
+				}
+				if (can_reach) reachable.insert(&r);
+			}
+		}
 		resource_t*new_r = get_best_score_p(live_resources, [&](resource_t*r) {
 			if (!r->depot) return 0.0;
+			if (!reachable.empty() && !reachable.count(r)) return 0.0;
+			if (!square_pathing::unit_can_reach(g.u, g.u->pos, r->u->pos)) return 0.0;
 			if (r->u->type->is_gas && r->gatherers.size() >= 3) return 0.0;
 			if (r->u->type->is_gas && current_gas + 8 * r->gatherers.size() >= gas_limit) return 0.0;
 			double next_income = 0.0;
