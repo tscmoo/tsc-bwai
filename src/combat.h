@@ -332,13 +332,14 @@ a_deque<xy> find_bigstep_path(unit_type*ut, xy from, xy to, square_pathing::path
 	}
 };
 
-bool can_transfer_to(unit*r) {
+bool can_transfer_through(xy pos ) {
+	size_t index = grid::build_square_index(pos);
+	if (!entire_threat_area.test(index)) return true;
 	for (auto&g : groups) {
 		if (g.ground_dpf < 0.5) continue;
-		if (g.threat_area.test(grid::build_square_index(r->pos))) return false;
+		if (g.threat_area.test(index)) return false;
 	}
 	return true;
-	//return !entire_threat_area.test(grid::build_square_index(r->pos));
 }
 
 bool no_aggressive_groups = false;
@@ -400,8 +401,10 @@ void update_groups() {
 		if (e->gone) continue;
 		if (e->invincible) continue;
 		if (e->type->is_non_usable) continue;
-		if (e->type == unit_types::observer && !my_base.test(grid::build_square_index(e->pos)) && !e->detected) continue;
-		if (e->type == unit_types::observer && scans_available <= 2) continue;
+		if (my_detector_units.size() < 4) {
+			if (e->type == unit_types::observer && !my_base.test(grid::build_square_index(e->pos)) && !e->detected) continue;
+			if (e->type == unit_types::observer && !e->detected && scans_available <= 2) continue;
+		}
 		if (e->type == unit_types::larva || e->type == unit_types::egg) continue;
 		if (e->building) first_enemy_building = e;
 		bool is_aggressive = true;
@@ -2650,7 +2653,9 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 		//if (d > w->max_range) return std::make_tuple(std::numeric_limits<double>::infinity(), hits + (d - w->max_range) / a->u->stats->max_speed / 90, 0.0);
 		//if (d > w_max_range) hits += (d - w_max_range) / a->u->stats->max_speed / 4;
 		//if (d > w_max_range) hits += (d - w_max_range);
-		if (d > w_max_range + 32 && a->u->type != unit_types::mutalisk) hits += (d - w_max_range) / a->u->stats->max_speed;
+		//if (d > w_max_range + 32 && a->u->type != unit_types::mutalisk) hits += (d - w_max_range) / a->u->stats->max_speed;
+		if (d > w_max_range + 32) hits += (d - w_max_range) / a->u->stats->max_speed;
+		if (d > w_max_range && a->u->type == unit_types::lurker && a->u->burrowed) hits += 100;
 		//if (d > w_max_range && allies.size() >= 10) hits += 100;
 		//if (d < w_max_range || a->u->is_flying) {
 		if (d <= w_max_range) {
@@ -3831,6 +3836,23 @@ void do_run(combat_unit*a, const a_vector<unit*>&enemies) {
 // 			}
 // 		}
 // 	}
+	if (a->subaction == combat_unit::subaction_move && u->type == unit_types::lurker) {
+		bool detected = false;
+		for (unit*e : enemy_detector_units) {
+			if (units_distance(e, u) <= e->stats->sight_range) {
+				detected = true;
+				break;
+			}
+		}
+		if (!detected) {
+			a->subaction = combat_unit::subaction_idle;
+			u->controller->action = unit_controller::action_idle;
+			if (current_frame - u->controller->last_burrow >= 15) {
+				u->controller->last_burrow = current_frame;
+				u->game_unit->burrow();
+			}
+		}
+	}
 
 	unit*ne = get_best_score(enemies, [&](unit*e) {
 		return units_distance(u, e);
@@ -3856,7 +3878,7 @@ void do_run(combat_unit*a, const a_vector<unit*>&enemies) {
 		}, [&](xy pos) {
 			//if ((pos - a->u->pos).length() < 128) return false;
 			size_t index = grid::build_square_index(pos);
-			return entire_threat_area_edge.test(index) && !run_spot_taken.test(index);
+			return entire_threat_area_edge.test(index) && (u->is_flying || !run_spot_taken.test(index));
 		});
 
 		a->target_pos = path.empty() ? a->goal_pos : path.back();
@@ -4406,7 +4428,19 @@ void fight() {
 						}
 					}
 					have_static_defence = true;
-					nearby_allies.push_back(u);
+					//nearby_allies.push_back(u);
+				}
+			}
+		}
+		if (static_defence_in_range) {
+			for (unit*u : my_buildings) {
+				if (u->stats->ground_weapon || u->stats->air_weapon) {
+					double dist = get_best_score_value(nearby_enemies, [&](unit*e) {
+						return diag_distance(e->pos - u->pos);
+					});
+					if (dist <= 32 * 15) {
+						nearby_allies.push_back(u);
+					}
 				}
 			}
 		}
@@ -4533,7 +4567,9 @@ void fight() {
 // 				if (has_defilers) fact *= 0.75;
 // 			}
 
-			bool fight = eval.teams[0].score >= eval.teams[1].score * 1.25;
+			//bool fight = eval.teams[0].score >= eval.teams[1].score;
+			bool fight = eval.teams[0].score >= eval.teams[1].score * 2.0;
+			//bool fight = eval.teams[0].score >= eval.teams[1].score * 1.25;
 			//bool fight = eval.teams[0].score >= eval.teams[1].score * fact;
 			log("scores: %g %g\n", eval.teams[0].score, eval.teams[1].score);
 			if (is_base_defence) {
@@ -4768,7 +4804,7 @@ void fight() {
 				if (a->u->irradiate_timer && eval.teams[0].end_supply) attack = true;
 				if (current_frame < a->strategy_attack_until) attack = true;
 				if (existing_dark_swarm.test(grid::build_square_index(a->u->pos))) attack = true;
-				if (attack && have_static_defence && win_ratio < 32.0 && !static_defence_in_range && current_used_total_supply < 40) attack = false;
+				//if (attack && have_static_defence && win_ratio < 32.0 && !static_defence_in_range && current_used_total_supply < 40) attack = false;
 				if (careless_aggression) attack = true;
 				if (attack) {
 					do_attack(a, nearby_allies, nearby_enemies);
