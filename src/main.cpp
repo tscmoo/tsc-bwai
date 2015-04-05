@@ -210,7 +210,7 @@ bool bwapi_is_powered(BWAPI_Unit unit) {
 }
 template<bool b = is_bwapi_4, typename std::enable_if<!b>::type* = 0>
 bool bwapi_is_powered(BWAPI_Unit unit) {
-	return !unit->isUnpowered();
+	return !unit->isUnpowered();	
 }
 
 template<bool b = is_bwapi_4, typename std::enable_if<b>::type* = 0>
@@ -254,7 +254,7 @@ namespace wall_in {
 a_vector<xy> start_locations;
 xy my_start_location;
 namespace combat {
-	bool can_transfer_to(unit*r);
+	bool can_transfer_through(xy pos);
 }
 
 #include "multitasking.h"
@@ -328,7 +328,7 @@ struct module : BWAPI::AIModule {
 
 		if (!game->self()) return;
 
-		game->sendText("tsc-bwai v0.3.14 dev");
+		game->sendText("tsc-bwai v0.3.34 dev");
 
 		init();
 
