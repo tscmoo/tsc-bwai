@@ -34,6 +34,7 @@ struct state {
 	int idle_workers = 0;
 	int army_size = 0;
 	bool dont_build_refineries = false;
+	bool auto_build_hatcheries = false;
 };
 
 a_unordered_map<unit*, double> last_seen_resources;
@@ -161,7 +162,7 @@ unit_type*timeout = (unit_type*)2;
 unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep, bool no_busywait) {
 
 	if (st.frame >= end_frame) return timeout;
-
+	if (build && !players::my_player->game_player->isUnitAvailable(build->game_unit_type)) return failed;
 
 	//if (st.gas < st.minerals) transfer_workers(false);
 	transfer_workers(st, false);
@@ -333,6 +334,10 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep, bool no
 								break;
 							}
 						}
+					}
+					if (!builder && st.auto_build_hatcheries && st.minerals >= 300) {
+						//add_built(unit_types::hatchery, true);
+						add_built(unit_types::hatchery, false);
 					}
 				} else if (build->builder_type->is_addon) {
 					for (st_unit&u : st.units[build->builder_type->builder_type]) {

@@ -10,6 +10,7 @@ struct player_t {
 	int workers_seen;
 	int race;
 	bool random;
+	bool rescuable;
 
 	a_unordered_set<upgrade_type*> upgrades;
 	bool has_upgrade(upgrade_type*t) {
@@ -42,6 +43,7 @@ player_t*get_player(BWAPI_Player game_player) {
 		p->workers_seen = 0;
 		p->race = race_terran;
 		p->random = false;
+		p->rescuable = game_player->getType() == BWAPI::PlayerTypes::RescuePassive;
 		if (game_player->getRace() == BWAPI::Races::Terran) p->race = race_terran;
 		if (game_player->getRace() == BWAPI::Races::Protoss) p->race = race_protoss;
 		if (game_player->getRace() == BWAPI::Races::Zerg) p->race = race_zerg;

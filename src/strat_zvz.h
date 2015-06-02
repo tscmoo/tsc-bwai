@@ -85,7 +85,8 @@ struct strat_zvz {
 					}
 				}
 			}
-			if (free_mineral_patches >= 8 && long_distance_miners() == 0) return;
+			//if (free_mineral_patches >= 8 && long_distance_miners() == 0) return;
+			if (free_mineral_patches >= 2 && long_distance_miners() == 0) return;
 
 			for (auto&b : build::build_tasks) {
 				if (b.built_unit || b.dead) continue;

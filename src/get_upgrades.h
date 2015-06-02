@@ -12,6 +12,7 @@ void set_upgrade_order(upgrade_type*upg, double value) {
 }
 bool no_auto_upgrades = false;
 void set_no_auto_upgrades(bool val) {
+	if (no_auto_upgrades == val) return;
 	for (auto&b : build::build_tasks) {
 		if (b.type->upgrade && !b.upgrade_done_frame) {
 			b.dead = true;
@@ -41,6 +42,7 @@ void get_upgrades() {
 		auto&upg = *p_upg;
 		if (upg.gas_cost && current_gas < upg.gas_cost && current_gas_per_frame == 0) continue;
 		if (upg.prev && !players::my_player->upgrades.count(upg.prev)) continue;
+		//if (upg.game_tech_type && !players::my_player->game_player->isResearchAvailable(upg.game_tech_type)) continue;
 		if (players::my_player->upgrades.count(&upg)) continue;
 		double sum = 0.0;
 		for (unit_type*ut : upg.what_uses) {

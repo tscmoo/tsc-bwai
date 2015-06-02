@@ -177,16 +177,22 @@ namespace combat_eval {
 										if (!ew) continue;
 										if (ec.cooldown >= 15 * 5) continue;
 									}
+									bool inc_target_count = false;
 									if (!c.force_target && (!c.irradiate_timer || !ec.st->type->is_biological)) {
 										weapon_stats*w = ec.st->type->is_flyer ? c.st->air_weapon : c.st->ground_weapon;
 										if (!w) continue;
-										if (w->max_range <= 32 && i == 0) {
-											if (ec.target_count >= 3) continue;
+// 										if (w->max_range <= 32 && i == 0) {
+// 											if (ec.target_count >= 3) continue;
+// 										}
+										if (w->max_range <= 32) {
+											if (ec.target_count >= 2) continue;
+											inc_target_count = true;
 										}
 									}
 									if (ec.loaded_until > total_frames) continue;
 									if (enemy_team.bunker_count && ec.st->type == unit_types::marine) continue;
-									++ec.target_count;
+									//++ec.target_count;
+									if (inc_target_count) ++ec.target_count;
 									target = &ec;
 								}
 							}

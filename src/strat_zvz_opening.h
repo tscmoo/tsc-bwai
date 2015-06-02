@@ -12,6 +12,7 @@ struct strat_zvz_opening {
 		using namespace buildpred;
 
 		get_upgrades::set_upgrade_value(upgrade_types::burrow, 100000.0);
+		get_upgrades::set_upgrade_value(upgrade_types::ventral_sacs, 100000.0);
 
 		get_upgrades::set_no_auto_upgrades(true);
 

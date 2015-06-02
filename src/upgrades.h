@@ -56,6 +56,14 @@ namespace upgrade_types {
 	upgrade_type_pointer dark_swarm, consume, plague, metasynaptic_node;
 	upgrade_type_pointer burrow;
 
+	upgrade_type_pointer protoss_ground_weapons_1, protoss_ground_weapons_2, protoss_ground_weapons_3;
+	upgrade_type_pointer protoss_ground_armor_1, protoss_ground_armor_2, protoss_ground_armor_3;
+	upgrade_type_pointer protoss_plasma_shields_1, protoss_plasma_shields_2, protoss_plasma_shields_3;
+	upgrade_type_pointer protoss_air_weapons_1, protoss_air_weapons_2, protoss_air_weapons_3;
+	upgrade_type_pointer protoss_air_armor_1, protoss_air_armor_2, protoss_air_armor_3;
+
+	upgrade_type_pointer singularity_charge, leg_enhancements;
+
 	void init() {
 		get(terran_infantry_weapons_1, BWAPI::UpgradeTypes::Terran_Infantry_Weapons, 1);
 		get(terran_infantry_weapons_2, BWAPI::UpgradeTypes::Terran_Infantry_Weapons, 2);
@@ -136,6 +144,25 @@ namespace upgrade_types {
 		get(plague, BWAPI::TechTypes::Plague);
 		get(metasynaptic_node, BWAPI::UpgradeTypes::Metasynaptic_Node);
 		get(burrow, BWAPI::TechTypes::Burrowing);
+
+		get(protoss_ground_weapons_1, BWAPI::UpgradeTypes::Protoss_Ground_Weapons, 1);
+		get(protoss_ground_weapons_2, BWAPI::UpgradeTypes::Protoss_Ground_Weapons, 2);
+		get(protoss_ground_weapons_3, BWAPI::UpgradeTypes::Protoss_Ground_Weapons, 3);
+		get(protoss_ground_armor_1, BWAPI::UpgradeTypes::Protoss_Ground_Armor, 1);
+		get(protoss_ground_armor_2, BWAPI::UpgradeTypes::Protoss_Ground_Armor, 2);
+		get(protoss_ground_armor_3, BWAPI::UpgradeTypes::Protoss_Ground_Armor, 3);
+		get(protoss_plasma_shields_1, BWAPI::UpgradeTypes::Protoss_Plasma_Shields, 1);
+		get(protoss_plasma_shields_2, BWAPI::UpgradeTypes::Protoss_Plasma_Shields, 2);
+		get(protoss_plasma_shields_3, BWAPI::UpgradeTypes::Protoss_Plasma_Shields, 3);
+		get(protoss_air_weapons_1, BWAPI::UpgradeTypes::Protoss_Air_Weapons, 1);
+		get(protoss_air_weapons_2, BWAPI::UpgradeTypes::Protoss_Air_Weapons, 2);
+		get(protoss_air_weapons_3, BWAPI::UpgradeTypes::Protoss_Air_Weapons, 3);
+		get(protoss_air_armor_1, BWAPI::UpgradeTypes::Protoss_Air_Armor, 1);
+		get(protoss_air_armor_2, BWAPI::UpgradeTypes::Protoss_Air_Armor, 2);
+		get(protoss_air_armor_3, BWAPI::UpgradeTypes::Protoss_Air_Armor, 3);
+
+		get(singularity_charge, BWAPI::UpgradeTypes::Singularity_Charge);
+		get(leg_enhancements, BWAPI::UpgradeTypes::Leg_Enhancements);
 	}
 }
 

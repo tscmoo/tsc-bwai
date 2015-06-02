@@ -65,7 +65,7 @@ struct simple_logger {
 	tsc::a_string str, str2;
 	bool newline = true;
 	FILE*f = nullptr;
-	simple_logger() {
+	simple_logger() {	
 		if (test_mode) f = fopen("log.txt", "w");
 	}
 	template<typename...T>
@@ -166,6 +166,8 @@ auto allocate_unique() {
 	return tsc::allocate_unique<T, tsc::alloc<T>>();
 }
 
+#include <tsc/json.h>
+
 const double PI = 3.1415926535897932384626433;
 
 BWAPI::Game*game;
@@ -243,6 +245,12 @@ struct unit_type;
 
 #include "ranges.h"
 #include "common.h"
+
+a_deque<a_string> send_text_queue;
+void send_text(a_string str) {
+	if (current_frame < 30 || !send_text_queue.empty()) send_text_queue.push_back(str);
+	else game->sendText("%s", str.c_str());
+}
 
 namespace square_pathing {
 	void invalidate_area(xy from, xy to);
@@ -328,13 +336,14 @@ struct module : BWAPI::AIModule {
 
 		if (!game->self()) return;
 
-		game->sendText("tsc-bwai v0.3.34 dev");
+		send_text("tsc-bwai v0.3.102 dev");
 
 		init();
 
 	}
 
 	virtual void onEnd(bool is_winner) override {
+		strategy::on_end(is_winner);
 		multitasking::stop();
 	}
 
@@ -390,6 +399,12 @@ struct module : BWAPI::AIModule {
 				auto&t = multitasking::detail::tasks[id];
 				log(log_level_info, " - %s took %f\n", t.name, multitasking::get_cpu_time(id) - last_cpu_time[id]);
 			}
+		}
+
+		if (current_frame >= 30 && !send_text_queue.empty()) {
+			a_string str = send_text_queue.front();
+			send_text_queue.pop_front();
+			game->sendText("%s", str.c_str());
 		}
 
 	}

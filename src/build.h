@@ -41,6 +41,7 @@ struct build_task: refcounted {
 	void*flag;
 	int upgrade_done_frame;
 	int build_started_frame;
+	bool send_builder_immediately;
 };
 
 a_list<build_type> build_type_container;
@@ -246,6 +247,7 @@ build_task*add_build_task(double priority,build_type*type) {
 	t->flag = nullptr;
 	t->upgrade_done_frame = 0;
 	t->build_started_frame = 0;
+	t->send_builder_immediately = false;
 	build_tasks_for_type[type].push_back(*t);
 	build_order.push_back(*t);
 	priority_groups[priority].push_back(*t);
@@ -546,7 +548,7 @@ void unset_build_pos(build_task*t) {
 	b.build_pos = xy();
 }
 
-void set_builder(build_task*t, unit*builder) {
+void set_builder(build_task*t, unit*builder, bool send_immediately = false) {
 	auto&b = *t;
 
 	if (builder != b.builder) {
@@ -559,12 +561,12 @@ void set_builder(build_task*t, unit*builder) {
 		}
 		b.builder = builder;
 	}
-	if (builder) {
+	if (builder && b.build_pos != xy()) {
 		auto*c = builder->controller;
 		if (c->action != unit_controller::action_build || (c->flag == &b && (c->target_pos != b.build_pos || c->target_type != b.type->unit || c->target != b.built_unit || c->wait_until != b.build_frame))) {
 			double d = unit_pathing_distance(builder, b.build_pos);
 			int t = frames_to_reach(builder, d);
-			if (t + t / 8 + latency_frames >= b.build_frame - current_frame) {
+			if (t + t / 8 + latency_frames >= b.build_frame - current_frame || send_immediately) {
 				c->action = unit_controller::action_build;
 				c->target = b.built_unit;
 				c->target_pos = b.build_pos;
@@ -626,7 +628,7 @@ void execute_build(build_task&b) {
 	auto pred_not_creep = [&](grid::build_square&bs) {
 		return build_has_not_creep(bs, b.type->unit);
 	};
-	if (b.type->unit && b.type->unit->is_building && !b.built_unit && b.build_frame && current_frame - b.build_frame <= 15 * 30 && !b.type->unit->is_addon && b.type->builder->is_worker) {
+	if (b.type->unit && b.type->unit->is_building && !b.built_unit && b.build_frame && (current_frame - b.build_frame <= 15 * 30 || b.send_builder_immediately) && !b.type->unit->is_addon && b.type->builder->is_worker) {
 		bool is_pylon = b.type->unit == unit_types::pylon;
 		bool is_creep_colony = b.type->unit == unit_types::creep_colony;
 		bool is_creep = is_creep_colony || b.type->unit == unit_types::hatchery;
@@ -898,7 +900,7 @@ void execute_build(build_task&b) {
 			if (u->is_carrying_minerals_or_gas && u->controller->flag != &b) f += 15 * 4;
 			return f;
 		};
-		if ((b.build_frame && b.build_frame - current_frame <= 15 * 30 || b.built_unit) && (!b.built_unit || !builds_on_its_own)) {
+		if ((b.build_frame && (b.build_frame - current_frame <= 15 * 30 || b.send_builder_immediately) || b.built_unit) && (!b.built_unit || !builds_on_its_own)) {
 			if (!b.built_unit || !b.built_unit->build_unit) {
 				if ((!builder || current_frame - b.last_look_for_builder >= 15 * 8) && current_frame - b.last_look_for_builder >= 15 * 2) {
 					b.last_look_for_builder = current_frame;
@@ -906,7 +908,7 @@ void execute_build(build_task&b) {
 				}
 			}
 		}
-		if (!b.built_unit && b.build_frame-current_frame>=15*45) builder = nullptr;
+		if (!b.built_unit && b.build_frame - current_frame >= 15 * 45 && !b.send_builder_immediately) builder = nullptr;
 		if (builds_on_its_own && b.built_unit && b.builder) {
 			builder = nullptr;
 		}
@@ -933,7 +935,7 @@ void execute_build(build_task&b) {
 			if (c->action!=unit_controller::action_build || (c->flag==&b && (c->target_pos!=b.build_pos || c->target_type!=b.type->unit || c->target!=b.built_unit || c->wait_until!=b.build_frame))) {
 				double d = unit_pathing_distance(builder,b.build_pos);
 				int t = frames_to_reach(builder,d);
-				if (t+t/8 + latency_frames>=b.build_frame-current_frame) {
+				if (t + t / 8 + latency_frames >= b.build_frame - current_frame || b.send_builder_immediately) {
 					c->action = unit_controller::action_build;
 					c->target = b.built_unit;
 					c->target_pos = b.build_pos;
@@ -1061,6 +1063,12 @@ void execute_build(build_task&b) {
 								}
 								const xy addon_rel_pos(builder->type->tile_width * 32, (builder->type->tile_height - b.type->unit->tile_height) * 32);
 								auto pred = [&](grid::build_square&bs) {
+									if (bs.pos == building->build_pos && !building->is_lifted) {
+										auto&addon_bs = grid::get_build_square(bs.pos + addon_rel_pos);
+										if (!build_full_check(addon_bs, b.type->unit, true)) return false;
+										if (something_is_in_the_way(addon_bs.pos, b.type->unit)) return false;
+										return true;
+									}
 									if (something_is_in_the_way(bs.pos, builder->type)) return false;
 									if (!build_full_check(bs, builder->type, true)) return false;
 									grid::reserve_build_squares(bs.pos, builder->type);

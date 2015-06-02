@@ -189,7 +189,7 @@ void process(gatherer_t&g) {
 
 	bool relocate = current_frame - g.last_find_transfer >= 15 && g.resource && !g.resource->depot;
 
-	if (g.last_find_transfer == 0 || current_frame - g.last_find_transfer >= 15 * 30 || delivered || relocate) {
+	if (g.last_find_transfer == 0 || current_frame - g.last_find_transfer >= 15 * 15 || delivered || relocate) {
 		g.last_find_transfer = current_frame;
 		if (g.resource) {
 			find_and_erase(g.resource->gatherers, &g);
@@ -276,10 +276,13 @@ void resource_gathering_task() {
 
 		for (unit*u : my_workers) {
 			unit_controller*c = get_unit_controller(u);
-			if (c->action == unit_controller::action_idle) {
+			if (c->action == unit_controller::action_idle && !my_resource_depots.empty()) {
 				c->action = unit_controller::action_gather;
 				c->target = nullptr;
 				c->depot = nullptr;
+			}
+			if (c->action == unit_controller::action_gather && my_resource_depots.empty()) {
+				c->action = unit_controller::action_idle;
 			}
 			if (c->action == unit_controller::action_gather) {
 				gatherer_t*&g = unit_gatherer_map[u];

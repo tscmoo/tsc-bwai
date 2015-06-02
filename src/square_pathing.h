@@ -8,6 +8,10 @@ bool can_fit_at(const xy pos, const std::array<int, 4>&dims, bool include_enemy_
 	int bottom = pos.y + dims[1];
 	int left = pos.x - dims[2];
 	int top = pos.y - dims[3];
+	if (left < 0) return false;
+	if (top < 0) return false;
+	if ((unsigned)right >= (unsigned)grid::map_width) return false;
+	if ((unsigned)bottom >= (unsigned)grid::map_height) return false;
 	walk_square*sq = &get_walk_square(xy(left, top));
 	unit*prev_building = nullptr;
 	for (int y = top&-8; y <= bottom; y += 8) {
@@ -60,6 +64,8 @@ struct pathing_map {
 	bool update_path_nodes = false;
 	int update_path_nodes_frame = 0;
 	int last_update_path_nodes_frame = 0;
+	
+	a_multimap<std::pair<size_t, size_t>, unit*> nydus_canals;
 
 	struct cached_distance_hash {
 		size_t operator()(const std::tuple<path_node*, path_node*>&v) const {
@@ -798,6 +804,41 @@ xy get_move_to(unit*u, xy goal, int priority, xy last_move_to_pos) {
 	return get_go_to_along_path_and_lift_wall(u, square_path, last_move_to_pos);
 }
 
+void update_nydus_canals(pathing_map&map) {
+	map.nydus_canals.clear();
+	for (unit*u : my_completed_units_of_type[unit_types::nydus_canal]) {
+		unit*e = units::get_unit(u->game_unit->getNydusExit());
+		if (!e) continue;
+		path_node*a, *b;
+		std::tie(a, b) = get_nearest_path_nodes(map, u->pos, e->pos);
+		if (a && b && a->root_index != b->root_index) {
+			log("added nydus canal from %d to %d\n", a->root_index, b->root_index);
+			map.nydus_canals.emplace(std::make_pair(a->root_index, b->root_index), u);
+		}
+	}
+}
+
+unit*get_nydus_canal_from_to(pathing_map&map, xy from, xy to) {
+	path_node*a, *b;
+	std::tie(a, b) = get_nearest_path_nodes(map, from, to);
+	if (!a || !b) return nullptr;
+	//log("get_nydus_canal from %d to %d\n", a->root_index, b->root_index);
+	if (a->root_index == b->root_index) return nullptr;
+	unit*r = nullptr;
+	double dist = std::numeric_limits<double>::infinity();
+	auto key = std::make_pair(a->root_index, b->root_index);
+	for (auto i = map.nydus_canals.lower_bound(key); i != map.nydus_canals.end() && i->first == key; ++i) {
+		unit*u = i->second;
+		double d = diag_distance(u->pos - from);
+		if (d < dist) {
+			dist = d;
+			r = u;
+		}
+	}
+	//log("returning %p\n", r);
+	return r;
+}
+
 void square_pathing_update_maps_task() {
 
 	a_vector<std::tuple<xy, xy>> queue;
@@ -869,6 +910,18 @@ void square_pathing_update_maps_task() {
 	}
 
 }
+
+void square_pathing_update_nydus_canals_task() {
+	while (true) {
+
+		for (auto&map : all_pathing_maps) {
+			update_nydus_canals(map);
+		}
+
+		multitasking::sleep(15 * 10);
+	}
+}
+
 
 void render() {
 
@@ -985,6 +1038,7 @@ void init() {
 	force_field.resize(force_field_grid_width*force_field_grid_height);
 
 	multitasking::spawn(square_pathing_update_maps_task, "square pathing update maps");
+	multitasking::spawn(square_pathing_update_nydus_canals_task, "square pathing update nydus canals");
 
 	//multitasking::spawn(test_task, "test");
 

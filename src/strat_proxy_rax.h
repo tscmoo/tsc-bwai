@@ -106,7 +106,7 @@ struct proxy_rax {
 			}
 			double distance_sum = 0.0;
 			for (auto&p : possible_start_locations) distance_sum += unit_pathing_distance(unit_types::scv, pos, p);
-			distance_sum += unit_pathing_distance(unit_types::scv, pos, my_start_location) * 2;
+			//distance_sum -= unit_pathing_distance(unit_types::scv, pos, my_start_location) * 2;
 			distance_sum = distance_sum / (32 * 1);
 			double score = v - distance_sum;
 			//log("%d %d :: v %g d %g sum %g score %g\n", pos.x, pos.y, v, d, distance_sum, score);
@@ -120,6 +120,10 @@ struct proxy_rax {
 	}
 
 	void run() {
+
+		combat::no_aggressive_groups = true;
+		scouting::scout_supply = 50;
+		get_upgrades::set_no_auto_upgrades(true);
 
 		refcounted_ptr<build::build_task> bt_rax[2];
 		xy proxy_pos[2];
@@ -144,10 +148,13 @@ struct proxy_rax {
 			build::set_build_pos(bt_rax[i], proxy_pos[i]);
 		}
 
+		int last_find_proxy_pos = 0;
 		while (true) {
+			bool refind = current_frame - last_find_proxy_pos >= 15 * 10;
+			if (refind) last_find_proxy_pos = current_frame;
 			for (int i = 0; i < 2; ++i) {
 				if (!bt_rax[i]->built_unit) {
-					if (bt_rax[i]->build_pos != proxy_pos[i]) {
+					if (bt_rax[i]->build_pos != proxy_pos[i] || refind) {
 						build::unset_build_pos(bt_rax[i]);
 						proxy_pos[i] = find_proxy_pos();
 						build::set_build_pos(bt_rax[i], proxy_pos[i]);
@@ -166,14 +173,38 @@ struct proxy_rax {
 
 			multitasking::sleep(90);
 		}
-		for (int i = 0; i < 2; ++i) {
-			while (!rax[i]->is_completed) {
-				if (rax[i]->dead || scv[i]->dead) throw strat_failed();
+		if (true) {
+			bool done[2] = { false, false };
+			while (true) {
+				bool fail = false;
+				for (int i = 0; i < 2; ++i) {
+					if (done[i]) continue;
+					if (scv[i]->dead || rax[i]->dead) fail = true;
+					if (rax[i]->is_completed) {
+						done[i] = true;
+						bt_rax[i] = nullptr;
+						scouting::add_scout(scv[i]);
+					}
+				}
+				if (fail) {
+					for (int i = 0; i < 2; ++i) {
+						bt_rax[i]->dead = true;
+						rax[i]->game_unit->cancelConstruction();
+					}
+					throw strat_failed();
+				}
+				if (done[0] && done[1]) break;
 				multitasking::sleep(4);
 			}
-			bt_rax[i] = nullptr;
-			scouting::add_scout(scv[i]);
 		}
+// 		for (int i = 0; i < 2; ++i) {
+// 			while (!rax[i]->is_completed) {
+// 				if (rax[i]->dead || scv[i]->dead) throw strat_failed();
+// 				multitasking::sleep(4);
+// 			}
+// 			bt_rax[i] = nullptr;
+// 			scouting::add_scout(scv[i]);
+// 		}
 		auto test_over = [&]() {
 			combat_eval::eval eval;
 			for (unit*u : my_units) {
@@ -191,21 +222,27 @@ struct proxy_rax {
 		};
 
 		while (true) {
-			test_over();
+			if (!combat::no_aggressive_groups) test_over();
+			if (current_used_total_supply >= 50) break;
 
 			if (!enemy_buildings.empty()) {
 				for (auto&v : scouting::all_scouts) {
-					if (v.scout_unit == scv[0] || v.scout_unit == scv[1]) v.scout_unit = nullptr;
+					//if (v.scout_unit == scv[0] || v.scout_unit == scv[1]) v.scout_unit = nullptr;
+					scouting::rm_scout(v.scout_unit);
 				}
 			}
 
-			if (my_units_of_type[unit_types::marine].size() >= 8) {
+			if (my_units_of_type[unit_types::marine].size() >= 2) {
 				if (!enemy_units.empty()) {
 					scv[0]->force_combat_unit = true;
 					scv[1]->force_combat_unit = true;
 					//buildpred::attack_now = true;
+					combat::no_aggressive_groups = false;
 				}
 			}
+// 			for (auto*a : combat::live_combat_units) {
+// 				a->strategy_attack_until = current_frame + 15 * 15;
+// 			}
 			
 			execute_build([](buildpred::state&st) {
 				using namespace buildpred;
@@ -220,12 +257,10 @@ struct proxy_rax {
 			multitasking::sleep(30);
 		}
 
-		multitasking::sleep(15 * 10);
-
 	}
 	
 	void render() {
-		if (false) {
+		if (true) {
 			double highest_v = 0.0;
 			for (size_t i = 0; i < test_cost_map.size(); ++i) {
 				double v = test_cost_map[i];

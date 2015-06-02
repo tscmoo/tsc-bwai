@@ -103,7 +103,7 @@ struct unit_building {
 
 struct unit;
 namespace units {
-	a_vector<unit*> unit_containers[15];
+	a_vector<unit*> unit_containers[16];
 }
 
 a_vector<unit*>&all_units_ever = units::unit_containers[0];
@@ -123,6 +123,8 @@ a_vector<unit*>&enemy_units = units::unit_containers[11];
 a_vector<unit*>&visible_enemy_units = units::unit_containers[12];
 a_vector<unit*>&enemy_buildings = units::unit_containers[13];
 a_vector<unit*>&enemy_detector_units = units::unit_containers[14];
+
+a_vector<unit*>&rescuable_units= units::unit_containers[15];
 
 a_unordered_map<unit_type*, a_vector<unit*>> my_units_of_type;
 a_unordered_map<unit_type*, a_vector<unit*>> my_completed_units_of_type;
@@ -981,6 +983,8 @@ a_vector<std::function<void(unit*)>> on_create_callbacks, on_morph_callbacks, on
 a_vector<std::function<void(unit*)>> on_new_unit_callbacks;
 a_vector<std::function<void(unit*,unit_type*)>> on_type_change_callbacks;
 
+bool dont_call_gg = false;
+
 void update_units_task() {
 
 	int last_update_stats = 0;
@@ -1006,6 +1010,8 @@ void update_units_task() {
 		update_unit_container(u, visible_enemy_units, u->visible && u->owner->is_enemy);
 		update_unit_container(u, enemy_buildings, !u->dead && !u->gone && u->building && u->owner->is_enemy);
 		update_unit_container(u, enemy_detector_units, !u->dead && u->owner->is_enemy && u->type->is_detector);
+
+		update_unit_container(u, rescuable_units, !u->dead && u->owner->rescuable);
 
 		my_units_of_type.clear();
 		for (unit*u : my_units) {
@@ -1182,7 +1188,7 @@ void update_units_task() {
 		destroyed_units.clear();
 
 		static int last_eval_gg = 0;
-		if (current_frame - last_eval_gg >= 15 * 10) {
+		if (current_frame - last_eval_gg >= 15 * 10 && !dont_call_gg) {
 			last_eval_gg = current_frame;
 			double enemy_army_supply = 0;
 			for (unit*u : enemy_units) {

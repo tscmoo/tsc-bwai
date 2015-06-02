@@ -129,14 +129,40 @@ void move(unit_controller*c) {
 
 	} else {
 
-		move_to = square_pathing::get_move_to(u, c->go_to, c->last_reached_go_to, c->last_move_to_pos);
+		unit*nydus = square_pathing::get_nydus_canal_from_to(square_pathing::get_pathing_map(u->type), u->pos, c->go_to);
+		if (nydus) {
+			log("moving through nydus %p\n", nydus);
+			if (units_distance(u, nydus) <= 64) {
 
-		xy pos = square_pathing::get_pos_in_square(move_to, u->type);
-		//if (pos == xy()) log(" !! move: get_pos_in_square for %s failed\n", u->type->name);
-		if (pos != xy())  move_to = pos;
+				if (current_frame >= c->last_move_to + 15) {
+
+					u->game_unit->rightClick(nydus->game_unit);
+
+					c->noorder_until = current_frame + 30;
+					c->last_move_to = current_frame;
+					return;
+				}
+
+			} else {
+
+				move_to = square_pathing::get_move_to(u, nydus->pos, c->last_reached_go_to, c->last_move_to_pos);
+
+				xy pos = square_pathing::get_pos_in_square(move_to, u->type);
+				if (pos != xy()) move_to = pos;
+			}
+
+		} else {
+
+			move_to = square_pathing::get_move_to(u, c->go_to, c->last_reached_go_to, c->last_move_to_pos);
+
+			xy pos = square_pathing::get_pos_in_square(move_to, u->type);
+			//if (pos == xy()) log(" !! move: get_pos_in_square for %s failed\n", u->type->name);
+			if (pos != xy()) move_to = pos;
+		}
 	}
 
-	if (diag_distance(u->pos-move_to)<=8) move_to = c->go_to;
+	if (diag_distance(u->pos - move_to) <= 8) move_to = c->go_to;
+	if (u->type==unit_types::dragoon) move_to = c->go_to;
 	
 	//if (u->game_order != BWAPI::Orders::Move || u->game_unit->getOrderTargetPosition() != BWAPI::Position(move_to.x, move_to.y)) {
 	if (c->last_move_to_pos != move_to || current_frame >= c->last_move_to + 30) {
@@ -367,6 +393,7 @@ void process(const a_vector<unit_controller*>&controllers) {
 				if (diag_distance(nu->pos - u->pos) >= 32 * 4 + w->max_range) continue;
 				target_units.push_back(nu);
 			}
+			if (find_lowest_hp_target && target_units.size() > 2) find_lowest_hp_target = false;
 			log("%d potential targets\n", target_units.size());
 			if (!target_units.empty()) {
 				struct node_data_t {
@@ -510,6 +537,10 @@ void process(const a_vector<unit_controller*>&controllers) {
 // 		}
 		if (units_distance(c->defensive_concave_position, u->type, c->target->pos, c->target->type) <= w->max_range + 32) {
 			log("close, attacking\n");
+			continue;
+		}
+		if (current_frame - c->target->last_attacked <= 15 * 2) {
+			log("attacking, attacking!\n");
 			continue;
 		}
 		c->last_process = current_frame;
@@ -798,7 +829,7 @@ void process(const a_vector<unit_controller*>&controllers) {
 				if (u->type == unit_types::firebat) wait_frames = 8;
 				if (u->type == unit_types::vulture) wait_frames = 2;
 				if (u->type == unit_types::goliath) wait_frames = 2;
-				if (u->type == unit_types::siege_tank_tank_mode) wait_frames = 2;
+				//if (u->type == unit_types::siege_tank_tank_mode) wait_frames = 2;
 				if (u->type == unit_types::wraith) wait_frames = 2;
 				if (u->type == unit_types::battlecruiser) wait_frames = 2;
 
@@ -807,9 +838,14 @@ void process(const a_vector<unit_controller*>&controllers) {
 				if (u->type == unit_types::guardian) wait_frames = 2;
 				if (u->type == unit_types::devourer) wait_frames = 12;
 
+				if (u->type == unit_types::dragoon) wait_frames = 12;
+
 				bool do_state_machine = c->can_move && wait_frames;
 
 				bool do_close_up = false;
+				if (u->type == unit_types::marine || u->type == unit_types::ghost || u->type == unit_types::firebat || u->type == unit_types::hydralisk) {
+					do_state_machine = false;
+				}
 				if (c->action != unit_controller::action_kite) {
 					if (u->type == unit_types::marine || u->type == unit_types::ghost || u->type == unit_types::firebat || u->type == unit_types::hydralisk) {
 						if (!ew || w->max_range <= ew->max_range || d > ew->max_range + 64) do_state_machine = false;
@@ -838,19 +874,36 @@ void process(const a_vector<unit_controller*>&controllers) {
 					do_close_up = false;
 				}
 
+				if (u->type == unit_types::dragoon) do_close_up = false;
+
 				//log("%s: do_state_machine: %d do_close_up: %d\n", u->type->name, do_state_machine, do_close_up);
 				if (!do_state_machine && !do_close_up) {
 					if (re_evaluate_target(c, true)) continue;
 				}
 
+				xy relpos = c->target->pos - u->pos;
+				double rel_angle = std::atan2(relpos.y, relpos.x);
+
+				auto get_turn_frames = [&]() {
+					double da = u->heading - rel_angle;
+					if (da < -PI) da += PI * 2;
+					if (da > PI) da -= PI * 2;
+					return (int)(std::abs(da) / c->u->stats->turn_rate);
+				};
+				int turn_frames = get_turn_frames();
+
 				if (do_close_up) {
 
+// 					log("close up, c->attack_state is %d  c->attack_timer is %d\n", c->attack_state, c->attack_timer);
+// 					log("turn_frames is %d\n", turn_frames);
+
 					if (c->attack_state == 0) {
-						bool next = d <= w->max_range && u->weapon_cooldown <= latency_frames;
+						bool next = d <= w->max_range && u->weapon_cooldown <= latency_frames + turn_frames;
 						if (next) {
-							u->game_unit->attack(c->target->game_unit);
-							c->last_command_frame = current_command_frame;
+							u->game_unit->stop();
+
 							c->attack_state = 1;
+							c->attack_timer = current_frame + turn_frames + wait_frames;
 						} else {
 							xy dst = c->target->pos;
 
@@ -865,21 +918,17 @@ void process(const a_vector<unit_controller*>&controllers) {
 							}
 						}
 					} else if (c->attack_state == 1) {
-						if (c->u->weapon_cooldown) c->attack_state = 0;
+						u->game_unit->attack(c->target->game_unit);
+						c->last_command_frame = current_command_frame;
+						c->attack_state = 2;
+					} else if (c->attack_state == 2) {
+						if (current_frame >= c->attack_timer) c->attack_state = 0;
 					} else c->attack_state = 0;
 
 				} else if (do_state_machine && wait_frames) {
 
-					xy relpos = c->target->pos - u->pos;
-					double rel_angle = std::atan2(relpos.y, relpos.x);
-
-					auto get_turn_frames = [&]() {
-						double da = u->heading - rel_angle;
-						if (da < -PI) da += PI * 2;
-						if (da > PI) da -= PI * 2;
-						return (int)(std::abs(da) / c->u->stats->turn_rate);
-					};
-					int turn_frames = get_turn_frames();
+// 					log("c->attack_state is %d\n", c->attack_state);
+// 					log("turn_frames is %d\n", turn_frames);
 
 					auto get_target_is_facing_me = [&]() {
 						double target_heading = std::atan2(c->target->vspeed, c->target->hspeed);
@@ -1076,24 +1125,34 @@ void process(const a_vector<unit_controller*>&controllers) {
 			if (o == BWAPI::Orders::MiningMinerals || o == BWAPI::Orders::HarvestGas) c->last_return_cargo = current_frame;
 			if (u->game_unit->isCarryingMinerals() || u->game_unit->isCarryingGas()) {
 				if ((o != BWAPI::Orders::ReturnMinerals && o != BWAPI::Orders::ReturnGas) || current_frame - c->last_return_cargo >= 15 * 8) {
-					c->last_return_cargo = current_frame;
-					u->game_unit->returnCargo();
-					c->noorder_until = current_frame + 8;
+					if (c->depot && !u->is_flying && !square_pathing::unit_can_reach(u, u->pos, c->depot->pos)) {
+						c->go_to = c->depot->pos;
+						move(c);
+					} else {
+						c->last_return_cargo = current_frame;
+						u->game_unit->returnCargo();
+						c->noorder_until = current_frame + 8;
+					}
 				}
 			} else {
 				if (c->target && o != BWAPI::Orders::MiningMinerals && o != BWAPI::Orders::HarvestGas) {
 					if ((o != (c->target->type->is_gas ? BWAPI::Orders::MoveToGas : BWAPI::Orders::MoveToMinerals) && o != (c->target->type->is_gas ? BWAPI::Orders::WaitForGas : BWAPI::Orders::WaitForMinerals)) || u->game_unit->getOrderTarget() != c->target->game_unit) {
 						bool issue_gather = true;
 						if (issue_gather) {
-							c->last_gather_target = c->target;
-							c->last_gather_issued_frame = current_frame;
-							if (!u->game_unit->gather(c->target->game_unit)) {
+							if (!square_pathing::unit_can_reach(u, u->pos, c->target->pos)) {
 								c->go_to = c->target->pos;
 								move(c);
-							}
-							c->noorder_until = current_frame + 2;
-							if (!c->target->is_being_gathered || current_frame + latency_frames >= c->target->is_being_gathered_begin_frame + 75 + 8) {
-								c->noorder_until = current_frame + std::max(8, latency_frames + 1);
+							} else {
+								c->last_gather_target = c->target;
+								c->last_gather_issued_frame = current_frame;
+								if (!u->game_unit->gather(c->target->game_unit)) {
+									c->go_to = c->target->pos;
+									move(c);
+								}
+								c->noorder_until = current_frame + 2;
+								if (!c->target->is_being_gathered || current_frame + latency_frames >= c->target->is_being_gathered_begin_frame + 75 + 8) {
+									c->noorder_until = current_frame + std::max(8, latency_frames + 1);
+								}
 							}
 						}
 					}
