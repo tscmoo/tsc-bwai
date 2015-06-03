@@ -106,6 +106,7 @@ struct strat_z_base {
 
 	int drone_count;
 	int hatch_count;
+	int completed_hatch_count;
 	int larva_count;
 
 	int zergling_count;
@@ -743,6 +744,7 @@ struct strat_z_base {
 
 				drone_count = count_units_plus_production(st, unit_types::drone);
 				hatch_count = count_units_plus_production(st, unit_types::hatchery) + count_units_plus_production(st, unit_types::lair) + count_units_plus_production(st, unit_types::hive);
+				completed_hatch_count = st.units[unit_types::hatchery].size() + st.units[unit_types::lair].size() + st.units[unit_types::hive].size();
 				larva_count = 0;
 				for (int i = 0; i < 3; ++i) {
 					for (st_unit&u : st.units[i == 0 ? unit_types::hive : i == 1 ? unit_types::lair : unit_types::hatchery]) {
