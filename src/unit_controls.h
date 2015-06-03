@@ -515,7 +515,7 @@ void process(const a_vector<unit_controller*>&controllers) {
 	}
 	for (auto*c : controllers) {
 		if (c->defensive_concave_position == xy()) continue;
-		log("%s: c->defensive_concave_position is %d %d (%g away)\n", c->u->type->name, c->defensive_concave_position.x, c->defensive_concave_position.y, (c->defensive_concave_position - c->u->pos).length());
+		//log("%s: c->defensive_concave_position is %d %d (%g away)\n", c->u->type->name, c->defensive_concave_position.x, c->defensive_concave_position.y, (c->defensive_concave_position - c->u->pos).length());
 		if (c->action != unit_controller::action_attack || !c->target) continue;
 		if (c->last_process == current_frame) continue;
 		if (c->last_command_frame == current_command_frame) continue;
@@ -523,7 +523,7 @@ void process(const a_vector<unit_controller*>&controllers) {
 		weapon_stats*w = c->target->is_flying ? u->stats->air_weapon : u->stats->ground_weapon;
 		if (!w) continue;
 		if (units_distance(u, c->target) < w->max_range && (c->defensive_concave_position - u->pos).length() <= 48) {
-			log("in range, attacking\n");
+			//log("in range, attacking\n");
 			continue;
 		}
 		if (u->is_flying) continue;
@@ -536,16 +536,16 @@ void process(const a_vector<unit_controller*>&controllers) {
 // 			}
 // 		}
 		if (units_distance(c->defensive_concave_position, u->type, c->target->pos, c->target->type) <= w->max_range + 32) {
-			log("close, attacking\n");
+			//log("close, attacking\n");
 			continue;
 		}
 		if (current_frame - c->target->last_attacked <= 15 * 2) {
-			log("attacking, attacking!\n");
+			//log("attacking, attacking!\n");
 			continue;
 		}
 		c->last_process = current_frame;
 
-		log("wait\n");
+		//log("wait\n");
 		if (current_frame >= c->noorder_until) {
 			if ((c->defensive_concave_position - u->pos).length() <= 8) {
 				if (u->game_order != BWAPI::Orders::HoldPosition) {
