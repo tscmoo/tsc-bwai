@@ -68,6 +68,11 @@ struct strat_z_9pool_speed_into_1hatch_spire : strat_z_base {
 			}
 		}
 
+		if (!my_units_of_type[unit_types::mutalisk].empty() && fight_ok) {
+			combat::no_aggressive_groups = false;
+			combat::aggressive_groups_done_only = false;
+		}
+
 		max_workers = get_max_mineral_workers() + 6;
 
 		if (my_units_of_type[unit_types::mutalisk].empty()) {
