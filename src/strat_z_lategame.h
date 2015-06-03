@@ -146,7 +146,7 @@ struct strat_z_lategame : strat_z_base {
 			army = [army](state&st) {
 				return nodelay(st, unit_types::zergling, army);
 			};
-			if (zergling_count >= 20) {
+			if (zergling_count >= 20 || (players::my_player->has_upgrade(upgrade_types::zerg_missile_attacks_2) && !players::my_player->has_upgrade(upgrade_types::zerg_melee_attacks_1))) {
 				army = [army](state&st) {
 					return nodelay(st, unit_types::hydralisk, army);
 				};
@@ -215,7 +215,7 @@ struct strat_z_lategame : strat_z_base {
 			}
 
 			if (!st.units[unit_types::defiler_mound].empty()) {
-				if (defiler_count < ground_army_supply / 14) {
+				if (defiler_count < ground_army_supply / 20) {
 					army = [army](state&st) {
 						return nodelay(st, unit_types::defiler, army);
 					};
@@ -225,11 +225,11 @@ struct strat_z_lategame : strat_z_base {
 						return nodelay(st, unit_types::defiler, army);
 					};
 				}
-				if (ground_army_supply < enemy_ground_army_supply && zergling_count < defiler_count * 6) {
-					army = [army](state&st) {
-						return nodelay(st, unit_types::zergling, army);
-					};
-				}
+// 				if (ground_army_supply < enemy_ground_army_supply && zergling_count < defiler_count * 6) {
+// 					army = [army](state&st) {
+// 						return nodelay(st, unit_types::zergling, army);
+// 					};
+// 				}
 			}
 			if (!st.units[unit_types::greater_spire].empty()) {
 				if (enemy_air_army_supply >= 20) {
