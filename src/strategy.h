@@ -164,6 +164,7 @@ struct register_on_end_func {
 #include "strat_z_3hatch_before_pool.h"
 #include "strat_z_9pool_speed_into_1hatch_spire.h"
 #include "strat_z_hydra_lurker.h"
+#include "strat_z_hydra_into_muta.h"
 
 #include "strat_z_3hatch_spire.h"
 #include "strat_z_ling_defiler.h"
@@ -217,6 +218,7 @@ a_map<a_string, std::function<void()>> strat_map = {
 	{ "z econ2", wrap<strat_z_econ2>() },
 	{ "z 1hatch spire", wrap<strat_z_1hatch_spire>() },
 	{ "z hydra lurker", wrap<strat_z_hydra_lurker>() },
+	{ "z hydra into muta", wrap<strat_z_hydra_into_muta>() },
 
 	{ "z lategame", wrap<strat_z_lategame>() },
 
@@ -292,7 +294,7 @@ void strategy_task() {
 			a_string opening = adapt::choose("zvtp opening", "z 5pool", "z 9pool", "z 10hatch", "z 12hatch", "z 1hatch lurker", "z 13pool muta", "z 3hatch before pool", "z 9pool speed into 1hatch spire");
 			run_strat(opening);
 			if (opening == "zvtp opening") run_strat("zvtp");
-			a_string midgame = adapt::choose("z 3hatch spire", "z ling defiler", "z queen", "z econ", "z econ2", "z hydra lurker");
+			a_string midgame = adapt::choose("z 3hatch spire", "z ling defiler", "z queen", "z econ", "z econ2", "z hydra lurker", "z hydra into muta");
 			run_strat(midgame);
 			run_strat("z lategame");
 
@@ -300,7 +302,7 @@ void strategy_task() {
 			a_string opening = adapt::choose("zvtp opening", "z 5pool", "z 9pool", "z 10hatch", "z 12hatch", "z 1hatch lurker", "z 13pool muta", "z 3hatch before pool", "z 9pool speed into 1hatch spire");
 			run_strat(opening);
 			if (opening == "zvtp opening") run_strat("zvtp");
-			a_string midgame = adapt::choose("z 3hatch spire", "z ling defiler", "z queen", "z econ", "z econ2", "z hydra lurker");
+			a_string midgame = adapt::choose("z 3hatch spire", "z ling defiler", "z queen", "z econ", "z econ2", "z hydra lurker", "z hydra into muta");
 			run_strat(midgame);
 			run_strat("z lategame");
 
@@ -308,7 +310,7 @@ void strategy_task() {
 			a_string opening = adapt::choose("zvz opening", "z 5pool", "z 9pool", "z 10hatch", "z 12hatch", "z 1hatch lurker", "z 13pool muta", "z 3hatch before pool", "z 9pool speed into 1hatch spire");
 			run_strat(opening);
 			if (opening == "zvz opening") run_strat("zvz");
-			a_string midgame = adapt::choose("z 3hatch spire", "z ling defiler", "z queen", "z econ", "z econ2", "z hydra lurker");
+			a_string midgame = adapt::choose("z 3hatch spire", "z ling defiler", "z queen", "z econ", "z econ2", "z hydra lurker", "z hydra into muta");
 			run_strat(midgame);
 			run_strat("z lategame");
 
