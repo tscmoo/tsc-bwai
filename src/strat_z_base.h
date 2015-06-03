@@ -785,19 +785,6 @@ struct strat_z_base {
 						else ground_army_supply += ut->required_supply;
 					}
 				}
-				log("army_supply %g, air_army_supply %g, ground_army_supply %g\n", army_supply, air_army_supply, ground_army_supply);
-				for (auto&v : st.units) {
-					unit_type*ut = v.first;
-					if (!ut->is_worker) {
-						log("unit %s (supply %g)\n", ut->name, ut->required_supply);
-					}
-				}
-				for (auto&v : st.production) {
-					unit_type*ut = v.second;
-					if (!ut->is_worker) {
-						log("prod %s (supply %g)\n", ut->name, ut->required_supply);
-					}
-				}
 
 				army = [&](state&st) {
 					return false;
