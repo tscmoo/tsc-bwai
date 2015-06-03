@@ -251,21 +251,24 @@ void strategy_task() {
 
 			a_string opening = adapt::choose("tvt opening", "t 14cc", "t 2fact vulture", "t siege expand", "t wraith rush", "t proxy tank", "t 1rax fe", "proxy rax");
 			run_strat(opening);
-			a_string midlategame = adapt::choose("tvt", "t bio tank", "t mech", "t air");
+			if (opening == "tvt opening") run_strat("tvt");
+			a_string midlategame = adapt::choose("t bio tank", "t mech", "t air");
 			run_strat(midlategame);
 
 		} else if (players::opponent_player->race == race_protoss) {
 
 			a_string opening = adapt::choose("tvp opening", "t 14cc", "t 2fact vulture", "t siege expand", "t wraith rush", "t proxy tank", "t 1rax fe", "proxy rax");
 			run_strat(opening);
-			a_string midlategame = adapt::choose("tvp", "t bio tank", "t mech", "t air");
+			if (opening == "tvp opening") run_strat("tvp");
+			a_string midlategame = adapt::choose("t bio tank", "t mech", "t air");
 			run_strat(midlategame);
 
 		} else if (players::opponent_player->race == race_zerg) {
 
 			a_string opening = adapt::choose("tvz opening", "t 14cc", "t 2fact vulture", "t siege expand", "t wraith rush", "t proxy tank", "t 1rax fe", "proxy rax");
 			run_strat(opening);
-			a_string midlategame = adapt::choose("tvz", "t bio tank", "t mech", "t air");
+			if (opening == "tvz opening") run_strat("tvz");
+			a_string midlategame = adapt::choose("t bio tank", "t mech", "t air");
 			run_strat(midlategame);
 
 		}
@@ -284,23 +287,26 @@ void strategy_task() {
 		//run_strat("ums");
 
 		if (players::opponent_player->race == race_terran) {
-			a_string opening = adapt::choose("zvt opening", "z 5pool", "z 9pool", "z 10hatch", "z 12hatch", "z 1hatch lurker", "z 13pool muta", "z 3hatch before pool", "z 9pool speed into 1hatch spire");
+			a_string opening = adapt::choose("zvtp opening", "z 5pool", "z 9pool", "z 10hatch", "z 12hatch", "z 1hatch lurker", "z 13pool muta", "z 3hatch before pool", "z 9pool speed into 1hatch spire");
 			run_strat(opening);
-			a_string midgame = adapt::choose("zvt", "z 3hatch spire", "z ling defiler", "z queen", "z econ", "z econ2");
+			if (opening == "zvtp opening") run_strat("zvtp");
+			a_string midgame = adapt::choose("z 3hatch spire", "z ling defiler", "z queen", "z econ", "z econ2");
 			run_strat(midgame);
 			run_strat("z lategame");
 
 		} else if (players::opponent_player->race == race_protoss) {
-			a_string opening = adapt::choose("zvp opening", "z 5pool", "z 9pool", "z 10hatch", "z 12hatch", "z 1hatch lurker", "z 13pool muta", "z 3hatch before pool", "z 9pool speed into 1hatch spire");
+			a_string opening = adapt::choose("zvtp opening", "z 5pool", "z 9pool", "z 10hatch", "z 12hatch", "z 1hatch lurker", "z 13pool muta", "z 3hatch before pool", "z 9pool speed into 1hatch spire");
 			run_strat(opening);
-			a_string midgame = adapt::choose("zvp", "z 3hatch spire", "z ling defiler", "z queen", "z econ", "z econ2");
+			if (opening == "zvtp opening") run_strat("zvtp");
+			a_string midgame = adapt::choose("z 3hatch spire", "z ling defiler", "z queen", "z econ", "z econ2");
 			run_strat(midgame);
 			run_strat("z lategame");
 
 		} else if (players::opponent_player->race == race_zerg) {
 			a_string opening = adapt::choose("zvz opening", "z 5pool", "z 9pool", "z 10hatch", "z 12hatch", "z 1hatch lurker", "z 13pool muta", "z 3hatch before pool", "z 9pool speed into 1hatch spire");
 			run_strat(opening);
-			a_string midgame = adapt::choose("zvz", "z 3hatch spire", "z ling defiler", "z queen", "z econ", "z econ2");
+			if (opening == "zvz opening") run_strat("zvz");
+			a_string midgame = adapt::choose("z 3hatch spire", "z ling defiler", "z queen", "z econ", "z econ2");
 			run_strat(midgame);
 			run_strat("z lategame");
 
@@ -429,7 +435,7 @@ void on_end(bool won) {
 	json_value choices;
 	choices.type = json_value::t_array;
 	for (size_t i = 0; i < adapt::all_choices.size(); ++i) {
-		choices[i] = std::get<0>(adapt::all_choices[i]);
+		choices[i] = adapt::all_choices[i];
 	}
 	e["choices"] = choices;
 

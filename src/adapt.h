@@ -13,20 +13,26 @@ double getweight(a_string name) {
 	return weight;
 }
 
-double getval(a_string name) {
-	return tsc::rng(getweight(name));
-}
-
 namespace detail {
-	std::tuple<a_string, double> getn() {
-		return std::make_tuple("", -std::numeric_limits<double>::infinity());
+	a_string getn(double) {
+		return "";
 	}
 	template<typename A, typename...Ax>
-	std::tuple<a_string, double> getn(A&&a, Ax&&...ax) {
-		double val = getval(a);
-		auto next = getn(std::forward<Ax>(ax)...);
-		if (val > std::get<1>(next)) return std::make_tuple(a, val);
-		else return next;
+	a_string getn(double val, A&&a, Ax&&...ax) {
+		double w = getweight(a);
+		if (val < w) return std::forward<A>(a);
+		else {
+			a_string next = getn(val - w, std::forward<Ax>(ax)...);
+			if (next.empty()) return std::forward<A>(a);
+			return next;
+		}
+	}
+	double sum_of_weights() {
+		return 0;
+	}
+	template<typename A, typename...Ax>
+	double sum_of_weights(A&&a, Ax&&...ax) {
+		return getweight(std::forward<A>(a)) + sum_of_weights(std::forward<Ax>(ax)...);
 	}
 
 	a_string concat() {
@@ -41,59 +47,19 @@ namespace detail {
 	}
 }
 
-a_vector<std::tuple<a_string, double>> all_choices;
+a_vector<a_string> all_choices;
 
 template<typename...args_T>
 a_string choose(args_T&&...args) {
-	auto v = detail::getn(std::forward<args_T>(args)...);
-	log("choose [%s] -> %s = %g\n", detail::concat(std::forward<args_T>(args)...), std::get<0>(v), std::get<1>(v));
+	double val = tsc::rng(detail::sum_of_weights(args...));
+	auto v = detail::getn(val, args...);
+	log("choose [%s] -> %s = %g\n", detail::concat(args...), v, val);
 	all_choices.push_back(v);
-	return std::get<0>(v);
+	return v;
 }
 
 bool choose_bool(a_string name) {
 	return choose(name, "not " + name) == name;
 }
-
-// void won() {
-// 	for (auto&v : all_choices) {
-// 		double&val = weights[std::get<0>(v)];
-// 		double oldval = val;
-// 		val += 1.0;
-// 		log("weight %s - %g -> %g\n", std::get<0>(v), oldval, val);
-// 	}
-// }
-// void lost() {
-// 	for (auto&v : all_choices) {
-// 		double&val = weights[std::get<0>(v)];
-// 		double oldval = val;
-// 		val /= 2.0;
-// 		log("weight %s - %g -> %g\n", std::get<0>(v), oldval, val);
-// 	}
-// }
-// 
-// void load_weights(a_string data) {
-// 	const char*s = data.data();
-// 	while (*s) {
-// 		while (*s && *s == '\r' || *s == '\n' || *s == ' ') ++s;
-// 		const char*n = s;
-// 		while (*s && *s != ':') ++s;
-// 		a_string name(n, s - n);
-// 		if (*s == ':') ++s;
-// 		char*e = (char*)s;
-// 		double val = std::strtod(s, &e);
-// 		s = e;
-// 		if (!name.empty()) weights[name] = val;
-// 		log("weight %s -> %g\n", name, val);
-// 	}
-// }
-// 
-// a_string save_weights() {
-// 	a_string str;
-// 	for (auto&v : weights) {
-// 		str += format("%s: %g\n", std::get<0>(v), std::get<1>(v));
-// 	}
-// 	return str;
-// }
 
 }
