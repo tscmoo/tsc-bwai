@@ -422,7 +422,7 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep, bool no
 					st.gas -= build->gas_cost;
 					st.used_supply[build->race] += build->required_supply;
 					if (build->is_addon) builder->has_addon = true;
-					if (builder->type == unit_types::drone) rm_unit_and_supply(st, builder->type);
+					if (builder->type == unit_types::drone || builder->type == unit_types::hydralisk) rm_unit_and_supply(st, builder->type);
 					//log("%s successfully built\n", build->name);
 					return (unit_type*)nullptr;
 				}
