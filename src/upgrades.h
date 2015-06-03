@@ -214,6 +214,7 @@ upgrade_type*get_upgrade_type(BWAPI::TechType game_tech_type) {
 	r->builder_type = units::get_unit_type(game_tech_type.whatResearches());
 	r->build_time = game_tech_type.researchTime();
 	if (r->builder_type) r->required_units.push_back(r->builder_type);
+	if (game_tech_type == BWAPI::TechTypes::Lurker_Aspect) r->required_units.push_back(unit_types::lair);
 	r->name = game_tech_type.getName().c_str();
 	r->level = 1;
 	r->prev = nullptr;
