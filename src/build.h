@@ -1175,8 +1175,17 @@ void execute_build(build_task&b) {
 					if (current_frame + latency_frames >= b.build_frame) {
 						if (builder->controller->noorder_until <= current_frame) {
 							bool okay = false;
-							okay |= builder->game_unit->upgrade(b.type->upgrade->game_upgrade_type);
-							okay |= builder->game_unit->research(b.type->upgrade->game_tech_type);
+							bool has_required_units = true;
+							for (unit_type*ut : b.type->upgrade->required_units) {
+								if (my_completed_units_of_type[ut].empty()) {
+									has_required_units = false;
+									break;
+								}
+							}
+							if (has_required_units) {
+								okay |= builder->game_unit->upgrade(b.type->upgrade->game_upgrade_type);
+								okay |= builder->game_unit->research(b.type->upgrade->game_tech_type);
+							}
 							if (okay) b.upgrade_done_frame = current_frame + b.type->build_time;
 							builder->controller->noorder_until = current_frame + 15;
 						}
