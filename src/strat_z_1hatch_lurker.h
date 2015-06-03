@@ -47,7 +47,7 @@ struct strat_z_1hatch_lurker : strat_z_base {
 			resource_gathering::max_gas = 500.0;
 		}
 
-		return current_used_total_supply >= 60;
+		return current_used_total_supply >= 40;
 	}
 	virtual bool build(buildpred::state&st) override {
 		using namespace buildpred;
@@ -84,9 +84,15 @@ struct strat_z_1hatch_lurker : strat_z_base {
 		}
 		
 		if (!st.units[unit_types::hydralisk_den].empty()) {
-			army = [army](state&st) {
-				return nodelay(st, unit_types::lurker, army);
-			};
+			if (lurker_count == 0 && hydralisk_count < 4) {
+				army = [army](state&st) {
+					return nodelay(st, unit_types::hydralisk, army);
+				};
+			} else {
+				army = [army](state&st) {
+					return nodelay(st, unit_types::lurker, army);
+				};
+			}
 		}
 		if (lurker_count >= 4 && drone_count < army_supply * 2) {
 			army = [army](state&st) {
