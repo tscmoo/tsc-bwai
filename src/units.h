@@ -3,6 +3,7 @@
 
 struct unit_type {
 	BWAPI::UnitType game_unit_type;
+	int id;
 	a_string name;
 	// right, down, left, up
 	std::array<int,4> dimensions;
@@ -400,6 +401,7 @@ std::tuple<double, double> get_unit_value(unit_type*from, unit_type*to);
 unit_type*new_unit_type(BWAPI::UnitType game_unit_type,unit_type*ut) {
 	ut->game_unit_type = game_unit_type;
 	ut->name = game_unit_type.getName().c_str();
+	ut->id = game_unit_type.getID();
 	ut->dimensions[0] = game_unit_type.dimensionRight();
 	ut->dimensions[1] = game_unit_type.dimensionDown();
 	ut->dimensions[2] = game_unit_type.dimensionLeft();
