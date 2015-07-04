@@ -621,6 +621,7 @@ void update_stats(unit_stats*st) {
 	st->sight_range = (double)gp->sightRange(gu);
 
 	st->ground_weapon_hits = gu.maxGroundHits();
+	if (gu == BWAPI::UnitTypes::Protoss_Reaver) st->ground_weapon_hits = 1;
 	if (st->ground_weapon_hits == 0 && st->ground_weapon) {
 		log("warning: %s.maxGroundHits() returned 0 (setting to 1)\n", st->type->name);
 		st->ground_weapon_hits = 1;
@@ -649,6 +650,12 @@ unit_stats*get_unit_stats(unit_type*type,player_t*player) {
 	st->air_weapon = nullptr;
 	auto gw = st->type->game_unit_type.groundWeapon();
 	if (gw != BWAPI::WeaponTypes::None) st->ground_weapon = get_weapon_stats(gw, player);
+	if (st->type->game_unit_type == BWAPI::UnitTypes::Protoss_Scarab) st->ground_weapon = nullptr;
+	if (st->type->game_unit_type == BWAPI::UnitTypes::Protoss_Reaver) {
+		st->ground_weapon = get_weapon_stats(BWAPI::WeaponTypes::Scarab, player);
+		st->ground_weapon->cooldown = 60;
+		st->ground_weapon->max_range = 32 * 8;
+	}
 	auto aw = st->type->game_unit_type.airWeapon();
 	if (aw != BWAPI::WeaponTypes::None) st->air_weapon = get_weapon_stats(aw, player);
 	update_stats(st);
