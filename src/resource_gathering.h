@@ -303,7 +303,7 @@ void resource_gathering_task() {
 			}
 		}
 		for (unit*u : resource_units) {
-			if (u->resources == 0) continue;
+			//if (u->resources == 0) continue;
 			resource_t*&r = unit_resource_map[u];
 			if (!r) {
 				log("new resource %p %s\n", u, u->type->name);
