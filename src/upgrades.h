@@ -63,6 +63,8 @@ namespace upgrade_types {
 	upgrade_type_pointer protoss_air_armor_1, protoss_air_armor_2, protoss_air_armor_3;
 
 	upgrade_type_pointer singularity_charge, leg_enhancements;
+	upgrade_type_pointer gravitic_drive;
+	upgrade_type_pointer scarab_damage, reaver_capacity;
 
 	void init() {
 		get(terran_infantry_weapons_1, BWAPI::UpgradeTypes::Terran_Infantry_Weapons, 1);
@@ -163,6 +165,9 @@ namespace upgrade_types {
 
 		get(singularity_charge, BWAPI::UpgradeTypes::Singularity_Charge);
 		get(leg_enhancements, BWAPI::UpgradeTypes::Leg_Enhancements);
+		get(gravitic_drive, BWAPI::UpgradeTypes::Gravitic_Drive);
+		get(scarab_damage, BWAPI::UpgradeTypes::Scarab_Damage);
+		get(reaver_capacity, BWAPI::UpgradeTypes::Reaver_Capacity);
 	}
 }
 
