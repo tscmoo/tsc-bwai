@@ -115,6 +115,7 @@ namespace combat_eval {
 					t.start_supply += v.st->type->required_supply;
 					if (v.st->type == unit_types::bunker) ++t.bunker_count;
 					if (v.st->type == unit_types::bunker || v.st->type == unit_types::photon_cannon || v.st->type == unit_types::sunken_colony) ++static_defence_count;
+					if (v.st->type == unit_types::bunker || v.st->type == unit_types::photon_cannon || v.st->type == unit_types::sunken_colony) t.start_supply += 2;
 				}
 				t.has_static_defence = static_defence_count >= 2;
 			}
@@ -328,6 +329,7 @@ namespace combat_eval {
 				for (auto&v : t.units) {
 					if (v.hp <= 0) continue;
 					t.end_supply += v.st->type->required_supply;
+					if (v.st->type == unit_types::bunker || v.st->type == unit_types::photon_cannon || v.st->type == unit_types::sunken_colony) t.end_supply += 2;
 				}
 			}
 
