@@ -85,7 +85,7 @@ struct transform_filter {
 		}
 
 	};
-	typedef iterator_impl<typename T::iterator> iterator;
+	typedef iterator_impl<typename std::conditional<std::is_const<T>::value, typename T::const_iterator, typename T::iterator>::type> iterator;
 	iterator begin() const {
 		return iterator(*this,cont.begin());
 	}
