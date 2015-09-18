@@ -75,14 +75,14 @@ struct strat_t_1rax_fe : strat_t_base {
 			};
 		}
 
-		if (my_units_of_type[unit_types::marine].size() >= 1 && st.used_supply[race_terran] >= 15 && !being_rushed) {
+		if (my_units_of_type[unit_types::marine].size() >= 2 && st.used_supply[race_terran] >= 15 && !being_rushed) {
 			if (count_units_plus_production(st, unit_types::cc) < 2) {
 				army = [army = army](state&st) {
 					return nodelay(st, unit_types::cc, army);
 				};
 			}
 		}
-		if (marine_count == 0) {
+		if (marine_count < 2) {
 			army = [army = army](state&st) {
 				return nodelay(st, unit_types::marine, army);
 			};
