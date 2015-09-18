@@ -59,19 +59,19 @@ struct strat_z_lategame : strat_z_base {
 
 		auto army = this->army;
 
-// 		if (sunken_count + spore_count < 20) {
-// 			int total_n = sunken_count + spore_count;
-// 			int spore_n = (int)(total_n * (enemy_air_army_supply / enemy_army_supply));
-// 			if (spore_count < spore_n) {
-// 				army = [army](state&st) {
-// 					return nodelay(st, unit_types::spore_colony, army);
-// 				};
-// 			} else {
-// 				army = [army](state&st) {
-// 					return nodelay(st, unit_types::sunken_colony, army);
-// 				};
-// 			}
-// 		}
+		if (st.used_supply[race_zerg] >= 190 && sunken_count + spore_count < 20) {
+			int total_n = sunken_count + spore_count;
+			int spore_n = (int)(total_n * (enemy_air_army_supply / enemy_army_supply));
+			if (spore_count < spore_n) {
+				army = [army](state&st) {
+					return nodelay(st, unit_types::spore_colony, army);
+				};
+			} else {
+				army = [army](state&st) {
+					return nodelay(st, unit_types::sunken_colony, army);
+				};
+			}
+		}
 
 		st.auto_build_hatcheries = true;
 // 		if (larva_count < st.minerals / 50 && larva_count < 40) {
@@ -143,9 +143,11 @@ struct strat_z_lategame : strat_z_base {
 		}
 
 		if (!fight_ok || (drone_count >= 34 && army_supply < enemy_army_supply) || drone_count >= 70) {
-			army = [army](state&st) {
-				return nodelay(st, unit_types::zergling, army);
-			};
+			if (zergling_count < 80 || enemy_ground_army_supply > ground_army_supply) {
+				army = [army](state&st) {
+					return nodelay(st, unit_types::zergling, army);
+				};
+			}
 			if (zergling_count >= 20 || (players::my_player->has_upgrade(upgrade_types::zerg_missile_attacks_2) && !players::my_player->has_upgrade(upgrade_types::zerg_melee_attacks_1))) {
 				army = [army](state&st) {
 					return nodelay(st, unit_types::hydralisk, army);
@@ -166,11 +168,6 @@ struct strat_z_lategame : strat_z_base {
 				};
 			}
 
-			if (hydralisk_count < enemy_ground_large_army_supply) {
-				army = [army](state&st) {
-					return nodelay(st, unit_types::hydralisk, army);
-				};
-			}
 			if (players::my_player->has_upgrade(upgrade_types::lurker_aspect)) {
 				if (lurker_count * 2 < enemy_ground_small_army_supply) {
 					army = [army](state&st) {
@@ -184,9 +181,36 @@ struct strat_z_lategame : strat_z_base {
 				}
 			}
 
-			if (scourge_count < enemy_air_army_supply) {
+			if (hydralisk_count < 40 && hydralisk_count < enemy_air_army_supply) {
+				army = [army](state&st) {
+					return nodelay(st, unit_types::hydralisk, army);
+				};
+			}
+			if (scourge_count < enemy_air_army_supply && (hydralisk_count >= enemy_air_army_supply / 2 || enemy_air_army_supply < 20.0)) {
 				army = [army](state&st) {
 					return nodelay(st, unit_types::scourge, army);
+				};
+			}
+
+			if (hydralisk_count < enemy_ground_large_army_supply) {
+				army = [army](state&st) {
+					return nodelay(st, unit_types::hydralisk, army);
+				};
+			}
+
+			if (!st.units[unit_types::greater_spire].empty() && enemy_air_army_supply > scourge_count + hydralisk_count + mutalisk_count) {
+				if (devourer_count < (hydralisk_count + scourge_count / 2 + mutalisk_count) / 2) {
+					army = [army](state&st) {
+						return nodelay(st, unit_types::mutalisk, army);
+					};
+					army = [army](state&st) {
+						return nodelay(st, unit_types::devourer, army);
+					};
+				}
+			}
+			if (devourer_count > mutalisk_count * 2) {
+				army = [army](state&st) {
+					return nodelay(st, unit_types::mutalisk, army);
 				};
 			}
 
@@ -204,6 +228,17 @@ struct strat_z_lategame : strat_z_base {
 						return nodelay(st, unit_types::ultralisk, army);
 					};
 				}
+			}
+
+			if (mutalisk_count < enemy_tank_count) {
+				army = [army](state&st) {
+					return nodelay(st, unit_types::mutalisk, army);
+				};
+			}
+			if (hydralisk_count < enemy_goliath_count) {
+				army = [army](state&st) {
+					return nodelay(st, unit_types::hydralisk, army);
+				};
 			}
 
 			if (enemy_tank_count >= 4) {
@@ -272,9 +307,17 @@ struct strat_z_lategame : strat_z_base {
 
 		}
 
-		if ((army_supply > enemy_army_supply*1.25 && drone_count >= 40) || drone_count >= 60 || army_supply >= 50) {
+		//if ((army_supply > enemy_army_supply*1.25 && drone_count >= 40) || drone_count >= 60 || army_supply >= 50) {
+		if ((army_supply > enemy_army_supply*1.25 && drone_count >= 40) || (drone_count >= 60 && army_supply >= 50)) {
 			tech();
 		}
+
+// 		if (enemy_ground_large_army_supply - hydralisk_count >= 10) {
+// 			army = [army](state&st) {
+// 				return nodelay(st, unit_types::hydralisk, army);
+// 			};
+// 		}
+
 		if (drone_count >= 45) {
 			if (count_units_plus_production(st, unit_types::hive) == 0) {
 				army = [army](state&st) {
@@ -289,10 +332,12 @@ struct strat_z_lategame : strat_z_base {
 			};
 		}
 
-		if (drone_count < 24 || (army_supply >= enemy_army_supply && count_production(st, unit_types::drone) < 2)) {
-			army = [army](state&st) {
-				return nodelay(st, unit_types::drone, army);
-			};
+		if (drone_count < 24 || (army_supply >= enemy_army_supply && air_army_supply + hydralisk_count >= enemy_air_army_supply && count_production(st, unit_types::drone) < 2)) {
+			if (drone_count < 70) {
+				army = [army](state&st) {
+					return nodelay(st, unit_types::drone, army);
+				};
+			}
 		}
 
 		if (st.max_supply[race_zerg] + count_production(st, unit_types::overlord) * 8 - 16 <= st.used_supply[race_zerg]) {
