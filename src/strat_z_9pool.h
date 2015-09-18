@@ -33,6 +33,7 @@ struct strat_z_9pool: strat_z_base {
 			if (players::opponent_player->race != race_zerg && !players::opponent_player->random) build::add_build_task(2.0, unit_types::hatchery);
 			++opening_state;
 		} else if (opening_state != -1) {
+			if (enemy_attacking_army_supply || enemy_proxy_building_count) bo_cancel_all();
 			if (bo_all_done()) {
 				opening_state = -1;
 			}
