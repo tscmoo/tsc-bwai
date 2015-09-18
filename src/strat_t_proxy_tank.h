@@ -2,9 +2,12 @@
 
 struct strat_t_proxy_tank: strat_t_base {
 
-	bool spider_mines_first = adapt::choose_bool("spider mines first");
-	bool proxy_both_factories = adapt::choose_bool("proxy both factories");
-	bool vulture_before_machine_shop = adapt::choose_bool("vulture before machine shop");
+// 	bool spider_mines_first = adapt::choose_bool("spider mines first");
+// 	bool proxy_both_factories = adapt::choose_bool("proxy both factories");
+// 	bool vulture_before_machine_shop = adapt::choose_bool("vulture before machine shop");
+	bool spider_mines_first = false;
+	bool proxy_both_factories = true;
+	bool vulture_before_machine_shop = false;
 
 	virtual void init() override {
 
@@ -191,6 +194,12 @@ struct strat_t_proxy_tank: strat_t_base {
 					};
 				}
 			}
+		}
+
+		if (army_supply < enemy_attacking_army_supply || (enemy_attacking_army_supply && vulture_count < 2)) {
+			army = [army = army](state&st) {
+				return nodelay(st, unit_types::vulture, army);
+			};
 		}
 
 		return army(st);
