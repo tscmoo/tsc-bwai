@@ -5,6 +5,7 @@ struct strat_z_9pool_speed_into_1hatch_spire : strat_z_base {
 	virtual void init() override {
 
 		scouting::scout_supply = 14.0;
+		scouting::no_proxy_scout = true;
 
 		combat::no_scout_around = true;
 		combat::aggressive_zerglings = false;
@@ -48,7 +49,8 @@ struct strat_z_9pool_speed_into_1hatch_spire : strat_z_base {
 		fight_ok = eval_combat(false, 0);
 
 		double my_army_supply = current_used_total_supply - my_workers.size();
-		if (my_army_supply > enemy_army_supply * 2 && fight_ok && !enemy_buildings.empty()) attack_interval = 15 * 30;
+		//if (my_army_supply > enemy_army_supply + 4.0 && fight_ok && !enemy_buildings.empty()) attack_interval = 15 * 30;
+		if (my_army_supply > enemy_army_supply + 4.0 && fight_ok) attack_interval = 15 * 30;
 		else attack_interval = 0;
 
 		min_bases = 2;
@@ -71,6 +73,17 @@ struct strat_z_9pool_speed_into_1hatch_spire : strat_z_base {
 		if (!my_units_of_type[unit_types::mutalisk].empty() && fight_ok) {
 			combat::no_aggressive_groups = false;
 			combat::aggressive_groups_done_only = false;
+		}
+		if (army_supply > enemy_army_supply) {
+			combat::no_aggressive_groups = false;
+			combat::aggressive_groups_done_only = false;
+		}
+
+		for (auto&v : scouting::all_scouts) {
+			if (v.scout_unit && v.scout_unit->type->is_worker) {
+				rm_all_scouts();
+				break;
+			}
 		}
 
 		max_workers = get_max_mineral_workers() + 6;
@@ -96,7 +109,8 @@ struct strat_z_9pool_speed_into_1hatch_spire : strat_z_base {
 
 		auto army = this->army;
 
-		st.auto_build_hatcheries = spire_progress >= 0.75;
+		//st.auto_build_hatcheries = spire_progress >= 0.75;
+		st.auto_build_hatcheries = spire_progress > 0.0;
 
 		if (spire_progress >= 0.5 && mutalisk_count == 0 && st.gas >= 100 && st.minerals >= 100) {
 			army = [army](state&st) {
@@ -105,9 +119,23 @@ struct strat_z_9pool_speed_into_1hatch_spire : strat_z_base {
 			return army(st);
 		}
 
+		if (count_units_plus_production(st, unit_types::spire) && !fight_ok) {
+			if (sunken_count == 0) {
+				army = [army](state&st) {
+					return nodelay(st, unit_types::sunken_colony, army);
+				};
+			}
+		}
+
 		army = [army](state&st) {
 			return nodelay(st, unit_types::zergling, army);
 		};
+
+		if (zergling_count >= 14 && drone_count < 12 && army_supply >= enemy_army_supply) {
+			army = [army](state&st) {
+				return nodelay(st, unit_types::drone, army);
+			};
+		}
 
 		if (spire_progress >= 0.5) {
 			army = [army](state&st) {
@@ -120,7 +148,8 @@ struct strat_z_9pool_speed_into_1hatch_spire : strat_z_base {
 			}
 		}
 
-		if (fight_ok && !combat::no_aggressive_groups && army_supply > enemy_army_supply && count_production(st, unit_types::drone) == 0) {
+		//if (fight_ok && !combat::no_aggressive_groups && army_supply > enemy_army_supply && count_production(st, unit_types::drone) == 0) {
+		if (army_supply > drone_count && fight_ok && army_supply > enemy_army_supply && count_production(st, unit_types::drone) == 0) {
 			army = [army](state&st) {
 				return nodelay(st, unit_types::drone, army);
 			};
