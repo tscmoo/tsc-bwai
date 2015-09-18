@@ -31,7 +31,9 @@ struct strat_z_13pool_muta : strat_z_base {
 				build::add_build_task(5.0, unit_types::drone);
 				build::add_build_task(5.0, unit_types::drone);
 				build::add_build_task(6.0, unit_types::lair);
-				build::add_build_task(7.0, unit_types::hatchery);
+// 				build::add_build_task(7.0, unit_types::hatchery);
+// 				build::add_build_task(8.0, unit_types::zergling);
+// 				build::add_build_task(8.0, unit_types::zergling);
 				++opening_state;
 			}
 		} else if (opening_state != -1) {
@@ -40,6 +42,7 @@ struct strat_z_13pool_muta : strat_z_base {
 			}
 		}
 
+		combat::aggressive_zerglings = true;
 		combat::no_aggressive_groups = my_units_of_type[unit_types::mutalisk].empty();
 		combat::aggressive_groups_done_only = false;
 
@@ -55,6 +58,7 @@ struct strat_z_13pool_muta : strat_z_base {
 		if (opening_state != -1) return false;
 
 		st.dont_build_refineries = true;
+		st.auto_build_hatcheries = true;
 
 		auto army = this->army;
 
@@ -92,6 +96,12 @@ struct strat_z_13pool_muta : strat_z_base {
 			}
 		}
 
+		if (!being_rushed && hatch_count < 2) {
+			army = [army](state&st) {
+				return nodelay(st, unit_types::hatchery, army);
+			};
+		}
+
 		if (zergling_count < 4) {
 			army = [army](state&st) {
 				return nodelay(st, unit_types::zergling, army);
@@ -108,6 +118,19 @@ struct strat_z_13pool_muta : strat_z_base {
 			army = [army](state&st) {
 				return nodelay(st, unit_types::mutalisk, army);
 			};
+		}
+		if (enemy_static_defence_count && army_supply > enemy_attacking_army_supply) {
+			army = [army](state&st) {
+				return nodelay(st, unit_types::drone, army);
+			};
+		}
+
+		if (drone_count >= 16) {
+			if (sunken_count == 0) {
+				army = [army](state&st) {
+					return nodelay(st, unit_types::sunken_colony, army);
+				};
+			}
 		}
 
 		return army(st);
