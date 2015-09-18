@@ -53,7 +53,12 @@ struct strat_ums {
 				double score = get_best_score_value(my_workers, [&](unit*u) {
 					return unit_pathing_distance(u, s->cc_build_pos);
 				});
-				if (my_resource_depots.empty() && s->resources.size() >= 5) return score;
+				//if (my_resource_depots.empty() && s->resources.size() >= 5) return score;
+				if (my_resource_depots.empty()) {
+					size_t size = 0;
+					for (auto&v : s->resources) ++size;
+					if (size >= 5) return score;
+				}
 				double res = 0;
 				double ned = get_best_score_value(enemy_buildings, [&](unit*e) {
 					if (e->type->is_worker) return std::numeric_limits<double>::infinity();
