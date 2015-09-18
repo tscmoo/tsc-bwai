@@ -7,9 +7,7 @@ a_unordered_map<a_string, double> weights;
 
 double getweight(a_string name) {
 	double&weight = weights[name];
-	if (weight == 0.0) weight = 1.0;
-	if (weight < 1.0 / 32) weight = 1.0 / 32;
-	if (weight > 8.0) weight = 8.0;
+ 	if (weight == 0.0) weight = 1.0;
 	return weight;
 }
 
