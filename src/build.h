@@ -119,6 +119,7 @@ build_task*get_prerequisite(build_type*type) {
 }
 build_task*get_prerequisite_if_needed(build_task*t,build_type*type) {
 	if (type->unit) {
+		if (type->unit == unit_types::spire && !my_units_of_type[unit_types::greater_spire].empty()) type = get_build_type(unit_types::greater_spire);
 		for (unit*u : my_units_of_type[type->unit]) {
 			if (t->type->unit && t->type->unit->is_addon && u->addon) continue;
 			if (u->is_completed) return nullptr;
@@ -657,11 +658,14 @@ void execute_build(build_task&b) {
 				auto is_safe = [&](xy pos) {
 					int threat_count = 0;
 					for (unit*e : enemy_units) {
-						if (!e->stats->ground_weapon) continue;
+						if (!e->stats->ground_weapon && e->type != unit_types::bunker) continue;
 						if (e->type->is_worker) continue;
-						if (diag_distance(pos - e->pos) <= 32 * 15) ++threat_count;
+						if (diag_distance(pos - e->pos) <= 32 * 15) {
+							if (e->building) threat_count += 10;
+							else ++threat_count;
+						}
 					}
-					return threat_count < 15;
+					return threat_count < 8;
 				};
 				if (default_build_pos == xy() || !is_safe(default_build_pos) || force_find_new_default_build_pos) {
 					force_find_new_default_build_pos = false;
@@ -1140,7 +1144,9 @@ void execute_build(build_task&b) {
 					}
 					else xcept("unreachable (non-building build addon)");
 				} else if (b.type->unit && b.type->unit->is_building) {
-					if (builder->remaining_whatever_time <= latency_frames) {
+					int busy_until = builder->remaining_whatever_time;
+					if (builder->type == unit_types::hatchery || builder->type == unit_types::lair || builder->type == unit_types::hive) busy_until = std::max(builder->remaining_upgrade_time, builder->remaining_research_time);
+					if (busy_until <= latency_frames) {
 						if (current_frame + latency_frames >= b.build_frame) {
 							if (builder->controller->noorder_until <= current_frame && builder->game_unit->morph(b.type->unit->game_unit_type)) {
 								log("train hurray\n");
