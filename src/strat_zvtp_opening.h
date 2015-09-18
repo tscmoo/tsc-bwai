@@ -192,7 +192,11 @@ struct strat_zvtp_opening {
 				}
 				int n = 8;
 				auto s = get_next_base();
-				if (s) n = (int)s->resources.size();
+				//if (s) n = (int)s->resources.size();
+				if (s) {
+					n = 0;
+					for (auto&v : s->resources) ++n;
+				}
 				if (free_mineral_patches >= n && long_distance_miners() == 0) return;
 			}
 
@@ -816,6 +820,7 @@ struct strat_zvtp_opening {
 
  			//if (!my_completed_units_of_type[unit_types::spire].empty()) break;
 			if (current_used_total_supply >= 60) break;
+			if (should_transition()) break;
 
 			auto all_done = [&]() {
 // 				if (being_rushed) {
