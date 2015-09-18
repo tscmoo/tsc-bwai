@@ -17,6 +17,7 @@ namespace combat_eval {
 		int spider_mine_count = 0;
 		int irradiate_timer = 0;
 		int target_count = 0;
+		double next_damage_override = 0.0;
 	};
 
 	double get_damage_type_modifier(int damage_type, int target_size) {
@@ -43,12 +44,14 @@ namespace combat_eval {
 			double damage_dealt = 0;
 			double damage_taken = 0;
 			double score = 0;
+			bool attacked = false;
 			bool has_stim = false;
 			bool has_spider_mines = false;
 			weapon_stats*spider_mine_weapon;
 			int bunker_count = 0;
 			bool has_static_defence = false;
 			bool run = false;
+			bool wait_until_attacked = false;
 		};
 		std::array<team_t, 2> teams;
 		int total_frames = 0;
@@ -186,7 +189,7 @@ namespace combat_eval {
 // 											if (ec.target_count >= 3) continue;
 // 										}
 										if (w->max_range <= 32) {
-											if (ec.target_count >= 2) continue;
+											if (ec.target_count >= 3) continue;
 											inc_target_count = true;
 										}
 									}
@@ -223,7 +226,9 @@ namespace combat_eval {
 							} else if (c.move + target->move > (use_spider_mine ? 0 : (w ? w->max_range : 32 * 2))) {
 								if (speed > 0) {
 									++target_count;
-									if (my_team.has_static_defence) c.move -= speed * frame_resolution / 4;
+// 									if (my_team.has_static_defence) c.move -= speed * frame_resolution / 4;
+// 									else c.move -= speed * frame_resolution;
+									if (my_team.wait_until_attacked && !my_team.attacked) c.move -= speed * frame_resolution / 100.0;
 									else c.move -= speed * frame_resolution;
 									my_team.score += speed / 1000.0 * frame_resolution;
 								}
@@ -244,7 +249,11 @@ namespace combat_eval {
 											damage *= frame_resolution;
 										}
 										damage *= damage_mult;
-										if (target->move + c.move < (w ? w->min_range : 0.0)) damage /= 2;
+										if (c.next_damage_override) {
+											damage = c.next_damage_override;
+											c.next_damage_override = 0.0;
+										}
+										//if (target->move + c.move < (w ? w->min_range : 0.0)) damage /= 2;
 										if (target->shields > 0) {
 											target->shields -= damage;
 											if (target->shields < 0) {
@@ -257,7 +266,12 @@ namespace combat_eval {
 										//log("%s dealt %g damage to %s\n", c.st->type->name, damage_dealt, target->st->type->name);
 										my_team.damage_dealt += damage_dealt;
 										enemy_team.damage_taken += damage_dealt;
+										if (!enemy_team.attacked) enemy_team.attacked = true;
 										int cooldown = w ? w->cooldown : frame_resolution;
+										if (damage_dealt < damage) {
+											cooldown = 1;
+											c.next_damage_override = damage - damage_dealt;
+										}
 										if (c.st->type == unit_types::interceptor) cooldown = 60;
 										if (c.st->type == unit_types::marine) {
 											if (my_team.has_stim && c.stim_pack_timer == 0 && c.hp > 10) {
@@ -270,53 +284,57 @@ namespace combat_eval {
 										c.cooldown += cooldown;
 										my_team.score += damage_dealt / 100;
 										if (target->hp <= 0) {
+											//log("%s killed\n", target->st->type->name);
 											double value = target->st->type->total_minerals_cost + target->st->type->total_gas_cost;
 											my_team.score += value;
 											if (target->st->type->is_worker) my_team.score += value;
 											if (target->st->type == unit_types::bunker) --enemy_team.bunker_count;
 										}
 									};
-									if (use_spider_mine) {
+									if (c.st->type == unit_types::siege_tank_siege_mode || c.st->type == unit_types::valkyrie || c.st->type == unit_types::firebat || c.st->type == unit_types::lurker) {
+										attack(target, 1.0);
+										c.cooldown /= 2;
+									} else if (use_spider_mine) {
 										w = my_team.spider_mine_weapon;
 										hits = 1;
 										attack(target, 0.5);
 										--c.spider_mine_count;
 									} else attack(target, 1.0);
-									if (c.st->type == unit_types::siege_tank_siege_mode || c.st->type == unit_types::valkyrie || c.st->type == unit_types::firebat || c.st->type == unit_types::lurker || c.st->type == unit_types::firebat) {
-										combatant*ntarget = target + 1;
-										int max_n = 1;
-										if (c.st->type == unit_types::valkyrie) max_n = 3;
-										if (c.st->type == unit_types::lurker) max_n = 3;
-										if (c.st->type == unit_types::firebat) {
-											if (target->st->ground_weapon && target->st->ground_weapon->max_range > 64) max_n = 0;
-											else max_n = 2;
-										}
-										for (int i = 0; i < max_n; ++i) {
-											if (ntarget < enemy_team.units.data() + enemy_team.units.size()) {
-												weapon_stats*nw = ntarget->st->type->is_flyer ? c.st->air_weapon : c.st->ground_weapon;
-												if (nw == w && c.move + ntarget->move < w->max_range && ntarget->hp > 0) {
-													attack(ntarget, 1.0);
-												}
-											}
-											++ntarget;
-										}
-									}
+// 									if (c.st->type == unit_types::siege_tank_siege_mode || c.st->type == unit_types::valkyrie || c.st->type == unit_types::firebat || c.st->type == unit_types::lurker || c.st->type == unit_types::firebat) {
+// 										combatant*ntarget = target + 1;
+// 										int max_n = 1;
+// 										if (c.st->type == unit_types::valkyrie) max_n = 3;
+// 										if (c.st->type == unit_types::lurker) max_n = 3;
+// 										if (c.st->type == unit_types::firebat) {
+// 											if (target->st->ground_weapon && target->st->ground_weapon->max_range > 64) max_n = 0;
+// 											else max_n = 2;
+// 										}
+// 										for (int i = 0; i < max_n; ++i) {
+// 											if (ntarget < enemy_team.units.data() + enemy_team.units.size()) {
+// 												weapon_stats*nw = ntarget->st->type->is_flyer ? c.st->air_weapon : c.st->ground_weapon;
+// 												if (nw == w && c.move + ntarget->move < w->max_range && ntarget->hp > 0) {
+// 													attack(ntarget, 1.0);
+// 												}
+// 											}
+// 											++ntarget;
+// 										}
+// 									}
 								} else {
 									if (c.st->type == unit_types::dragoon && (target->st->type == unit_types::marine || target->st->type == unit_types::firebat)) {
 										if (speed > 0 && c.move < 32 * 4) {
 											c.move += speed * frame_resolution;
 										}
 									}
-									if (c.st->type == unit_types::mutalisk) {
-										if (speed > 0 && (target->st->type == unit_types::archon)) {
-											c.move += speed * frame_resolution;
-										}
-									}
-									if (c.st->type == unit_types::marine) {
-										if (speed > 0 && (target->st->type == unit_types::zergling)) {
-											c.move += speed * frame_resolution / 2;
-										}
-									}
+// 									if (c.st->type == unit_types::mutalisk) {
+// 										if (speed > 0 && (target->st->type == unit_types::archon)) {
+// 											c.move += speed * frame_resolution;
+// 										}
+// 									}
+// 									if (c.st->type == unit_types::marine) {
+// 										if (speed > 0 && (target->st->type == unit_types::zergling)) {
+// 											c.move += speed * frame_resolution / 2;
+// 										}
+// 									}
 								}
 							}
 						}
