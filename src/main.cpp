@@ -49,14 +49,13 @@
 #undef near
 #undef far
 
-#include <tsc/containers.h>
-#include <tsc/alloc_unique.h>
-#include <tsc/alloc.h>
-#include <tsc/alloc_containers.h>
+#include "tsc/intrusive_list.h"
+#include "tsc/alloc.h"
+#include "tsc/alloc_containers.h"
 
-#include <tsc/strf.h>
+#include "tsc/strf.h"
 
-constexpr bool test_mode = true;
+constexpr bool test_mode = false;
 
 int current_frame;
 
@@ -138,12 +137,11 @@ const char*format(const char*fmt,T&&...args) {
 	return tsc::strf::format(format_string,fmt,std::forward<T>(args)...);
 }
 
-//#include <tsc/coroutine.h>
-#include <tsc/userthreads.h>
+#include "tsc/userthreads.h"
 
-#include <tsc/high_resolution_timer.h>
-#include <tsc/rng.h>
-#include <tsc/bitset.h>
+#include "tsc/high_resolution_timer.h"
+#include "tsc/rng.h"
+#include "tsc/bitset.h"
 
 using tsc::rng;
 using tsc::a_string;
@@ -158,15 +156,15 @@ using tsc::a_unordered_set;
 using tsc::a_unordered_multiset;
 using tsc::a_unordered_map;
 using tsc::a_unordered_multimap;
-//using tsc::a_circular_queue;
-template<typename T>
-using a_unique_ptr = std::unique_ptr<T, tsc::allocate_unique_deleter<T, tsc::alloc<T>>>;
-template<typename T>
-auto allocate_unique() {
-	return tsc::allocate_unique<T, tsc::alloc<T>>();
-}
 
-#include <tsc/json.h>
+#include "tsc/json.h"
+
+struct default_link_f {
+	template<typename T>
+	auto* operator()(T*ptr) {
+		return (std::pair<T*, T*>*)&ptr->link;
+	}
+};
 
 const double PI = 3.1415926535897932384626433;
 
@@ -336,7 +334,7 @@ struct module : BWAPI::AIModule {
 
 		if (!game->self()) return;
 
-		send_text("tsc-bwai v0.3.102 dev");
+		send_text("tsc-bwai v0.5.2");
 
 		init();
 
@@ -518,16 +516,33 @@ int main() {
 
 #else
 
-extern "C" __declspec(dllexport)
-void gameInit(BWAPI::Game* game) {
+template<bool b = is_bwapi_4, typename std::enable_if<b>::type* = 0>
+__declspec(dllexport) void gameInit_impl(BWAPI::Game* game) {
 	BWAPI::BroodwarPtr = game;
 	::game = game;
 }
-extern "C" __declspec(dllexport)
-BWAPI::AIModule*newAIModule() {
+template<bool b = is_bwapi_4, typename std::enable_if<!b>::type* = 0>
+__declspec(dllexport) void gameInit_impl(BWAPI::Game* game) {
+	BWAPI::Broodwar = game;
+	::game = game;
+}
+template<bool b = is_bwapi_4, typename std::enable_if<b>::type* = 0>
+__declspec(dllexport) BWAPI::AIModule*newAIModule_impl(BWAPI::Game*game) {
 	return new module();
-	static module m;
-	return &m;
+}
+template<bool b = is_bwapi_4, typename std::enable_if<!b>::type* = 0>
+__declspec(dllexport) BWAPI::AIModule*newAIModule_impl(BWAPI::Game*game) {
+	BWAPI::Broodwar = game;
+	::game = game;
+	return new module();
+}
+
+extern "C" __declspec(dllexport) void gameInit(BWAPI::Game* game) {
+	gameInit_impl(game);
+}
+//extern "C" __declspec(dllexport) BWAPI::AIModule*newAIModule(BWAPI::Game*game) {
+extern "C" __declspec(dllexport) BWAPI::AIModule*newAIModule() {
+	return newAIModule_impl(nullptr);
 }
 
 #endif
