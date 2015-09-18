@@ -118,8 +118,15 @@ void scout::process() {
 				scout_unit->controller->action = unit_controller::action_scout;
 				scout_unit->controller->go_to = dst;
 			} else {
-				scout_unit->controller->action = unit_controller::action_idle;
-				scout_unit = nullptr;
+				xy expo_loc;
+				for (unit*u : my_resource_depots) {
+					if (diag_distance(u->pos - my_start_location) > 32 * 4) expo_loc = u->pos;
+				}
+				if (scout_location != expo_loc) scout_location = expo_loc;
+				else {
+					scout_unit->controller->action = unit_controller::action_idle;
+					scout_unit = nullptr;
+				}
 			}
 		}
 
@@ -563,7 +570,8 @@ void process_scouts() {
 		}
 	}
 	if (current_frame <= 15 * 60 * 8 && my_completed_units_of_type[unit_types::marine].empty() && !no_proxy_scout) {
-		if (current_frame - last_proxy_scout >= 15 * 60 * 3) {
+		//if (current_frame - last_proxy_scout >= 15 * 60 * 3) {
+		if (current_frame - last_proxy_scout >= 15 * 60 * 3 && last_proxy_scout == 0) {
 			last_proxy_scout = current_frame;
 			unit*scout_unit = get_best_score(my_workers, [&](unit*u) {
 				if (u->controller->action != unit_controller::action_gather) return std::numeric_limits<double>::infinity();
