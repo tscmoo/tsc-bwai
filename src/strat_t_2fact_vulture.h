@@ -4,7 +4,8 @@ struct strat_t_2fact_vulture : strat_t_base {
 
 	virtual void init() override {
 
-		combat::aggressive_vultures = false;
+		combat::aggressive_vultures = true;
+		combat::no_scout_around = false;
 
 		get_upgrades::set_upgrade_value(upgrade_types::ion_thrusters, -1.0);
 		get_upgrades::set_upgrade_value(upgrade_types::spider_mines, -1.0);
@@ -37,12 +38,12 @@ struct strat_t_2fact_vulture : strat_t_base {
 			}
 		}
 
-		if (my_units_of_type[unit_types::vulture].size() >= 6) {
-			is_attacking = true;
-		}
-
-		combat::no_aggressive_groups = !is_attacking;
-		combat::aggressive_groups_done_only = false;
+// 		if (my_units_of_type[unit_types::vulture].size() >= 6) {
+// 			is_attacking = true;
+// 		}
+// 
+// 		combat::no_aggressive_groups = !is_attacking;
+// 		combat::aggressive_groups_done_only = false;
 		
 		if (enemy_air_army_supply) return true;
 		if (current_used_total_supply >= 60) return true;
