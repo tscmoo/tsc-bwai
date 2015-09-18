@@ -22,12 +22,16 @@ struct strat_z_base {
 	int enemy_bc_count = 0;
 	int enemy_science_vessel_count = 0;
 	int enemy_dropship_count = 0;
+	int enemy_reaver_count = 0;
+	int enemy_shuttle_count = 0;
+	int enemy_robotics_facility_count = 0;
 	double enemy_army_supply = 0.0;
 	double enemy_air_army_supply = 0.0;
 	double enemy_ground_army_supply = 0.0;
 	double enemy_ground_large_army_supply = 0.0;
 	double enemy_ground_small_army_supply = 0.0;
 	double enemy_weak_against_ultra_supply = 0.0;
+	double enemy_anti_air_army_supply = 0.0;
 	int enemy_static_defence_count = 0;
 	int enemy_proxy_building_count = 0;
 	double enemy_attacking_army_supply = 0.0;
@@ -40,8 +44,12 @@ struct strat_z_base {
 	int enemy_units_that_shoot_up_count = 0;
 	int enemy_gas_count = 0;
 	int enemy_barracks_count = 0;
+	int enemy_gateway_count = 0;
 	int enemy_zergling_count = 0;
 	int enemy_spire_count = 0;
+	int enemy_cloaked_unit_count = 0;
+	int enemy_zealot_count = 0;
+	int enemy_worker_count = 0;
 
 	bool opponent_has_expanded = false;
 	bool being_rushed = false;
@@ -51,12 +59,15 @@ struct strat_z_base {
 	bool default_worker_defence = true;
 
 	int min_bases = 2;
+	int max_bases = 0;
 
 	int opening_state = 0;
 	int gas_trick_state = 0;
 	int sleep_time = 15 * 5;
 
 	int attack_interval = 0;
+
+	bool call_build = true;
 
 	void bo_gas_trick(unit_type*ut = unit_types::drone) {
 		if (!bo_all_done()) return;
@@ -101,6 +112,8 @@ struct strat_z_base {
 	bool can_expand = false;
 	bool force_expand = false;
 
+	bool is_attacking = false;
+
 	virtual void init() = 0;
 	virtual bool tick() = 0;
 
@@ -142,7 +155,7 @@ struct strat_z_base {
 		return count;
 	};
 
-	auto get_next_base() {
+	std::function<refcounted_ptr<resource_spots::spot>()> get_next_base = []() {
 		auto st = buildpred::get_my_current_state();
 		unit_type*worker_type = unit_types::drone;
 		unit_type*cc_type = unit_types::hatchery;
@@ -160,11 +173,17 @@ struct strat_z_base {
 		return get_best_score(available_bases, [&](resource_spots::spot*s) {
 			double score = unit_pathing_distance(worker_type, s->cc_build_pos, st.bases.front().s->cc_build_pos);
 			double res = 0;
-			double ned = get_best_score_value(enemy_buildings, [&](unit*e) {
+// 			double ned = get_best_score_value(enemy_buildings, [&](unit*e) {
+// 				if (e->type->is_worker) return std::numeric_limits<double>::infinity();
+// 				return diag_distance(s->pos - e->pos);
+// 			});
+			unit*ne = get_best_score(enemy_buildings, [&](unit*e) {
 				if (e->type->is_worker) return std::numeric_limits<double>::infinity();
 				return diag_distance(s->pos - e->pos);
 			});
-			if (ned <= 32 * 30) score += 10000;
+			double ned = ne ? diag_distance(s->pos - ne->pos) : 0.0;
+			if (st.bases.size() == 1 && (!ne || (!ne->stats->ground_weapon && ne->type != unit_types::bunker))) ned = 0.0;
+			if (ned && ned <= 32 * 30) score += 10000;
 			bool has_gas = false;
 			for (auto&r : s->resources) {
 				res += r.u->resources;
@@ -194,6 +213,7 @@ struct strat_z_base {
 		}
 		for (unit*u : enemy_units) {
 			if (u->building || u->type->is_worker || u->type->is_non_usable) continue;
+			if (u->is_flying) continue;
 			eval.add_unit(u, 1);
 		}
 		eval.run();
@@ -223,12 +243,81 @@ struct strat_z_base {
 		return eval.teams[1].end_supply == 0;
 	};
 
+	void set_build_vars(buildpred::state&st) {
+		using namespace buildpred;
+		drone_count = count_units_plus_production(st, unit_types::drone);
+		hatch_count = count_units_plus_production(st, unit_types::hatchery) + count_units_plus_production(st, unit_types::lair) + count_units_plus_production(st, unit_types::hive);
+		completed_hatch_count = st.units[unit_types::hatchery].size() + st.units[unit_types::lair].size() + st.units[unit_types::hive].size();
+		larva_count = 0;
+		for (int i = 0; i < 3; ++i) {
+			for (st_unit&u : st.units[i == 0 ? unit_types::hive : i == 1 ? unit_types::lair : unit_types::hatchery]) {
+				larva_count += u.larva_count;
+			}
+		}
+
+		zergling_count = count_units_plus_production(st, unit_types::zergling);
+		mutalisk_count = count_units_plus_production(st, unit_types::mutalisk);
+		scourge_count = count_units_plus_production(st, unit_types::scourge);
+		hydralisk_count = count_units_plus_production(st, unit_types::hydralisk);
+		lurker_count = count_units_plus_production(st, unit_types::lurker);
+		ultralisk_count = count_units_plus_production(st, unit_types::ultralisk);
+		queen_count = count_units_plus_production(st, unit_types::queen);
+		defiler_count = count_units_plus_production(st, unit_types::defiler);
+		devourer_count = count_units_plus_production(st, unit_types::devourer);
+		guardian_count = count_units_plus_production(st, unit_types::guardian);
+		sunken_count = count_units_plus_production(st, unit_types::sunken_colony);
+		spore_count = count_units_plus_production(st, unit_types::spore_colony);
+
+		army_supply = 0.0;
+		air_army_supply = 0.0;
+		ground_army_supply = 0.0;
+		for (auto&v : st.units) {
+			if (v.second.empty()) continue;
+			unit_type*ut = v.first;
+			if (!ut->is_worker) {
+				army_supply += ut->required_supply * v.second.size();
+				if (ut->is_flyer) air_army_supply += ut->required_supply * v.second.size();
+				else ground_army_supply += ut->required_supply * v.second.size();
+			}
+		}
+		for (auto&v : st.production) {
+			unit_type*ut = v.second;
+			if (!ut->is_worker) {
+				army_supply += ut->required_supply;
+				if (ut->is_flyer) air_army_supply += ut->required_supply;
+				else ground_army_supply += ut->required_supply;
+			}
+		}
+	}
+
+	int n_mineral_patches() {
+		int r = 0;
+		for (auto&b : buildpred::get_my_current_state().bases) {
+			for (auto&s : b.s->resources) {
+				resource_gathering::resource_t*res = nullptr;
+				for (auto&s2 : resource_gathering::live_resources) {
+					if (s2.u == s.u) {
+						res = &s2;
+						break;
+					}
+				}
+				if (res) {
+					if (!res->gatherers.empty()) ++r;
+				}
+			}
+		}
+		return r;
+	};
+
 	void run() {
 
 		using namespace buildpred;
 
 		combat::no_aggressive_groups = true;
 		combat::no_scout_around = false;
+
+		combat::aggressive_zerglings = false;
+		combat::aggressive_mutalisks = false;
 
 		get_upgrades::set_upgrade_value(upgrade_types::burrow, 100000.0);
 		get_upgrades::set_upgrade_value(upgrade_types::ventral_sacs, 100000.0);
@@ -239,6 +328,7 @@ struct strat_z_base {
 		scouting::scout_supply = 12;
 
 		resource_gathering::max_gas = 0.0;
+
 // 
 // 		auto get_static_defence_pos = [&]() {
 // 			a_vector<xy> my_bases;
@@ -401,21 +491,38 @@ struct strat_z_base {
 				}
 			}
 
-			if ((int)st.bases.size() >= min_bases) {
-				int my_hatch_count = my_units_of_type[unit_types::hatchery].size() + my_units_of_type[unit_types::lair].size() + my_units_of_type[unit_types::hive].size();
-				if (my_hatch_count >= (int)st.bases.size() * 2) {
-					int n = 8;
-					auto s = get_next_base();
-					if (s) n = (int)s->resources.size();
-					if (free_mineral_patches() >= n && long_distance_miners() == 0) return;
-				} else {
-					if (free_mineral_patches() >= 2 && long_distance_miners() == 0) return;
+			int bases_with_minerals = 0;
+			for (auto&b : get_my_current_state().bases) {
+				int min_count = 0;
+				for (auto&s : b.s->resources) {
+					if (s.u->type->is_minerals) ++min_count;
+				}
+				if (min_count >= 4) ++bases_with_minerals;
+			}
+
+			if (bases_with_minerals && (current_used_total_supply < 60.0 || free_mineral_patches())) {
+				if (max_bases && bases_with_minerals >= max_bases) return;
+				if ((int)st.bases.size() >= min_bases) {
+					int my_hatch_count = my_units_of_type[unit_types::hatchery].size() + my_units_of_type[unit_types::lair].size() + my_units_of_type[unit_types::hive].size();
+					if (my_hatch_count > 5 || my_hatch_count >= (int)st.bases.size() * 2) {
+						int n = 8;
+						auto s = get_next_base();
+						//if (s) n = (int)s->resources.size();
+						if (s) {
+							n = 0;
+							for (auto&v : s->resources) ++n;
+						}
+						if (free_mineral_patches() >= n && long_distance_miners() == 0) return;
+					} else {
+						if (free_mineral_patches() >= 2 && long_distance_miners() == 0) return;
+					}
 				}
 			}
 
 			for (auto&b : build::build_tasks) {
 				if (b.built_unit || b.dead) continue;
-				if (b.type->unit && b.type->unit->is_resource_depot && b.type->unit->builder_type->is_worker) {
+				//if (b.type->unit && b.type->unit->is_resource_depot && b.type->unit->builder_type->is_worker) {
+				if (b.type->unit == unit_types::hatchery) {
 					xy pos = b.build_pos;
 					build::unset_build_pos(&b);
 					auto s = get_next_base();
@@ -437,7 +544,6 @@ struct strat_z_base {
 			return damage;
 		};
 
-		bool is_attacking = false;
 		double attack_my_lost;
 		double attack_op_lost;
 		int last_attack_begin = 0;
@@ -483,12 +589,16 @@ struct strat_z_base {
 			enemy_bc_count = 0;
 			enemy_science_vessel_count = 0;
 			enemy_dropship_count = 0;
+			enemy_reaver_count = 0;
+			enemy_shuttle_count = 0;
+			enemy_robotics_facility_count = 0;
 			enemy_army_supply = 0.0;
 			enemy_air_army_supply = 0.0;
 			enemy_ground_army_supply = 0.0;
 			enemy_ground_large_army_supply = 0.0;
 			enemy_ground_small_army_supply = 0.0;
 			enemy_weak_against_ultra_supply = 0.0;
+			enemy_anti_air_army_supply = 0.0;
 			enemy_static_defence_count = 0;
 			enemy_proxy_building_count = 0;
 			enemy_attacking_army_supply = 0.0;
@@ -501,8 +611,12 @@ struct strat_z_base {
 			enemy_units_that_shoot_up_count = 0;
 			enemy_gas_count = 0;
 			enemy_barracks_count = 0;
+			enemy_gateway_count = 0;
 			enemy_zergling_count = 0;
 			enemy_spire_count = 0;
+			enemy_cloaked_unit_count = 0;
+			enemy_zealot_count = 0;
+			enemy_worker_count = 0;
 
 			update_possible_start_locations();
 			for (unit*e : enemy_units) {
@@ -523,6 +637,9 @@ struct strat_z_base {
 				if (e->type == unit_types::battlecruiser) ++enemy_bc_count;
 				if (e->type == unit_types::science_vessel) ++enemy_science_vessel_count;
 				if (e->type == unit_types::dropship) ++enemy_dropship_count;
+				if (e->type == unit_types::reaver) ++enemy_reaver_count;
+				if (e->type == unit_types::shuttle) ++enemy_shuttle_count;
+				if (e->type == unit_types::robotics_facility) ++enemy_robotics_facility_count;
 				if (!e->type->is_worker && !e->building) {
 					if (e->is_flying) enemy_air_army_supply += e->type->required_supply;
 					else {
@@ -532,6 +649,7 @@ struct strat_z_base {
 						if (weapon_damage_against_size(e->stats->ground_weapon, unit_type::size_large) <= 12.0) enemy_weak_against_ultra_supply += e->type->required_supply;
 					}
 					enemy_army_supply += e->type->required_supply;
+					if (e->stats->air_weapon) enemy_anti_air_army_supply += e->type->required_supply;
 				}
 				if (e->type == unit_types::missile_turret) ++enemy_static_defence_count;
 				if (e->type == unit_types::photon_cannon) ++enemy_static_defence_count;
@@ -556,8 +674,12 @@ struct strat_z_base {
 				if (e->stats->air_weapon) ++enemy_units_that_shoot_up_count;
 				if (e->type->is_gas) ++enemy_gas_count;
 				if (e->type == unit_types::barracks) ++enemy_barracks_count;
+				if (e->type == unit_types::gateway) ++enemy_gateway_count;
 				if (e->type == unit_types::zergling) ++enemy_zergling_count;
 				if (e->type == unit_types::spire) ++enemy_spire_count;
+				if (e->cloaked) ++enemy_cloaked_unit_count;
+				if (e->type == unit_types::zealot) ++enemy_zealot_count;
+				if (e->type->is_worker) ++enemy_worker_count;
 			}
 
 			if (enemy_terran_unit_count + enemy_protoss_unit_count) overlord_scout(enemy_gas_count + enemy_units_that_shoot_up_count + enemy_barracks_count == 0);
@@ -597,11 +719,57 @@ struct strat_z_base {
 				}
 			}
 
-			if (default_worker_defence) {
+// 			if (army_supply < 8.0 && enemy_proxy_building_count) {
+// 				for (unit*u : my_workers) {
+// 					u->force_combat_unit = true;
+// 				}
+// 			} else {
+// 				for (unit*u : my_workers) {
+// 					u->force_combat_unit = false;
+// 				}
+// 			}
+
+			//if (default_worker_defence) {
+			if (default_worker_defence && current_used_total_supply - my_workers.size() < 8.0 && enemy_proxy_building_count && enemy_army_supply == 0.0) {
+
+				bool dont_pull_workers = false;
+				xy proxy_pos;
+				for (auto&g : combat::groups) {
+					if (!g.is_aggressive_group && !g.is_defensive_group) {
+						for (unit*e : g.enemies) {
+							if (!e->building) continue;
+							if (e->type->is_gas) continue;
+							if (e->is_flying) continue;
+							if (e->type != unit_types::pylon && e->type != unit_types::photon_cannon && e->type != unit_types::bunker) {
+								dont_pull_workers = true;
+								break;
+							}
+						}
+						for (unit*e : g.enemies) {
+							if (!e->building) continue;
+							if (e->type->is_gas) continue;
+							if (e->is_flying) continue;
+							if (e->type != unit_types::pylon && e->type != unit_types::photon_cannon && e->type != unit_types::bunker) {
+							}
+							double e_d = get_best_score_value(possible_start_locations, [&](xy pos) {
+								return unit_pathing_distance(unit_types::scv, e->pos, pos);
+							});
+							if (unit_pathing_distance(unit_types::scv, e->pos, combat::my_closest_base) < e_d) {
+								proxy_pos = e->pos;
+								break;
+							}
+						}
+					}
+				}
+				if (dont_pull_workers) proxy_pos = xy();
+
 				//if (is_defending && !ground_defence_fight_ok && my_workers.size() < 18) {
-				if (is_defending && my_workers.size() < 18) {
-					int n = my_workers.size() / 2;
-					//int n = my_workers.size() - 3;
+				//if (is_defending && my_workers.size() < 18 && current_used_total_supply < 20) {
+				if (proxy_pos != xy() && my_workers.size() < 18 && current_used_total_supply < 20) {
+					//int n = my_workers.size() / 2;
+					int n = my_workers.size() - 3;
+					if (enemy_proxy_building_count <= 1) n = 3;
+					if (n > enemy_proxy_building_count * 4) n = enemy_proxy_building_count * 4;
 					for (unit*u : my_workers) {
 						if (u->force_combat_unit) {
 							if (u->hp < u->stats->hp / 2) u->force_combat_unit = false;
@@ -618,12 +786,33 @@ struct strat_z_base {
 						});
 						if (!u) break;
 						u->force_combat_unit = true;
+						combat::combat_unit*cu = nullptr;
+						for (auto*a : combat::live_combat_units) {
+							if (a->u == u) cu = a;
+						}
+						if (cu) {
+							if (diag_distance(cu->u->pos - proxy_pos) > 32 * 6) {
+								cu->strategy_busy_until = current_frame + 15 * 7;
+								cu->action = combat::combat_unit::action_offence;
+								cu->subaction = combat::combat_unit::subaction_move;
+								cu->target_pos = proxy_pos;
+							} else {
+								cu->strategy_attack_until = current_frame + 15 * 7;
+								cu->strategy_busy_until = 0;
+							}
+// 							cu->strategy_attack_until = current_frame + 15 * 2;
+// 							cu->strategy_busy_until = 0;
+						}
 						--n;
 					}
 				} else {
 					for (unit*u : my_workers) {
 						if (u->force_combat_unit) u->force_combat_unit = false;
 					}
+				}
+			} else {
+				for (unit*u : my_workers) {
+					if (u->force_combat_unit) u->force_combat_unit = false;
 				}
 			}
 
@@ -677,18 +866,24 @@ struct strat_z_base {
 
 			if (default_upgrades) {
 
+				if (enemy_dt_count || enemy_lurker_count || enemy_cloaked_unit_count) {
+					get_upgrades::set_upgrade_value(upgrade_types::pneumatized_carapace, -1.0);
+				}
+
 				if (my_zergling_count >= 8) {
 					get_upgrades::set_upgrade_value(upgrade_types::metabolic_boost, -1.0);
 				}
 
-				if (enemy_ground_small_army_supply >= 10) {
-					get_upgrades::set_upgrade_value(upgrade_types::lurker_aspect, -1.0);
-				} else {
-					if (current_used_total_supply >= 100) get_upgrades::set_upgrade_value(upgrade_types::lurker_aspect, -1.0);
-					else get_upgrades::set_upgrade_value(upgrade_types::lurker_aspect, 0.0);
+				if (!my_completed_units_of_type[unit_types::lair].empty()) {
+					if (enemy_ground_small_army_supply >= 10 && current_used_total_supply >= 60) {
+						get_upgrades::set_upgrade_value(upgrade_types::lurker_aspect, -1.0);
+					} else {
+						if (current_used_total_supply >= 100) get_upgrades::set_upgrade_value(upgrade_types::lurker_aspect, -1.0);
+						else get_upgrades::set_upgrade_value(upgrade_types::lurker_aspect, 0.0);
+					}
 				}
 
-				if (enemy_ground_large_army_supply >= 10) {
+				if (enemy_ground_large_army_supply >= 10 || my_units_of_type[unit_types::hydralisk].size() >= 12) {
 					get_upgrades::set_upgrade_value(upgrade_types::muscular_augments, -1.0);
 					get_upgrades::set_upgrade_value(upgrade_types::grooved_spines, -1.0);
 					get_upgrades::set_upgrade_order(upgrade_types::lurker_aspect, -11.0);
@@ -697,9 +892,9 @@ struct strat_z_base {
 					get_upgrades::set_upgrade_value(upgrade_types::zerg_missile_attacks_1, -1.0);
 				}
 				if (my_queen_count) {
-					if (enemy_ground_small_army_supply >= 20) get_upgrades::set_upgrade_value(upgrade_types::ensnare, -1.0);
+					//if (enemy_ground_small_army_supply >= 20) get_upgrades::set_upgrade_value(upgrade_types::ensnare, -1.0);
 					get_upgrades::set_upgrade_value(upgrade_types::spawn_broodling, -1.0);
-					get_upgrades::set_upgrade_order(upgrade_types::ensnare, -10.0);
+					//get_upgrades::set_upgrade_order(upgrade_types::ensnare, -10.0);
 					get_upgrades::set_upgrade_order(upgrade_types::spawn_broodling, -9.0);
 				}
 
@@ -727,64 +922,32 @@ struct strat_z_base {
 					get_upgrades::set_upgrade_order(upgrade_types::plague, -9.0);
 				}
 
-				if (enemy_weak_against_ultra_supply >= 14 && !my_completed_units_of_type[unit_types::ultralisk_cavern].empty()) {
+				if (current_used_total_supply >= 100 && enemy_weak_against_ultra_supply >= 14 && !my_completed_units_of_type[unit_types::ultralisk_cavern].empty()) {
 					get_upgrades::set_upgrade_value(upgrade_types::chitinous_plating, -1.0);
+					get_upgrades::set_upgrade_value(upgrade_types::anabolic_synthesis, -1.0);
+				}
+			}
+
+			if (current_used_total_supply < 60) {
+				if (!my_completed_units_of_type[unit_types::sunken_colony].empty()) {
+					combat::my_closest_base_override_until = current_frame + 15 * 20;
+					combat::my_closest_base_override = my_completed_units_of_type[unit_types::sunken_colony].front()->pos;
+					combat::defence_choke_use_nearest_until = current_frame + 15 * 20;
 				}
 			}
 
 			can_expand = get_next_base();
 			force_expand = can_expand && long_distance_miners() >= 1 && my_units_of_type[unit_types::hatchery].size() == my_completed_units_of_type[unit_types::hatchery].size();
+			if (can_expand && free_mineral_patches() == 0 && my_workers.size() >= 45) force_expand = true;
 
-			if (tick()) {
+			if (tick() || should_transition()) {
 				bo_cancel_all();
 				break;
 			}
 
 			auto build = [&](state&st) {
 
-				drone_count = count_units_plus_production(st, unit_types::drone);
-				hatch_count = count_units_plus_production(st, unit_types::hatchery) + count_units_plus_production(st, unit_types::lair) + count_units_plus_production(st, unit_types::hive);
-				completed_hatch_count = st.units[unit_types::hatchery].size() + st.units[unit_types::lair].size() + st.units[unit_types::hive].size();
-				larva_count = 0;
-				for (int i = 0; i < 3; ++i) {
-					for (st_unit&u : st.units[i == 0 ? unit_types::hive : i == 1 ? unit_types::lair : unit_types::hatchery]) {
-						larva_count += u.larva_count;
-					}
-				}
-
-				zergling_count = count_units_plus_production(st, unit_types::zergling);
-				mutalisk_count = count_units_plus_production(st, unit_types::mutalisk);
-				scourge_count = count_units_plus_production(st, unit_types::scourge);
-				hydralisk_count = count_units_plus_production(st, unit_types::hydralisk);
-				lurker_count = count_units_plus_production(st, unit_types::lurker);
-				ultralisk_count = count_units_plus_production(st, unit_types::ultralisk);
-				queen_count = count_units_plus_production(st, unit_types::queen);
-				defiler_count = count_units_plus_production(st, unit_types::defiler);
-				devourer_count = count_units_plus_production(st, unit_types::devourer);
-				guardian_count = count_units_plus_production(st, unit_types::guardian);
-				sunken_count = count_units_plus_production(st, unit_types::sunken_colony);
-				spore_count = count_units_plus_production(st, unit_types::spore_colony);
-
-				army_supply = 0.0;
-				air_army_supply = 0.0;
-				ground_army_supply = 0.0;
-				for (auto&v : st.units) {
-					if (v.second.empty()) continue;
-					unit_type*ut = v.first;
-					if (!ut->is_worker) {
-						army_supply += ut->required_supply * v.second.size();
-						if (ut->is_flyer) air_army_supply += ut->required_supply * v.second.size();
-						else ground_army_supply += ut->required_supply * v.second.size();
-					}
-				}
-				for (auto&v : st.production) {
-					unit_type*ut = v.second;
-					if (!ut->is_worker) {
-						army_supply += ut->required_supply;
-						if (ut->is_flyer) air_army_supply += ut->required_supply;
-						else ground_army_supply += ut->required_supply;
-					}
-				}
+				set_build_vars(st);
 
 				army = [&](state&st) {
 					return false;
@@ -794,7 +957,7 @@ struct strat_z_base {
 
 			};
 
-			execute_build(false, build);
+			if (call_build) execute_build(false, build);
 
 			place_expos();
 			place_static_defence();
