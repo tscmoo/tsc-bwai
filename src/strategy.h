@@ -1,4 +1,5 @@
 
+
 namespace strategy {
 ;
 
@@ -121,7 +122,49 @@ struct register_on_end_func {
 	}
 };
 
+json_value read_json(a_string filename) {
+	FILE*f = fopen(filename.c_str(), "rb");
+	if (!f) {
+		a_string str = format(" !! error - failed to open %s for reading", filename);
+		log("%s\n", str.c_str());
+		send_text(str);
+	} else {
+		a_string buf;
+		fseek(f, 0, SEEK_END);
+		buf.resize(ftell(f));
+		fseek(f, 0, SEEK_SET);
+		fread((void*)buf.data(), buf.size(), 1, f);
+		fclose(f);
+		return json_parse(buf);
+	}
+	return json_value();
+}
+
+void write_json(a_string filename, const json_value&val) {
+	FILE*f = fopen(filename.c_str(), "wb");
+	if (!f) {
+		a_string str = format(" !! error - failed to open %s for writing\n", filename);
+		log("%s\n", str);
+		send_text(str);
+	} else {
+		a_string data = val.dump();
+		fwrite(data.data(), data.size(), 1, f);
+		fclose(f);
+	}
+}
+
+a_string current_running_strat;
+a_string next_strat;
+
 #include "adapt.h"
+
+std::function<void()> check_transition_func;
+
+bool should_transition() {
+	if (current_frame < 15 * 60 * 2) return false;
+	if (check_transition_func) check_transition_func();
+	return next_strat != current_running_strat;
+}
 
 #include "strategy_util.h"
 
@@ -153,6 +196,9 @@ struct register_on_end_func {
 #include "strat_t_proxy_tank.h"
 #include "strat_t_air.h"
 #include "strat_t_1rax_fe.h"
+#include "strat_t_8rax_fe.h"
+
+#include "strat_t_test.h"
 
 #include "strat_z_base.h"
 #include "strat_z_5pool.h"
@@ -163,17 +209,28 @@ struct register_on_end_func {
 #include "strat_z_13pool_muta.h"
 #include "strat_z_3hatch_before_pool.h"
 #include "strat_z_9pool_speed_into_1hatch_spire.h"
+#include "strat_z_10hatch_ling.h"
+#include "strat_z_fast_mass_expand.h"
+#include "strat_z_2hatch_muta.h"
+
 #include "strat_z_hydra_lurker.h"
 #include "strat_z_hydra_into_muta.h"
-
+#include "strat_z_vp_hydra.h"
 #include "strat_z_3hatch_spire.h"
 #include "strat_z_ling_defiler.h"
 #include "strat_z_queen.h"
 #include "strat_z_econ.h"
 #include "strat_z_econ2.h"
 #include "strat_z_1hatch_spire.h"
+#include "strat_z_tech.h"
 
 #include "strat_z_lategame.h"
+#include "strat_z_lategame2.h"
+
+#include "strat_z_ums.h"
+
+#include "strat_p_base.h"
+#include "strat_p_1gate_core.h"
 
 a_map<a_string, std::function<void()>> strat_map = {
 	{ "proxy rax", wrap<proxy_rax>() },
@@ -197,6 +254,9 @@ a_map<a_string, std::function<void()>> strat_map = {
 	{ "t wraith rush", wrap<strat_t_wraith_rush>() },
 	{ "t proxy tank", wrap<strat_t_proxy_tank>() },
 	{ "t 1rax fe", wrap<strat_t_1rax_fe>() },
+	{ "t 8rax fe", wrap<strat_t_8rax_fe>() },
+
+	{ "t test", wrap<strat_t_test>() },
 
 	{ "t bio tank", wrap<strat_t_bio_tank>() },
 	{ "t mech", wrap<strat_t_mech>() },
@@ -210,6 +270,9 @@ a_map<a_string, std::function<void()>> strat_map = {
 	{ "z 13pool muta", wrap<strat_z_13pool_muta>() },
 	{ "z 3hatch before pool", wrap<strat_z_3hatch_before_pool>() },
 	{ "z 9pool speed into 1hatch spire", wrap<strat_z_9pool_speed_into_1hatch_spire>() },
+	{ "z 10hatch ling", wrap<strat_z_10hatch_ling>() },
+	{ "z fast mass expand", wrap<strat_z_fast_mass_expand>() },
+	{ "z 2hatch muta", wrap<strat_z_2hatch_muta>() },
 
 	{ "z 3hatch spire", wrap<strat_z_3hatch_spire>() },
 	{ "z ling defiler", wrap<strat_z_ling_defiler>() },
@@ -219,18 +282,28 @@ a_map<a_string, std::function<void()>> strat_map = {
 	{ "z 1hatch spire", wrap<strat_z_1hatch_spire>() },
 	{ "z hydra lurker", wrap<strat_z_hydra_lurker>() },
 	{ "z hydra into muta", wrap<strat_z_hydra_into_muta>() },
+	{ "z vp hydra", wrap<strat_z_vp_hydra>() },
+	{ "z tech", wrap<strat_z_tech>() },
 
 	{ "z lategame", wrap<strat_z_lategame>() },
+	{ "z lategame2", wrap<strat_z_lategame2>() },
+
+	{ "z ums", wrap<strat_z_ums>() },
+
+	{ "p 1gate core", wrap<strat_p_1gate_core>() },
 
 };
 
 bool run_strat(const a_string& name) {
 	try {
-		log("running strat %s\n", name);
+		//log("running strat %s\n", name);
+		log(log_level_info, "running strat %s\n", name);
+		current_running_strat = name;
+		next_strat = name;
 		auto i = strat_map.find(name);
 		if (i == strat_map.end()) {
 			a_string str = format(" !! error - no such strategy '%s'", name);
-			log("%s\n", str);
+			log(log_level_info, "%s\n", str);
 			send_text(str);
 			return false;
 		}
@@ -243,6 +316,13 @@ bool run_strat(const a_string& name) {
 	}
 }
 
+bool run_strat(const a_string& name, std::function<void()> check_transition_func_arg) {
+	check_transition_func = check_transition_func_arg;
+	bool r = run_strat(name);
+	check_transition_func = std::function<void()>();
+	return r;
+}
+
 void strategy_task() {
 
 	multitasking::sleep(1);
@@ -250,10 +330,10 @@ void strategy_task() {
 	if (players::my_player->race == race_terran) {
 
 		if (players::opponent_player->random) {
-			run_strat("tvp opening");
+			//run_strat("tvp opening");
 		} else if (players::opponent_player->race == race_terran) {
 
-			a_string opening = adapt::choose("tvt opening", "t 14cc", "t 2fact vulture", "t siege expand", "t wraith rush", "t proxy tank", "t 1rax fe", "proxy rax");
+			a_string opening = adapt::choose("tvt opening", "t 14cc", "t 2fact vulture", "t siege expand", "t wraith rush", "t proxy tank", "t 1rax fe", "proxy rax", "t 8rax fe");
 			run_strat(opening);
 			if (opening == "tvt opening") run_strat("tvt");
 			a_string midlategame = adapt::choose("t bio tank", "t mech", "t air");
@@ -261,7 +341,7 @@ void strategy_task() {
 
 		} else if (players::opponent_player->race == race_protoss) {
 
-			a_string opening = adapt::choose("tvp opening", "t 14cc", "t 2fact vulture", "t siege expand", "t wraith rush", "t proxy tank", "t 1rax fe", "proxy rax");
+			a_string opening = adapt::choose("tvp opening", "t 14cc", "t 2fact vulture", "t siege expand", "t wraith rush", "t proxy tank", "t 1rax fe", "proxy rax", "t 8rax fe");
 			run_strat(opening);
 			if (opening == "tvp opening") run_strat("tvp");
 			a_string midlategame = adapt::choose("t bio tank", "t mech", "t air");
@@ -269,7 +349,7 @@ void strategy_task() {
 
 		} else if (players::opponent_player->race == race_zerg) {
 
-			a_string opening = adapt::choose("tvz opening", "t 14cc", "t 2fact vulture", "t siege expand", "t wraith rush", "t proxy tank", "t 1rax fe", "proxy rax");
+			a_string opening = adapt::choose("tvz opening", "t 14cc", "t 2fact vulture", "t siege expand", "t wraith rush", "t proxy tank", "t 1rax fe", "proxy rax", "t 8rax fe");
 			run_strat(opening);
 			if (opening == "tvz opening") run_strat("tvz");
 			a_string midlategame = adapt::choose("t bio tank", "t mech", "t air");
@@ -286,33 +366,64 @@ void strategy_task() {
 		}
 
 	} else if (players::my_player->race == race_protoss) {
-		run_strat("p opening");
+		
+		if (players::opponent_player->race == race_terran) {
+			
+		} else if (players::opponent_player->race == race_protoss) {
+			run_strat("p 1gate core");
+		} else if (players::opponent_player->race == race_zerg) {
+			
+		}
+
 	} else if (players::my_player->race == race_zerg) {
+		if (game->getGameType() == BWAPI::GameTypes::Use_Map_Settings) run_strat("z ums");
 		//run_strat("ums");
 
 		if (players::opponent_player->race == race_terran) {
-			a_string opening = adapt::choose("zvtp opening", "z 5pool", "z 9pool", "z 10hatch", "z 12hatch", "z 1hatch lurker", "z 13pool muta", "z 3hatch before pool", "z 9pool speed into 1hatch spire");
+
+			a_string opening = adapt::choose("z 5pool", "z 9pool", "z 10hatch", "z 10hatch ling", "z fast mass expand", "z 13pool muta", "z 2hatch muta");
 			run_strat(opening);
-			if (opening == "zvtp opening") run_strat("zvtp");
-			a_string midgame = adapt::choose("z 3hatch spire", "z ling defiler", "z queen", "z econ", "z econ2", "z hydra lurker", "z hydra into muta");
-			run_strat(midgame);
-			run_strat("z lategame");
+			if (current_used_total_supply < 80) {
+				a_string midgame = adapt::choose("z vp hydra", "z econ2", "z 3hatch spire", "z queen", "z econ");
+				run_strat(midgame);
+			}
+			a_string lategame = adapt::choose("z lategame", "z lategame2");
+			run_strat(lategame);
 
 		} else if (players::opponent_player->race == race_protoss) {
-			a_string opening = adapt::choose("zvtp opening", "z 5pool", "z 9pool", "z 10hatch", "z 12hatch", "z 1hatch lurker", "z 13pool muta", "z 3hatch before pool", "z 9pool speed into 1hatch spire");
+
+			a_string opening = adapt::choose("z 5pool", "z 9pool", "z 10hatch", "z 10hatch ling", "z fast mass expand", "z 13pool muta", "z 2hatch muta");
 			run_strat(opening);
-			if (opening == "zvtp opening") run_strat("zvtp");
-			a_string midgame = adapt::choose("z 3hatch spire", "z ling defiler", "z queen", "z econ", "z econ2", "z hydra lurker", "z hydra into muta");
-			run_strat(midgame);
-			run_strat("z lategame");
+			if (current_used_total_supply < 80) {
+				a_string midgame = adapt::choose("z vp hydra", "z econ2", "z hydra into muta");
+				run_strat(midgame);
+			}
+			a_string lategame = adapt::choose("z lategame", "z lategame2");
+			run_strat(lategame);
 
 		} else if (players::opponent_player->race == race_zerg) {
-			a_string opening = adapt::choose("zvz opening", "z 5pool", "z 9pool", "z 10hatch", "z 12hatch", "z 1hatch lurker", "z 13pool muta", "z 3hatch before pool", "z 9pool speed into 1hatch spire");
-			run_strat(opening);
+
+			a_string opening = adapt::choose("zvz opening", "z 5pool", "z 9pool", "z 10hatch", "z 10hatch ling", "z 9pool speed into 1hatch spire", "z 2hatch muta", "z 9pool -> 10hatch ling");
+			if (opening == "z 9pool -> 10hatch ling") {
+				run_strat("z 9pool");
+				run_strat("z 10hatch ling");
+			} else {
+				run_strat(opening);
+			}
 			if (opening == "zvz opening") run_strat("zvz");
-			a_string midgame = adapt::choose("z 3hatch spire", "z ling defiler", "z queen", "z econ", "z econ2", "z hydra lurker", "z hydra into muta");
-			run_strat(midgame);
-			run_strat("z lategame");
+			if (current_used_total_supply < 80) {
+				if (opening == "z 5pool" || opening == "z 9pool" || opening=="z 10hatch" || opening == "z 10hatch ling") {
+					a_string midgame = adapt::choose("z vp hydra", "z 9pool speed into 1hatch spire (midgame)", "z 2hatch muta (midgame)");
+					if (midgame == "z 9pool speed into 1hatch spire (midgame)") midgame = "z 9pool speed into 1hatch spire";
+					if (midgame == "z 2hatch muta (midgame)") midgame = "z 2hatch muta";
+					run_strat(midgame);
+				} else {
+					a_string midgame = adapt::choose("z vp hydra", "z lategame", "z lategame2");
+					run_strat(midgame);
+				}
+			}
+			a_string lategame = adapt::choose("z lategame", "z lategame2");
+			run_strat(lategame);
 
 		}
 
@@ -345,24 +456,6 @@ a_string adapt_write_filename = "bwapi-data/write/tsc-bwai-adapt.txt";
 a_string opponent_name;
 a_string opponent_race;
 
-json_value read_adapt() {
-	FILE*f = fopen(adapt_read_filename.c_str(), "rb");
-	if (!f) {
-		a_string str = format(" !! error - failed to open %s for reading", adapt_read_filename);
-		log("%s\n", str.c_str());
-		send_text(str);
-	} else {
-		a_string buf;
-		fseek(f, 0, SEEK_END);
-		buf.resize(ftell(f));
-		fseek(f, 0, SEEK_SET);
-		fread((void*)buf.data(), buf.size(), 1, f);
-		fclose(f);
-		return json_parse(buf);
-		//adapt::load_adapt(buf);
-	}
-	return json_value();
-}
 
 void init() {
 
@@ -390,15 +483,52 @@ void init() {
 	else if (enemy_race == race_zerg) opponent_race = "zerg";
 	else opponent_race = "unknown";
 
-	//adapt::load_adapt(read_adapt()["adapt"][opponent_name]);
+	auto dat = read_json(adapt_read_filename);
 
-	auto dat = read_adapt();
+	adapt::weights["z lategame2"] = 2.5;
+	adapt::weights["z lategame"] = 1.0;
+	if (enemy_race == race_terran) {
+		adapt::weights["z fast mass expand"] = 2.0;
+		adapt::weights["z 10hatch"] = 3.0;
+		adapt::weights["z 10hatch ling"] = 2.0;
+
+		adapt::weights["z econ2"] = 5.0;
+		adapt::weights["z 3hatch spire"] = 2.5;
+	} else if (enemy_race == race_protoss) {
+		adapt::weights["z fast mass expand"] = 2.0;
+		adapt::weights["z 10hatch"] = 3.0;
+		adapt::weights["z 10hatch ling"] = 2.0;
+
+		adapt::weights["z vp hydra"] = 5.0;
+	} else if (enemy_race == race_zerg) {
+		adapt::weights["z 10hatch ling"] = 3.0;
+		adapt::weights["z 2hatch muta (midgame)"] = 2.5;
+		adapt::weights["z 9pool -> 10hatch ling"] = 3.0;
+	}
+
+	adapt::weights["t bio tank"] = 2.0;
+	adapt::weights["t mech"] = 2.0;
+	if (enemy_race == race_terran) {
+		adapt::weights["t 14cc"] = 3.0;
+		adapt::weights["t 2fact vulture"] = 3.0;
+		adapt::weights["t proxy tank"] = 2.0;
+	} else if (enemy_race == race_protoss) {
+		adapt::weights["t siege expand"] = 3.0;
+		adapt::weights["tvp opening"] = 2.0;
+		adapt::weights["t wraith rush"] = 1.5;
+	} else if (enemy_race == race_zerg) {
+		adapt::weights["t 8rax fe"] = 3.0;
+		adapt::weights["tvz opening"] = 2.0;
+		adapt::weights["z 2fact vulture"] = 2.0;
+	}
 
 	auto& a = dat["adapt"][opponent_name][opponent_race];
 	auto& hist = a["history"];
 	int wins = 0;
 	int losses = 0;
 	int total_games = 0;
+	a_unordered_map<a_string, int> choice_wins;
+	a_unordered_map<a_string, int> choice_losses;
 	for (auto&v : hist.vector) {
 		bool won = v["result"] == "won";
 		++total_games;
@@ -408,7 +538,38 @@ void init() {
 			double& w = adapt::weights[choice];
 			if (w == 0.0) w = 1.0;
 			if (won) w += 1.0;
-			else w /= 2.0;
+			else if (w > 5.0) w *= 0.8;
+			else if (w <= 2.0) w *= 0.5;
+			else w -= 1.0;
+			if (!won) {
+				if (choice == "z 5pool") w *= 0.5;
+				if (choice == "z 10hatch ling") w *= 0.5;
+				if (choice == "z fast mass expand") w *= 0.5;
+			}
+			log("%s %s - w adjusted to %g\n", choice, won ? "won" : "lost", w);
+
+			if (won) ++choice_wins[choice];
+			else ++choice_losses[choice];
+		}
+	}
+	for (auto&v : choice_wins) {
+		log("%s: %d wins\n", v.first, v.second);
+	}
+	for (auto&v : choice_losses) {
+		log("%s: %d losses\n", v.first, v.second);
+	}
+	for (auto&v : choice_wins) {
+		double winrate = (double)v.second / (v.second + choice_losses[v.first]);
+		if (winrate >= 0.9) adapt::weights[v.first] += 50.0 + (winrate - 0.9) * 500.0;
+	}
+	if (losses >= 8) {
+		for (auto&v : adapt::weights) {
+			v.second = std::pow(1.0 + v.second, 1.5) - 1.0;
+			if (v.second < 0.0125) v.second = 0.0125;
+		}
+	} else {
+		for (auto&v : adapt::weights) {
+			if (choice_wins[v.first] + choice_losses[v.first]) v.second /= 4;
 		}
 	}
 	a_string str = format("adapt %s %s - wins: %d  losses: %d  winrate: %.02f", opponent_name, opponent_race, wins, losses, (double)wins / total_games * 100);
@@ -426,11 +587,7 @@ void on_end(bool won) {
 		f(won);
 	}
 
-// 	if (won) adapt::won();
-// 	else adapt::lost();
-	//a_string weights_data = adapt::save_weights();
-	auto dat = read_adapt();
-	//dat["adapt"][opponent_name] = adapt::save_weights();
+	auto dat = read_json(adapt_read_filename);
 
 	auto& a = dat["adapt"][opponent_name][opponent_race];
 	auto& hist = a["history"];
@@ -443,16 +600,8 @@ void on_end(bool won) {
 	}
 	e["choices"] = choices;
 
-	FILE*f = fopen(adapt_write_filename.c_str(), "wb");
-	if (!f) {
-		a_string str = format(" !! error - failed to open %s for writing\n", adapt_write_filename);
-		log("%s\n", str);
-		send_text(str);
-	} else {
-		a_string data = dat.dump();
-		fwrite(data.data(), data.size(), 1, f);
-		fclose(f);
-	}
+	write_json(adapt_write_filename, dat);
+	
 }
 
 }
