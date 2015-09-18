@@ -179,6 +179,9 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep, bool no
 				continue;
 			}
 			if (st.units[prereq].empty()) {
+				if (prereq == unit_types::spire && !st.units[unit_types::greater_spire].empty()) prereq = unit_types::greater_spire;
+			}
+			if (st.units[prereq].empty()) {
 				bool found = false;
 				if (prereq->is_addon && !st.units[prereq->builder_type].empty()) {
 					for (auto&v : st.units[prereq->builder_type]) {
