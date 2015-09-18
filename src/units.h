@@ -751,8 +751,18 @@ void update_unit_stuff(unit*u) {
 	if (b) {
 		b->is_lifted = u->game_unit->isLifted();
 		bwapi_pos tile_pos = u->game_unit->getTilePosition();
-		if ((size_t)tile_pos.x >= (size_t)grid::build_grid_width || (size_t)tile_pos.y >= (size_t)grid::build_grid_height) xcept("unit %s has tile pos outside map", u->type->name);
-		if ((size_t)tile_pos.x + u->type->tile_width > (size_t)grid::build_grid_width || (size_t)tile_pos.y + u->type->tile_height > (size_t)grid::build_grid_height) xcept("unit %s has tile pos outside map", u->type->name);
+// 		if ((size_t)tile_pos.x >= (size_t)grid::build_grid_width || (size_t)tile_pos.y >= (size_t)grid::build_grid_height) xcept("unit %s has tile pos outside map", u->type->name);
+// 		if ((size_t)tile_pos.x + u->type->tile_width > (size_t)grid::build_grid_width || (size_t)tile_pos.y + u->type->tile_height > (size_t)grid::build_grid_height) xcept("unit %s has tile pos outside map", u->type->name);
+		if ((size_t)tile_pos.x >= (size_t)grid::build_grid_width || (size_t)tile_pos.y >= (size_t)grid::build_grid_height) {
+			log(log_level_info, "error: unit %s has tile pos outside map (at %d %d)", u->type->name, tile_pos.x, tile_pos.y);
+			tile_pos.x = 0;
+			tile_pos.y = 0;
+		}
+		if ((size_t)tile_pos.x + u->type->tile_width > (size_t)grid::build_grid_width || (size_t)tile_pos.y + u->type->tile_height > (size_t)grid::build_grid_height) {
+			log(log_level_info, "error: unit %s has tile pos outside map (at %d %d)", u->type->name, tile_pos.x, tile_pos.y);
+			tile_pos.x = 0;
+			tile_pos.y = 0;
+		}
 		b->build_pos.x = tile_pos.x*32;
 		b->build_pos.y = tile_pos.y*32;
 		if (b->last_registered_pos == xy()) b->last_registered_pos = b->build_pos;
