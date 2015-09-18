@@ -10,6 +10,8 @@ struct strat_z_5pool: strat_z_base {
 		scouting::scout_supply = 30;
 		scouting::no_proxy_scout = true;
 
+		default_worker_defence = false;
+
 	}
 	virtual bool tick() override {
 		if (opening_state == 0) {
@@ -104,6 +106,16 @@ struct strat_z_5pool: strat_z_base {
 					return nodelay(st, unit_types::zergling, army);
 				};
 			}
+		}
+		if (players::opponent_player->race == race_zerg && drone_count >= 9 && army_supply < drone_count * 2) {
+			army = [army](state&st) {
+				return nodelay(st, unit_types::zergling, army);
+			};
+		}
+		if (army_supply < enemy_army_supply + 2.0) {
+			army = [army](state&st) {
+				return nodelay(st, unit_types::zergling, army);
+			};
 		}
 
 		return army(st);
