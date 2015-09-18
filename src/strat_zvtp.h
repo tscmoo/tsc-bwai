@@ -165,7 +165,11 @@ struct strat_zvtp {
 			if (my_hatch_count >= (int)st.bases.size() * 2) {
 				int n = 8;
 				auto s = get_next_base();
-				if (s) n = (int)s->resources.size();
+				//if (s) n = (int)s->resources.size();
+				if (s) {
+					n = 0;
+					for (auto&v : s->resources) ++n;
+				}
 				if (free_mineral_patches() >= n && long_distance_miners() == 0) return;
 			} else {
 				if (free_mineral_patches() >= 2 && long_distance_miners() == 0) return;
@@ -426,6 +430,8 @@ struct strat_zvtp {
 			if (enemy_weak_against_ultra_supply >= 14 && !my_completed_units_of_type[unit_types::ultralisk_cavern].empty()) {
 				get_upgrades::set_upgrade_value(upgrade_types::chitinous_plating, -1.0);
 			}
+
+			if (should_transition()) break;
 
 			bool can_build_static_defence = get_static_defence_pos() != xy() && my_units_of_type[unit_types::sunken_colony].size() < 20;
 
