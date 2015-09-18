@@ -271,6 +271,25 @@ struct strat_t_base {
 
 		resource_gathering::max_gas = 0.0;
 
+		auto free_mineral_patches = [&]() {
+			int free_mineral_patches = 0;
+			for (auto&b : get_my_current_state().bases) {
+				for (auto&s : b.s->resources) {
+					resource_gathering::resource_t*res = nullptr;
+					for (auto&s2 : resource_gathering::live_resources) {
+						if (s2.u == s.u) {
+							res = &s2;
+							break;
+						}
+					}
+					if (res) {
+						if (res->gatherers.empty()) ++free_mineral_patches;
+					}
+				}
+			}
+			return free_mineral_patches;
+		};
+
 		auto place_expos = [&]() {
 
 			auto st = get_my_current_state();
@@ -431,19 +450,20 @@ struct strat_t_base {
 			combat::no_aggressive_groups = true;
 			combat::aggressive_groups_done_only = false;
 
+			can_expand = get_next_base();
+			force_expand = can_expand && long_distance_miners() >= 1 && my_units_of_type[unit_types::cc].size() == my_completed_units_of_type[unit_types::cc].size();
+			if (can_expand && free_mineral_patches() == 0 && my_workers.size() >= 45) force_expand = true;
+
+			if (tick()) {
+				bo_cancel_all();
+				break;
+			}
+
 			if (current_used_total_supply >= 190.0) maxed_out_aggression = true;
 			if (maxed_out_aggression) {
 				combat::no_aggressive_groups = false;
 				combat::aggressive_groups_done_only = false;
 				if (current_used_total_supply < 150.0) maxed_out_aggression = false;
-			}
-
-			can_expand = get_next_base();
-			force_expand = can_expand && long_distance_miners() >= 1 && my_units_of_type[unit_types::cc].size() == my_completed_units_of_type[unit_types::cc].size();
-
-			if (tick()) {
-				bo_cancel_all();
-				break;
 			}
 
 			auto build = [&](state&st) {
