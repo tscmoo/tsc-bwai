@@ -22,13 +22,19 @@ struct strat_t_mech : strat_t_base {
 	}
 	virtual bool tick() override {
 
-		if (combat::no_aggressive_groups) {
-			combat::no_aggressive_groups = current_used_total_supply < 120;
-			combat::aggressive_groups_done_only = !combat::no_aggressive_groups;
-			if (enemy_army_supply < 16 && current_used_total_supply - my_workers.size() >= 40) {
-				combat::no_aggressive_groups = false;
-				combat::aggressive_groups_done_only = false;
-			}
+// 		if (combat::no_aggressive_groups) {
+// 			combat::no_aggressive_groups = current_used_total_supply < 120;
+// 			combat::aggressive_groups_done_only = !combat::no_aggressive_groups;
+// 			if (enemy_army_supply < 16 && current_used_total_supply - my_workers.size() >= 40) {
+// 				combat::no_aggressive_groups = false;
+// 				combat::aggressive_groups_done_only = false;
+// 			}
+// 		}
+		combat::no_aggressive_groups = current_used_total_supply < 120 || current_used_total_supply - my_workers.size() < enemy_army_supply + 8.0;
+		combat::aggressive_groups_done_only = combat::no_aggressive_groups;
+		if (enemy_army_supply < 16 && current_used_total_supply - my_workers.size() >= 40) {
+			combat::no_aggressive_groups = false;
+			combat::aggressive_groups_done_only = false;
 		}
 
 // 		if ((players::opponent_player->race != race_terran && current_used_total_supply >= 32) || enemy_dt_count + enemy_lurker_count) {
