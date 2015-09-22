@@ -1010,7 +1010,7 @@ void process(const a_vector<unit_controller*>&controllers) {
 
 
 				int wait_frames = 0;
-				if (u->type == unit_types::marine) wait_frames = 6;
+				if (u->type == unit_types::marine) wait_frames = 8;
 				if (u->type == unit_types::ghost) wait_frames = 6;
 				if (u->type == unit_types::firebat) wait_frames = 8;
 				if (u->type == unit_types::vulture) wait_frames = 2;
