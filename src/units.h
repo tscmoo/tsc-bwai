@@ -230,7 +230,7 @@ namespace unit_types {
 	unit_type_pointer observer, shuttle, scout, carrier, interceptor, arbiter, corsair;
 	unit_type_pointer hatchery, lair, hive, creep_colony, sunken_colony, spore_colony, nydus_canal, spawning_pool, evolution_chamber;
 	unit_type_pointer hydralisk_den, spire, greater_spire, extractor, ultralisk_cavern, defiler_mound;
-	unit_type_pointer drone, overlord, zergling, larva, egg, hydralisk, lurker, lurker_egg, ultralisk, defiler;
+	unit_type_pointer drone, overlord, zergling, larva, egg, hydralisk, lurker, lurker_egg, ultralisk, defiler, broodling;
 	unit_type_pointer mutalisk, cocoon, scourge, queen, guardian, devourer;
 	unit_type_pointer spell_dark_swarm;
 	unit_type_pointer vespene_geyser;
@@ -337,6 +337,7 @@ namespace unit_types {
 		get(lurker_egg, BWAPI::UnitTypes::Zerg_Lurker_Egg);
 		get(ultralisk, BWAPI::UnitTypes::Zerg_Ultralisk);
 		get(defiler, BWAPI::UnitTypes::Zerg_Defiler);
+		get(broodling, BWAPI::UnitTypes::Zerg_Broodling);
 
 		get(mutalisk, BWAPI::UnitTypes::Zerg_Mutalisk);
 		get(cocoon, BWAPI::UnitTypes::Zerg_Cocoon);
