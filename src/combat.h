@@ -4907,13 +4907,17 @@ void fight() {
 				auto&c = eval.add_unit(st, team);
 				c.move = get_best_score_value(team ? nearby_allies : nearby_enemies, [&](unit*e) {
 					if (e->type->is_flyer && !c.st->air_weapon) return std::numeric_limits<double>::infinity();
-					return units_distance(e, u);
+					double d = units_distance(e, u);
+					if (u->is_flying) return d;
+					weapon_stats*w = e->is_flying ? u->stats->air_weapon : u->stats->ground_weapon;
+					if (w && d <= w->max_range) return d;
+					return units_pathing_distance(e, u);
 				});
+				multitasking::yield_point();
 				if (c.move == std::numeric_limits<double>::infinity()) c.move = 32 * 8;
-				//c.move = 32 * 8;
 				eval.set_unit_stuff(c, u);
 				if (cooldown_override > c.cooldown) c.cooldown = cooldown_override;
-				//log("added %s to team %d -- move %g, shields %g, hp %g, cooldown %d\n", st->type->name, team, c.move, c.shields, c.hp, c.cooldown);
+				//log(log_level_info, "added %s to team %d -- move %g, shields %g, hp %g, cooldown %d\n", st->type->name, team, c.move, c.shields, c.hp, c.cooldown);
 				return c;
 			};
 			//int eval_frames = 15 * 20;
