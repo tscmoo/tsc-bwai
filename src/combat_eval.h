@@ -52,6 +52,8 @@ namespace combat_eval {
 			bool has_static_defence = false;
 			bool run = false;
 			bool wait_until_attacked = false;
+			double start_hp = 0.0;
+			double end_hp = 0.0;
 		};
 		std::array<team_t, 2> teams;
 		int total_frames = 0;
@@ -102,7 +104,8 @@ namespace combat_eval {
 
 		void run() {
 			total_frames = 0;
-			for (auto&t : teams) {
+			for (int i = 0; i < 2; ++i) {
+				team_t&t = teams[i];
 				std::sort(t.units.begin(), t.units.end(), [&](const combatant&a, const combatant&b) {
 					double ar = a.st->ground_weapon ? a.st->ground_weapon->max_range : a.st->air_weapon ? a.st->air_weapon->max_range : 0;
 					double br = b.st->ground_weapon ? b.st->ground_weapon->max_range : b.st->air_weapon ? b.st->air_weapon->max_range : 0;
@@ -111,11 +114,16 @@ namespace combat_eval {
 					if (std::abs(am - bm) <= 15 * 2) return a.hp < b.hp;
 					return am < bm;
 				});
+				//for (auto&v : t.units) {
+				//	log(log_level_info, "team %d - %s with %g hp\n", i, v.st->type->name, v.hp);
+				//}
 				t.start_supply = 0;
+				t.start_hp = 0.0;
 				int static_defence_count = 0;
 				for (auto&v : t.units) {
 					if (v.hp <= 0) continue;
 					t.start_supply += v.st->type->required_supply;
+					t.start_hp += v.shields + v.hp;
 					if (v.st->type == unit_types::bunker) ++t.bunker_count;
 					if (v.st->type == unit_types::bunker || v.st->type == unit_types::photon_cannon || v.st->type == unit_types::sunken_colony) ++static_defence_count;
 					if (v.st->type == unit_types::bunker || v.st->type == unit_types::photon_cannon || v.st->type == unit_types::sunken_colony) t.start_supply += 2;
@@ -123,7 +131,8 @@ namespace combat_eval {
 				t.has_static_defence = static_defence_count >= 2;
 			}
 			while (true) {
-				int frame_resolution = 8;
+				//int frame_resolution = 8;
+				int frame_resolution = 1;
 				total_frames += frame_resolution;
 				if (max_frames && total_frames >= max_frames) break;
 				int target_count = 0;
@@ -198,6 +207,7 @@ namespace combat_eval {
 									//++ec.target_count;
 									if (inc_target_count) ++ec.target_count;
 									target = &ec;
+									break;
 								}
 							}
 							c.target = target;
@@ -263,7 +273,7 @@ namespace combat_eval {
 										} else target->hp -= damage;
 										if (c.st->type == unit_types::mutalisk) damage /= 2;
 										double damage_dealt = target->hp < 0 ? damage + target->hp : damage;
-										//log("%s dealt %g damage to %s\n", c.st->type->name, damage_dealt, target->st->type->name);
+										//log(log_level_info, "%s dealt %g damage to %s (%g hp left)\n", c.st->type->name, damage_dealt, target->st->type->name, target->hp);
 										my_team.damage_dealt += damage_dealt;
 										enemy_team.damage_taken += damage_dealt;
 										if (!enemy_team.attacked) enemy_team.attacked = true;
@@ -284,7 +294,7 @@ namespace combat_eval {
 										c.cooldown += cooldown;
 										my_team.score += damage_dealt / 100;
 										if (target->hp <= 0) {
-											//log("%s killed\n", target->st->type->name);
+											//log(log_level_info, "%s killed\n", target->st->type->name);
 											double value = target->st->type->total_minerals_cost + target->st->type->total_gas_cost;
 											my_team.score += value;
 											if (target->st->type->is_worker) my_team.score += value;
@@ -344,8 +354,10 @@ namespace combat_eval {
 			}
 			for (auto&t : teams) {
 				t.end_supply = 0;
+				t.end_hp = 0.0;
 				for (auto&v : t.units) {
 					if (v.hp <= 0) continue;
+					t.end_hp += v.shields + v.hp;
 					t.end_supply += v.st->type->required_supply;
 					if (v.st->type == unit_types::bunker || v.st->type == unit_types::photon_cannon || v.st->type == unit_types::sunken_colony) t.end_supply += 2;
 				}
