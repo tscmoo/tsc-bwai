@@ -149,6 +149,8 @@ struct combat_unit {
 	int last_op_detectors = 0;
 	int run_until = 0;
 	bool is_nearest = false;
+	int retreat_until = 0;
+	int try_retreat_until = 0;
 };
 a_unordered_map<unit*, combat_unit> combat_unit_map;
 
@@ -3618,6 +3620,9 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 		}
 	}
 
+	int do_retreat_until = 0;
+	if (current_frame < a->try_retreat_until) do_retreat_until = a->try_retreat_until;
+
 	//if (target && (a->u->type->is_worker || (a->u->type == unit_types::zergling && a->u->hp < a->u->stats->hp / 2 && allies.size() < 16 && a->last_win_ratio >= 1.5 && allies.size() > enemies.size()))) {
 	if (target && a->u->type->is_worker) {
 		weapon_stats*w = a->u->is_flying ? target->stats->air_weapon : target->stats->ground_weapon;
@@ -3645,84 +3650,92 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 			}
 			log("%p: %g vs %g (or %g)\n", a->u, a->u->hp, total_damage, total_dps * 2);
 			if (a->u->hp < a->u->stats->hp && (a->u->hp <= total_damage || a->u->hp <= total_dps * 2) && units_distance(a->u, target) <= w->max_range + 64) {
-				if (a->u->type->is_worker) {
-					unit*nr = get_best_score(resource_units, [&](unit*r) {
-						if (!r->visible) return std::numeric_limits<double>::infinity();
-						double d = diag_distance(a->u->pos - r->pos);
-						if (d <= 32 * 3) return std::numeric_limits<double>::infinity();
-						return d;
-					}, std::numeric_limits<double>::infinity());
-					if (nr) {
-						log("send worker back to mining\n");
-						if (a->u->game_unit->getOrder() == BWAPI::Orders::AttackUnit) a->u->game_unit->gather(nr->game_unit);
-						a->subaction = combat_unit::subaction_idle;
-						a->u->controller->action = unit_controller::action_gather;
-						a->u->controller->target = nr;
-					}
-				} else {
-					if (!a->u->is_flying) {
+				do_retreat_until = current_frame + 15 * 4;
+			}
+		}
+	}
+	if (do_retreat_until) {
+		a->retreat_until = do_retreat_until;
+		if (a->u->type->is_worker) {
+			unit*nr = get_best_score(resource_units, [&](unit*r) {
+				if (!r->visible) return std::numeric_limits<double>::infinity();
+				double d = diag_distance(a->u->pos - r->pos);
+				if (d <= 32 * 3) return std::numeric_limits<double>::infinity();
+				return d;
+			}, std::numeric_limits<double>::infinity());
+			if (nr) {
+				log("send worker back to mining\n");
+				if (a->u->game_unit->getOrder() == BWAPI::Orders::AttackUnit) a->u->game_unit->gather(nr->game_unit);
+				a->subaction = combat_unit::subaction_idle;
+				a->u->controller->action = unit_controller::action_gather;
+				a->u->controller->target = nr;
+			}
+		} else {
+			if (!a->u->is_flying) {
 
-						auto&dims = a->u->type->dimensions;
+				auto&dims = a->u->type->dimensions;
 
-						auto can_move_to = [&](xy pos) {
-							auto test = [&](xy pos) {
-								int right = pos.x + dims[0];
-								int bottom = pos.y + dims[1];
-								int left = pos.x - dims[2];
-								int top = pos.y - dims[3];
-								for (unit*u : allies) {
-									if (u == a->u) continue;
-									if (u->is_flying || u->burrowed) continue;
-									int uright = u->pos.x + u->type->dimension_right();
-									int ubottom = u->pos.y + u->type->dimension_down();
-									int uleft = u->pos.x - u->type->dimension_left();
-									int utop = u->pos.y - u->type->dimension_up();
-									if (right >= uleft && bottom >= utop && uright >= left && ubottom >= top) return false;
-								}
-								for (unit*u : enemies) {
-									if (u->is_flying || u->burrowed) continue;
-									int uright = u->pos.x + u->type->dimension_right();
-									int ubottom = u->pos.y + u->type->dimension_down();
-									int uleft = u->pos.x - u->type->dimension_left();
-									int utop = u->pos.y - u->type->dimension_up();
-									if (right >= uleft && bottom >= utop && uright >= left && ubottom >= top) return false;
-								}
-								return true;
-							};
-							pos.x &= -8;
-							pos.y &= -8;
-							if (test(pos)) return true;
-							if (test(pos + xy(7, 0))) return true;
-							if (test(pos + xy(0, 7))) return true;
-							if (test(pos + xy(7, 7))) return true;
-							for (int x = 1; x < 7; ++x) {
-								if (test(pos + xy(x, 0))) return true;
-								if (test(pos + xy(x, 7))) return true;
-							}
-							for (int y = 1; y < 7; ++y) {
-								if (test(pos + xy(0, y))) return true;
-								if (test(pos + xy(7, y))) return true;
-							}
-							return false;
-						};
-
-						a_deque<xy> path = find_path(a->u->type, a->u->pos, [&](xy pos, xy npos) {
-							if (diag_distance(npos - target->pos) <= diag_distance(pos - target->pos)) return false;
-							return can_move_to(npos);
-						}, [&](xy pos, xy npos) {
-							return 0.0;
-						}, [&](xy pos) {
-							return diag_distance(pos - a->u->pos) >= 32 * 2;
-						});
-						log("zling path.size() is %d\n", path.size());
-
-						if (!path.empty()) {
-							a->subaction = combat_unit::subaction_move_directly;
-							a->target_pos = path.back();
+				auto can_move_to = [&](xy pos) {
+					auto test = [&](xy pos) {
+						int right = pos.x + dims[0];
+						int bottom = pos.y + dims[1];
+						int left = pos.x - dims[2];
+						int top = pos.y - dims[3];
+						for (unit*u : allies) {
+							if (u == a->u) continue;
+							if (u->is_flying || u->burrowed) continue;
+							int uright = u->pos.x + u->type->dimension_right();
+							int ubottom = u->pos.y + u->type->dimension_down();
+							int uleft = u->pos.x - u->type->dimension_left();
+							int utop = u->pos.y - u->type->dimension_up();
+							if (right >= uleft && bottom >= utop && uright >= left && ubottom >= top) return false;
 						}
-
+						for (unit*u : enemies) {
+							if (u->is_flying || u->burrowed) continue;
+							int uright = u->pos.x + u->type->dimension_right();
+							int ubottom = u->pos.y + u->type->dimension_down();
+							int uleft = u->pos.x - u->type->dimension_left();
+							int utop = u->pos.y - u->type->dimension_up();
+							if (right >= uleft && bottom >= utop && uright >= left && ubottom >= top) return false;
+						}
+						return true;
+					};
+					pos.x &= -8;
+					pos.y &= -8;
+					if (test(pos)) return true;
+					if (test(pos + xy(7, 0))) return true;
+					if (test(pos + xy(0, 7))) return true;
+					if (test(pos + xy(7, 7))) return true;
+					for (int x = 1; x < 7; ++x) {
+						if (test(pos + xy(x, 0))) return true;
+						if (test(pos + xy(x, 7))) return true;
 					}
+					for (int y = 1; y < 7; ++y) {
+						if (test(pos + xy(0, y))) return true;
+						if (test(pos + xy(7, y))) return true;
+					}
+					return false;
+				};
+
+				a_deque<xy> path = find_path(a->u->type, a->u->pos, [&](xy pos, xy npos) {
+					if (diag_distance(npos - target->pos) <= diag_distance(pos - target->pos)) return false;
+					return can_move_to(npos);
+				}, [&](xy pos, xy npos) {
+					return 0.0;
+				}, [&](xy pos) {
+					return diag_distance(pos - a->u->pos) >= 32 * 2;
+				});
+				log("zling path.size() is %d\n", path.size());
+
+				if (!path.empty()) {
+					a->subaction = combat_unit::subaction_move_directly;
+					a->target_pos = path.back();
+					return;
 				}
+
+			} else {
+				do_run(a, enemies);
+				return;
 			}
 		}
 	}
@@ -4845,7 +4858,7 @@ void fight() {
 			});
 			if (dist <= 32 * 25) {
 				nearby_combat_units.push_back(cu);
-				nearby_allies.push_back(cu->u);
+				if (current_frame >= cu->retreat_until) nearby_allies.push_back(cu->u);
 			}
 		}
 		bool have_static_defence = false;
@@ -4934,8 +4947,49 @@ void fight() {
 				}
 				add(eval, a, 0);
 			}
-			for (unit*e : nearby_enemies) add(eval, e, 1);
+			for (unit*e : nearby_enemies) {
+				if (e->type->is_worker && current_frame - e->last_attacked > 15 * 4) continue;
+				add(eval, e, 1);
+			}
 			eval.run();
+
+			if (nearby_allies.size() > 1 && eval.teams[0].end_hp > 0.0) {
+				combat_eval::eval skip_lowest_eval;
+				combat_unit*lowest_hp = get_best_score(nearby_combat_units, [&](combat_unit*a) {
+					if (current_frame < a->retreat_until) return std::numeric_limits<double>::infinity();
+					if (!a->u->stats->ground_weapon && !a->u->stats->air_weapon) return std::numeric_limits<double>::infinity();
+					for (unit*e : nearby_enemies) {
+						weapon_stats*ew = a->u->is_flying ? e->stats->air_weapon : e->stats->ground_weapon;
+						if (ew && units_distance(e, a->u) <= ew->max_range - 32) return std::numeric_limits<double>::infinity();
+					}
+					return a->u->shields + a->u->hp;
+				}, std::numeric_limits<double>::infinity());
+				if (lowest_hp) {
+					skip_lowest_eval.teams[1].wait_until_attacked = true;
+					skip_lowest_eval.max_frames = eval_frames;
+					for (unit*a : nearby_allies) {
+						if (a == lowest_hp->u) continue;
+						add(skip_lowest_eval, a, 0);
+					}
+					for (unit*e : nearby_enemies) {
+						if (e->type->is_worker && current_frame - e->last_attacked > 15 * 4) continue;
+						add(skip_lowest_eval, e, 1);
+					}
+					skip_lowest_eval.run();
+					//if (skip_lowest_eval.teams[0].score > eval.teams[0].score || skip_lowest_eval.teams[1].score < eval.teams[1].score) {
+					//	if (skip_lowest_eval.teams[0].score >= eval.teams[0].score*0.75) {
+					//log(log_level_info, "skip lowest? team 1 score %g -> %g\n", eval.teams[1].score, skip_lowest_eval.teams[1].score);
+					//if (skip_lowest_eval.teams[0].end_hp > 0.0 && skip_lowest_eval.teams[1].score <= eval.teams[1].score) {
+					if (skip_lowest_eval.teams[0].score >= eval.teams[0].score * 0.75 && skip_lowest_eval.teams[1].score < eval.teams[1].score) {
+						if (true) {
+							//log(log_level_info, "skip lowest! team 1 score %g -> %g\n", eval.teams[1].score, skip_lowest_eval.teams[1].score);
+							eval = skip_lowest_eval;
+							lowest_hp->try_retreat_until = current_frame + 15 * 4;
+						}
+					}
+				}
+			}
+
 			bool run_with_workers = true;
 			if ((eval.teams[0].score < eval.teams[1].score || eval.teams[0].units.empty()) && worker_count) {
 				combat_eval::eval use_workers_eval;
@@ -4947,6 +5001,7 @@ void fight() {
 // 				int zealots = 0;
 				for (unit*e : nearby_enemies) {
 					//if (e->type == unit_types::zealot) ++zealots;
+					if (e->type->is_worker && current_frame - e->last_attacked > 15 * 4) continue;
 					add(use_workers_eval, e, 1);
 				}
 				use_workers_eval.run();
@@ -5002,6 +5057,7 @@ void fight() {
 				log("\n");
 
 				log("result: score %g %g  supply %g %g  damage %g %g  in %d frames\n", eval.teams[0].score, eval.teams[1].score, eval.teams[0].end_supply, eval.teams[1].end_supply, eval.teams[0].damage_dealt, eval.teams[1].damage_dealt, eval.total_frames);
+				//log(" --- %g / %g = %g\n", eval.teams[0].end_hp, eval.teams[0].start_hp, eval.teams[0].end_hp / eval.teams[0].start_hp);
 			}
 
 // 			double fact = 1.0;
@@ -5026,8 +5082,11 @@ void fight() {
 			ground_fight = false;
 			air_fight = false;
 
+			bool fight = eval.teams[0].score >= eval.teams[1].score;
+			//bool fight = eval.teams[0].end_hp > eval.teams[1].end_hp;
+			//bool fight = eval.teams[0].end_hp > 0.0;
 			//bool fight = eval.teams[0].score >= eval.teams[1].score;
-			bool fight = eval.teams[0].score >= eval.teams[1].score * mult;
+	/*		bool fight = eval.teams[0].score >= eval.teams[1].score * mult;
 			//bool fight = eval.teams[0].score >= eval.teams[1].score * 1.25;
 			//bool fight = eval.teams[0].score >= eval.teams[1].score * fact;
 			log("scores: %g %g\n", eval.teams[0].score, eval.teams[1].score);
@@ -5039,7 +5098,7 @@ void fight() {
 			if (eval.teams[0].score >= eval.teams[1].score / 2 && eval.teams[0].end_supply) fight = true;
 			//if (already_fighting && (eval.teams[1].end_supply < eval.teams[1].start_supply - 8 || eval.teams[1].end_supply == 0)) fight = true;
 //			if (already_fighting && (eval.teams[1].end_supply < eval.teams[1].start_supply / 2)) fight = true;
-			if (already_fighting && eval.teams[0].end_supply) fight = true;
+			if (already_fighting && eval.teams[0].end_supply) fight = true;*/
 			//bool fight = eval.teams[0].end_supply > eval.teams[1].end_supply;
 			if (air_fight || ground_fight) fight = false;
 			else {
@@ -5282,6 +5341,8 @@ void fight() {
 				bool attack = fight;
 				attack |= a->u->is_flying && air_fight;
 				attack |= !a->u->is_flying && ground_fight;
+				if (current_frame < a->retreat_until) attack = false;
+				//attack = true;
 				bool skip = false;
 				if (a->u->type->is_worker && !a->u->force_combat_unit && run_with_workers) {
 					attack = false;
@@ -5332,7 +5393,8 @@ void fight() {
 				if (attack) {
 					do_attack(a, nearby_allies, nearby_enemies);
 				} else {
-					if (!run_until) a->run_until = current_frame + 15 * 4;
+					// fix interaction with retreat_until before uncommenting
+					//if (!run_until) a->run_until = current_frame + 15 * 4;
 					a->last_run = current_frame;
 					bool run = true;
 					if (a->u == defensive_matrix_vessel) {
