@@ -92,6 +92,13 @@ struct strat_z_10hatch_ling : strat_z_base {
 			return nodelay(st, unit_types::zergling, army);
 		};
 
+		bool make_hydras = (zergling_count >= 12 || hydralisk_count >= 6) && (zergling_count >= 24 - hydralisk_count * 2 || hydralisk_count < enemy_ground_large_army_supply + enemy_air_army_supply + enemy_vulture_count);
+		if (make_hydras) {
+			army = [army](state&st) {
+				return nodelay(st, unit_types::hydralisk, army);
+			};
+		}
+
 		//if (army_supply < enemy_army_supply || enemy_static_defence_count >= army_supply / 8.0) {
 		if (enemy_static_defence_count >= army_supply / 8.0 && drone_count < 9 + enemy_static_defence_count * 6) {
 			if (army_supply > enemy_attacking_army_supply + 8.0) {
@@ -115,6 +122,11 @@ struct strat_z_10hatch_ling : strat_z_base {
 						army = [army](state&st) {
 							return nodelay(st, unit_types::zergling, army);
 						};
+						if (!st.units[unit_types::hydralisk_den].empty() && make_hydras) {
+							army = [army](state&st) {
+								return nodelay(st, unit_types::hydralisk, army);
+							};
+						}
 					}
 				}
 			}
@@ -132,7 +144,7 @@ struct strat_z_10hatch_ling : strat_z_base {
 				};
 			}
 		}
-		if (hydralisk_count > enemy_air_army_supply) {
+		if (hydralisk_count < enemy_air_army_supply) {
 			army = [army](state&st) {
 				return nodelay(st, unit_types::hydralisk, army);
 			};
