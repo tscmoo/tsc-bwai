@@ -945,6 +945,12 @@ struct strat_z_base {
 				break;
 			}
 
+			if (my_workers.size() <= 4) {
+				for (auto&v : scouting::all_scouts) {
+					if (v.scout_unit && v.scout_unit->type->is_worker) scouting::rm_scout(v.scout_unit);
+				}
+			}
+
 			auto build = [&](state&st) {
 
 				set_build_vars(st);
@@ -952,6 +958,10 @@ struct strat_z_base {
 				army = [&](state&st) {
 					return false;
 				};
+
+				if (drone_count <= 2) {
+					return depbuild(st, state(st), unit_types::drone);
+				}
 
 				return this->build(st);
 
