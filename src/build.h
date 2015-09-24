@@ -840,7 +840,8 @@ void execute_build(build_task&b) {
 				} else {
 					//log("default find pos\n");
 					if (b.type->unit->requires_creep || b.type->unit->requires_pylon) xcept("unreachable: default build spot requires creep or pylon");
-					pos = build_spot_finder::find(starts, b.type->unit, pred_not_creep);
+					if (is_creep) pos = build_spot_finder::find(starts, b.type->unit);
+					else pos = build_spot_finder::find(starts, b.type->unit, pred_not_creep);
 
 					if (pos == xy() && starts[0] == default_build_pos) {
 						log("failed to find build pos, trying to move default_build_pos\n");
