@@ -68,6 +68,8 @@ struct strat_z_base {
 	int attack_interval = 0;
 
 	bool call_build = true;
+	bool call_place_static_defence = true;
+	bool place_static_defence_only_at_main = false;
 
 	void bo_gas_trick(unit_type*ut = unit_types::drone) {
 		if (!bo_all_done()) return;
@@ -121,6 +123,7 @@ struct strat_z_base {
 	int hatch_count;
 	int completed_hatch_count;
 	int larva_count;
+	int damaged_overlord_count;
 
 	int zergling_count;
 	int mutalisk_count;
@@ -253,6 +256,10 @@ struct strat_z_base {
 			for (st_unit&u : st.units[i == 0 ? unit_types::hive : i == 1 ? unit_types::lair : unit_types::hatchery]) {
 				larva_count += u.larva_count;
 			}
+		}
+		damaged_overlord_count = 0;
+		for (unit*u : my_completed_units_of_type[unit_types::overlord]) {
+			if (u->hp < u->stats->hp) ++damaged_overlord_count;
 		}
 
 		zergling_count = count_units_plus_production(st, unit_types::zergling);
@@ -431,12 +438,20 @@ struct strat_z_base {
 					return r;
 				};
 				std::vector<xy> starts;
-				for (unit*u : my_resource_depots) starts.push_back(u->pos);
-				xy pos = build_spot_finder::find_best(starts, 256, pred, score);
-				log("score(pos) is %g\n", score(pos));
-				if (score(pos) > -2.0) {
-					log("not good enough\n");
-					return xy();
+				xy pos;
+				if (place_static_defence_only_at_main) {
+					for (unit*u : my_resource_depots) {
+						if (diag_distance(u->pos - my_start_location) <= 32 * 6) starts.push_back(u->pos);
+					}
+					pos = build_spot_finder::find_best(starts, 256, pred, score);
+				} else {
+					for (unit*u : my_resource_depots) starts.push_back(u->pos);
+					pos = build_spot_finder::find_best(starts, 256, pred, score);
+					log("score(pos) is %g\n", score(pos));
+					if (score(pos) > -2.0) {
+						log("not good enough\n");
+						return xy();
+					}
 				}
 				log("static defence (%s) build pos -> %d %d (%g away from my_closest_base)\n", ut->name, pos.x, pos.y, (pos - combat::my_closest_base).length());
 				return pos;
@@ -450,6 +465,7 @@ struct strat_z_base {
 				if (b.type->unit == unit_types::creep_colony) {
 					if (b.build_near != combat::defence_choke.center) {
 						b.build_near = combat::defence_choke.center;
+						b.require_existing_creep = true;
 						build::unset_build_pos(&b);
 						xy pos = get_static_defence_pos(b.type->unit);
 						if (pos != xy()) {
@@ -940,6 +956,8 @@ struct strat_z_base {
 			force_expand = can_expand && long_distance_miners() >= 1 && my_units_of_type[unit_types::hatchery].size() == my_completed_units_of_type[unit_types::hatchery].size();
 			if (can_expand && free_mineral_patches() == 0 && my_workers.size() >= 45) force_expand = true;
 
+			set_build_vars(get_my_current_state());
+
 			if (tick() || should_transition()) {
 				bo_cancel_all();
 				break;
@@ -970,7 +988,7 @@ struct strat_z_base {
 			if (call_build) execute_build(false, build);
 
 			place_expos();
-			place_static_defence();
+			if (call_place_static_defence) place_static_defence();
 
 			multitasking::sleep(sleep_time);
 		}
