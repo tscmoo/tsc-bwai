@@ -165,6 +165,7 @@ void update_prerequisites(build_task*t) {
 	for (build_type*pt : t->type->prerequisites) {
 		if (pt->unit == unit_types::larva) continue;
 		if (pt->unit == unit_types::hatchery && (!my_units_of_type[unit_types::lair].empty() || !my_units_of_type[unit_types::hive].empty())) continue;
+		if (pt->unit == unit_types::lair && !my_units_of_type[unit_types::lair].empty()) continue;
 		if (pt->unit == unit_types::lair && !my_units_of_type[unit_types::hive].empty()) continue;
 		if (pt->unit == unit_types::greater_spire && !my_units_of_type[unit_types::spire].empty()) continue;
 		if (t->type->unit == unit_types::lair && pt->unit == unit_types::hatchery) continue;
