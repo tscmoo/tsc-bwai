@@ -558,6 +558,13 @@ void update_unit_type(unit*u) {
 			u->building->nobuild_until = 0;
 		}
 	} else u->building = nullptr;
+
+	if (u->owner->random) {
+		if (u->type->race != race_unknown) {
+			u->owner->race = u->type->race;
+			u->owner->random = false;
+		}
+	}
 }
 
 a_deque<weapon_stats> weapon_stats_container;
