@@ -13,6 +13,7 @@ struct choke_t {
 	a_vector<grid::build_square*> outside_squares;
 };
 choke_t defence_choke;
+tsc::dynamic_bitset defence_choke_outside_bitset;
 a_deque<xy> dont_siege_here_path;
 tsc::dynamic_bitset dont_siege_here;
 bool defence_is_scared;
@@ -304,6 +305,8 @@ tsc::dynamic_bitset entire_threat_area_edge;
 void update_group_area(group_t&g) {
 	g.threat_area.reset();
 	for (unit*e : g.enemies) {
+		if (e->type == unit_types::overlord) continue;
+		if (e->building && !e->stats->air_weapon && !e->stats->ground_weapon) continue;
 		tsc::dynamic_bitset visited(grid::build_grid_width*grid::build_grid_height);
 		a_deque<xy> walk_open;
 		a_deque<std::tuple<xy, xy>> threat_open;
@@ -312,7 +315,7 @@ void update_group_area(group_t&g) {
 		if (e->stats->air_weapon && e->stats->air_weapon->max_range > threat_radius) threat_radius = e->stats->air_weapon->max_range;
 		if (e->type == unit_types::bunker) threat_radius = 32 * 6;
 		threat_radius += e->type->width;
-		threat_radius += 48;
+		threat_radius += 64;
 		if (e->type == unit_types::siege_tank_siege_mode) threat_radius += 128;
 		if (e->type == unit_types::dragoon) threat_radius += 32;
 		//if (e->type == unit_types::interceptor) threat_radius = 32;
@@ -375,7 +378,7 @@ a_deque<xy> find_bigstep_path(unit_type*ut, xy from, xy to, square_pathing::path
 	}
 };
 
-bool can_transfer_through(xy pos ) {
+bool can_transfer_through(xy pos) {
 	size_t index = grid::build_square_index(pos);
 	if (!entire_threat_area.test(index)) return true;
 	for (auto&g : groups) {
@@ -383,6 +386,11 @@ bool can_transfer_through(xy pos ) {
 		if (g.threat_area.test(index)) return false;
 	}
 	return true;
+}
+
+bool is_in_defence_choke_outside_squares(xy pos) {
+	size_t index = grid::build_square_index(pos);
+	return defence_choke_outside_bitset.test(index);
 }
 
 bool no_aggressive_groups = false;
@@ -552,13 +560,15 @@ void update_groups() {
 		int buildings = 0;
 		bool just_workers = true;
 		for (unit*e : g.enemies) {
-			if (e->building && !e->stats->air_weapon && !e->stats->ground_weapon && e->type != unit_types::bunker && e->type != unit_types::pylon && current_frame >= e->strategy_high_priority_until) ++buildings;
+			//if (e->building && !e->stats->air_weapon && !e->stats->ground_weapon && e->type != unit_types::bunker && e->type != unit_types::pylon && current_frame >= e->strategy_high_priority_until) ++buildings;
+			if ((e->building || e->type == unit_types::overlord) && !e->stats->air_weapon && !e->stats->ground_weapon && e->type != unit_types::bunker && current_frame >= e->strategy_high_priority_until) ++buildings;
 			else if (!e->type->is_worker) just_workers = false;
 		}
 		if (buildings != g.enemies.size() && !just_workers) {
 			for (auto i = g.enemies.begin(); i != g.enemies.end();) {
 				unit*e = *i;
-				if (e->building && !e->stats->air_weapon && !e->stats->ground_weapon && e->type != unit_types::bunker && e->type != unit_types::pylon && current_frame >= e->strategy_high_priority_until) i = g.enemies.erase(i);
+				//if (e->building && !e->stats->air_weapon && !e->stats->ground_weapon && e->type != unit_types::bunker && e->type != unit_types::pylon && current_frame >= e->strategy_high_priority_until) i = g.enemies.erase(i);
+				if ((e->building || e->type == unit_types::overlord) && !e->stats->air_weapon && !e->stats->ground_weapon && e->type != unit_types::bunker && current_frame >= e->strategy_high_priority_until) i = g.enemies.erase(i);
 				else ++i;
 			}
 		}
@@ -4590,6 +4600,11 @@ void update_defence_choke() {
 			bool use_nearest = defence_choke_use_nearest_until >= current_frame;
 			defence_choke = find_choke_from_to(unit_types::zealot, my_closest_base, op_closest_base, under_attack, is_from_expo, use_nearest);
 
+			defence_choke_outside_bitset.reset();
+			for (auto*bs : defence_choke.outside_squares) {
+				defence_choke_outside_bitset.set(grid::build_square_index(*bs));
+			}
+
 			log("my_start_location is %d %d\n", my_start_location.x, my_start_location.y);
 			log("my_closest_base is %d %d\n", my_closest_base.x, my_closest_base.y);
 
@@ -4953,7 +4968,7 @@ void fight() {
 			}
 			eval.run();
 
-			if (nearby_allies.size() > 1 && eval.teams[0].end_hp > 0.0) {
+			if (nearby_allies.size() > 1 && eval.teams[0].end_hp > 0.0 && eval.teams[1].score >= 25.0) {
 				combat_eval::eval skip_lowest_eval;
 				combat_unit*lowest_hp = get_best_score(nearby_combat_units, [&](combat_unit*a) {
 					if (current_frame < a->retreat_until) return std::numeric_limits<double>::infinity();
@@ -4969,6 +4984,7 @@ void fight() {
 					skip_lowest_eval.max_frames = eval_frames;
 					for (unit*a : nearby_allies) {
 						if (a == lowest_hp->u) continue;
+						if (a->type->is_worker && !a->force_combat_unit) continue;
 						add(skip_lowest_eval, a, 0);
 					}
 					for (unit*e : nearby_enemies) {
@@ -5013,7 +5029,7 @@ void fight() {
 				} else log("using workers is not beneficial (%g vs %g <= %g vs %g)\n", use_workers_eval.teams[0].score, use_workers_eval.teams[1].score, eval.teams[0].score, eval.teams[1].score);
 			} else if (worker_count) log("don't have to use workers\n");
 
-			double mult = 2.0;
+			double mult = 1.0;
 			if (current_frame < combat_mult_override_until) mult = combat_mult_override;
 			log("mult is %g\n", mult);
 
@@ -5061,10 +5077,12 @@ void fight() {
 			}
 
 // 			double fact = 1.0;
-			bool already_fighting = test_pred(nearby_combat_units, [&](combat_unit*cu) {
-				return current_frame - cu->last_fight <= 60 && cu->last_fight - cu->last_run > 0;
-			});
-			if (already_fighting) mult *= 0.4;
+
+// 			bool already_fighting = test_pred(nearby_combat_units, [&](combat_unit*cu) {
+// 				return current_frame - cu->last_fight <= 60 && cu->last_fight - cu->last_run > 0;
+// 			});
+// 			if (already_fighting) mult *= 0.4;
+
 // 			if (already_fighting) fact = 0.5;
 // 			else if (current_used_total_supply >= 20) fact = 1.5;
 // 
@@ -5082,7 +5100,9 @@ void fight() {
 			ground_fight = false;
 			air_fight = false;
 
-			bool fight = eval.teams[0].score >= eval.teams[1].score;
+			bool fight = eval.teams[0].score >= eval.teams[1].score * mult;
+			//if (is_base_defence && worker_count) fight |= eval.teams[0].end_supply >= eval.teams[1].end_supply;
+			if (is_base_defence) fight |= eval.teams[0].end_supply >= eval.teams[1].end_supply;
 			//bool fight = eval.teams[0].end_hp > eval.teams[1].end_hp;
 			//bool fight = eval.teams[0].end_hp > 0.0;
 			//bool fight = eval.teams[0].score >= eval.teams[1].score;
@@ -6016,6 +6036,7 @@ void init() {
 	dont_siege_here.resize(grid::build_grid_width*grid::build_grid_height);
 	dark_swarm_grid.resize(grid::build_grid_width*grid::build_grid_height);
 	existing_dark_swarm.resize(grid::build_grid_width*grid::build_grid_height);
+	defence_choke_outside_bitset.resize(grid::build_grid_width*grid::build_grid_height);
 
 	multitasking::spawn(combat_task, "combat");
 	multitasking::spawn(update_combat_groups_task, "update combat groups");
