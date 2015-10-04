@@ -826,7 +826,10 @@ void process(const a_vector<unit_controller*>&controllers) {
 		bool should_intercept = false;
 		xy intercept_pos;
 		if (c->action == unit_controller::action_attack && c->target && !c->target->dead && latency_frames < 10) {
-			if (c->target->type != unit_types::interceptor && u->type != unit_types::siege_tank_siege_mode) {
+			bool okay = true;
+			okay &= c->target->type != unit_types::interceptor && u->type != unit_types::siege_tank_siege_mode;
+			if (c->target->stats->max_speed >= u->stats->max_speed * 0.875) okay = false;
+			if (okay) {
 				weapon_stats*w = c->target->is_flying ? u->stats->air_weapon : u->stats->ground_weapon;
 				xy upos = u->pos + xy((int)(u->hspeed*latency_frames), (int)(u->vspeed*latency_frames));
 				xy tpos = c->target->pos + xy((int)(c->target->hspeed*latency_frames), (int)(c->target->vspeed*latency_frames));
