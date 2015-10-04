@@ -49,7 +49,10 @@ struct strat_z_base {
 	int enemy_spire_count = 0;
 	int enemy_cloaked_unit_count = 0;
 	int enemy_zealot_count = 0;
+	int enemy_dragoon_count = 0;
 	int enemy_worker_count = 0;
+	int enemy_spawning_pool_count = 0;
+	int enemy_evolution_chamber_count = 0;
 
 	bool opponent_has_expanded = false;
 	bool being_rushed = false;
@@ -57,6 +60,7 @@ struct strat_z_base {
 
 	bool default_upgrades = true;
 	bool default_worker_defence = true;
+	bool pull_workers_for_ling_zealot_defence = false;
 
 	int min_bases = 2;
 	int max_bases = 0;
@@ -591,6 +595,8 @@ struct strat_z_base {
 			my_defiler_count = my_units_of_type[unit_types::defiler].size();
 			my_mutalisk_count = my_units_of_type[unit_types::mutalisk].size();
 
+			set_build_vars(get_my_current_state());
+
 			enemy_terran_unit_count = 0;
 			enemy_protoss_unit_count = 0;
 			enemy_zerg_unit_count = 0;
@@ -632,7 +638,10 @@ struct strat_z_base {
 			enemy_spire_count = 0;
 			enemy_cloaked_unit_count = 0;
 			enemy_zealot_count = 0;
+			enemy_dragoon_count = 0;
 			enemy_worker_count = 0;
+			enemy_spawning_pool_count = 0;
+			enemy_evolution_chamber_count = 0;
 
 			update_possible_start_locations();
 			for (unit*e : enemy_units) {
@@ -695,7 +704,10 @@ struct strat_z_base {
 				if (e->type == unit_types::spire) ++enemy_spire_count;
 				if (e->cloaked) ++enemy_cloaked_unit_count;
 				if (e->type == unit_types::zealot) ++enemy_zealot_count;
+				if (e->type == unit_types::dragoon) ++enemy_dragoon_count;
 				if (e->type->is_worker) ++enemy_worker_count;
+				if (e->type == unit_types::spawning_pool) ++enemy_spawning_pool_count;
+				if (e->type == unit_types::evolution_chamber) ++enemy_evolution_chamber_count;
 			}
 
 			if (enemy_terran_unit_count + enemy_protoss_unit_count) overlord_scout(enemy_gas_count + enemy_units_that_shoot_up_count + enemy_barracks_count == 0);
@@ -832,6 +844,94 @@ struct strat_z_base {
 				}
 			}
 
+			if (pull_workers_for_ling_zealot_defence && is_defending && my_completed_units_of_type[unit_types::sunken_colony].empty() && army_supply < 12.0) {
+				log(log_level_info, "pull_workers_for_ling_zealot_defence!\n");
+				for (auto&g : combat::groups) {
+					if (g.is_aggressive_group || g.is_defensive_group) continue;
+					if (g.ground_dpf < 2.0) continue;
+					bool skip = false;
+					bool any_attacking = false;
+					for (unit*e : g.enemies) {
+						if (e->type != unit_types::zergling && e->type != unit_types::zealot && !e->type->is_worker && e->type != unit_types::overlord) {
+							skip = true;
+							break;
+						}
+						if (current_frame - e->last_attacked <= 15 * 12) any_attacking = true;
+						if (!combat::my_base.test(grid::build_square_index(e->pos))) continue;
+					}
+					log(log_level_info, "skip is %d\n", skip);
+					if (skip) continue;
+					int my_non_workers = 0;
+					for (combat::combat_unit*cu : g.allies) {
+						if (!cu->u->type->is_worker) ++my_non_workers;
+					}
+					log(log_level_info, "my_non_workers is %d\n", my_non_workers);
+					if (my_non_workers < 3) continue;
+
+					a_vector<unit*> pulls;
+
+					while (true) {
+						combat_eval::eval eval;
+						eval.max_frames = 15 * 20;
+						for (combat::combat_unit*cu : g.allies) {
+							if (cu->u->type->is_worker) continue;
+							eval.add_unit(cu->u, 0);
+						}
+						int skip = 3;
+						for (unit*u : pulls) {
+							if (skip--) continue;
+							eval.add_unit(u, 0);
+						}
+						for (unit*u : g.enemies) {
+							eval.add_unit(u, 1);
+							if (!combat::my_base.test(grid::build_square_index(u->pos))) continue;
+						}
+						eval.run();
+
+						if (eval.teams[1].end_supply == 0.0) break;
+						if (eval.teams[0].end_supply) break;
+
+						size_t prev_size = pulls.size();
+						for (unit*u : my_workers) {
+							//if (u->controller->action != unit_controller::action_gather) continue;
+							if (u->controller->action == unit_controller::action_build) continue;
+							if (u->controller->action == unit_controller::action_scout) continue;
+							if (std::find(pulls.begin(), pulls.end(), u) != pulls.end()) continue;
+							pulls.push_back(u);
+							if (pulls.size() - prev_size >= 2) break;
+						}
+						if (prev_size == pulls.size()) {
+							log(log_level_info, "tried pulling %d workers, not good enough and nothing more to pull :(\n", pulls.size());
+							//pulls.clear();
+							break;
+						}
+					}
+
+					log(log_level_info, "pull %d workers!\n", pulls.size());
+
+					if (!pulls.empty()) {
+						combat::combat_mult_override = 0.0;
+						combat::combat_mult_override_until = current_frame + 15 * 4;
+					}
+
+					for (unit*u : pulls) {
+						combat::combat_unit*cu = nullptr;
+						for (auto*a : combat::live_combat_units) {
+							if (a->u == u) cu = a;
+						}
+						if (cu) {
+							if (diag_distance(u->pos - g.enemies.front()->pos) > 32 * 10) {
+								cu->strategy_busy_until = current_frame + 15 * 2;
+								cu->action = combat::combat_unit::action_offence;
+								cu->subaction = combat::combat_unit::subaction_move;
+								cu->target_pos = g.enemies.front()->pos;
+							}
+						}
+						u->force_combat_unit = true;
+					}
+					
+				}
+			}
 
 			if (current_used_total_supply >= 100 && get_upgrades::no_auto_upgrades) {
 				get_upgrades::set_no_auto_upgrades(false);
@@ -955,8 +1055,6 @@ struct strat_z_base {
 			can_expand = get_next_base();
 			force_expand = can_expand && long_distance_miners() >= 1 && my_units_of_type[unit_types::hatchery].size() == my_completed_units_of_type[unit_types::hatchery].size();
 			if (can_expand && free_mineral_patches() == 0 && my_workers.size() >= 45) force_expand = true;
-
-			set_build_vars(get_my_current_state());
 
 			if (tick() || should_transition()) {
 				bo_cancel_all();
