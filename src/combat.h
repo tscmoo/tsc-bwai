@@ -4931,7 +4931,7 @@ void fight() {
 				int cooldown_override = 0;
 				if (!u->visible) cooldown_override = 0;
 				if (u->type->requires_pylon && !u->is_powered) cooldown_override = 15 * 60;
-				if (!u->is_completed) cooldown_override = u->remaining_whatever_time;
+				//if (!u->is_completed) cooldown_override = u->remaining_whatever_time;
 				auto&c = eval.add_unit(st, team);
 				c.move = get_best_score_value(team ? nearby_allies : nearby_enemies, [&](unit*e) {
 					if (e->type->is_flyer && !c.st->air_weapon) return std::numeric_limits<double>::infinity();
@@ -4964,6 +4964,7 @@ void fight() {
 			}
 			for (unit*e : nearby_enemies) {
 				if (e->type->is_worker && current_frame - e->last_attacked > 15 * 4) continue;
+				if (e->building && e->remaining_build_time >= 15 * 1) return;
 				add(eval, e, 1);
 			}
 			eval.run();
@@ -4989,6 +4990,7 @@ void fight() {
 					}
 					for (unit*e : nearby_enemies) {
 						if (e->type->is_worker && current_frame - e->last_attacked > 15 * 4) continue;
+						if (e->building && e->remaining_build_time >= 15 * 1) return;
 						add(skip_lowest_eval, e, 1);
 					}
 					skip_lowest_eval.run();
@@ -5018,6 +5020,7 @@ void fight() {
 				for (unit*e : nearby_enemies) {
 					//if (e->type == unit_types::zealot) ++zealots;
 					if (e->type->is_worker && current_frame - e->last_attacked > 15 * 4) continue;
+					if (e->building && e->remaining_build_time >= 15 * 1) return;
 					add(use_workers_eval, e, 1);
 				}
 				use_workers_eval.run();
