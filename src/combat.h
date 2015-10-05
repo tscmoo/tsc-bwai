@@ -4964,7 +4964,7 @@ void fight() {
 			}
 			for (unit*e : nearby_enemies) {
 				if (e->type->is_worker && current_frame - e->last_attacked > 15 * 4) continue;
-				if (e->building && e->remaining_build_time >= 15 * 1) return;
+				if (e->building && e->remaining_build_time >= 15 * 1) continue;
 				add(eval, e, 1);
 			}
 			eval.run();
@@ -4990,7 +4990,7 @@ void fight() {
 					}
 					for (unit*e : nearby_enemies) {
 						if (e->type->is_worker && current_frame - e->last_attacked > 15 * 4) continue;
-						if (e->building && e->remaining_build_time >= 15 * 1) return;
+						if (e->building && e->remaining_build_time >= 15 * 1) continue;
 						add(skip_lowest_eval, e, 1);
 					}
 					skip_lowest_eval.run();
@@ -5020,7 +5020,7 @@ void fight() {
 				for (unit*e : nearby_enemies) {
 					//if (e->type == unit_types::zealot) ++zealots;
 					if (e->type->is_worker && current_frame - e->last_attacked > 15 * 4) continue;
-					if (e->building && e->remaining_build_time >= 15 * 1) return;
+					if (e->building && e->remaining_build_time >= 15 * 1) continue;
 					add(use_workers_eval, e, 1);
 				}
 				use_workers_eval.run();
