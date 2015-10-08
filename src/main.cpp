@@ -390,14 +390,14 @@ struct module : BWAPI::AIModule {
 		multitasking::run();
 		render::render();
 
-		double elapsed = ht.elapsed();
-		if (elapsed >= 1.0 / 20) {
-			log(log_level_info, " WARNING: frame took %fs!\n", elapsed);
-			for (auto id : multitasking::detail::running_tasks) {
-				auto&t = multitasking::detail::tasks[id];
-				log(log_level_info, " - %s took %f\n", t.name, multitasking::get_cpu_time(id) - last_cpu_time[id]);
-			}
-		}
+// 		double elapsed = ht.elapsed();
+// 		if (elapsed >= 1.0 / 20) {
+// 			log(log_level_info, " WARNING: frame took %fs!\n", elapsed);
+// 			for (auto id : multitasking::detail::running_tasks) {
+// 				auto&t = multitasking::detail::tasks[id];
+// 				log(log_level_info, " - %s took %f\n", t.name, multitasking::get_cpu_time(id) - last_cpu_time[id]);
+// 			}
+// 		}
 
 		if (current_frame >= 30 && !send_text_queue.empty()) {
 			a_string str = send_text_queue.front();
