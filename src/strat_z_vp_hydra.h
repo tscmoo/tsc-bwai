@@ -27,7 +27,6 @@ struct strat_z_vp_hydra : strat_z_base {
 
 		fight_ok = eval_combat(false, 0);
 		defence_fight_ok = eval_combat(true, 2);
-		//defence_fight_ok = eval_combat(true, my_workers.size() >= 14 ? 2 : 0);
 
 		army_supply = current_used_total_supply - my_workers.size();
 
@@ -36,14 +35,6 @@ struct strat_z_vp_hydra : strat_z_base {
 		max_bases = maybe_being_rushed && army_supply < 24.0 && my_workers.size() < 30.0 ? 2 : 0;
 		if (max_bases == 0 && my_hatch_count < 5) max_bases = 3;
 
-		if (is_defending) {
-			combat::no_scout_around = true;
-			combat::aggressive_zerglings = false;
-		} else {
-			combat::no_scout_around = army_supply <= enemy_army_supply || enemy_static_defence_count >= 2;
-			if (enemy_attacking_army_supply) combat::no_scout_around = true;
-			combat::aggressive_zerglings = true;
-		}
 
 // 		if (enemy_attacking_army_supply >= 12.0) was_rushed = true;
 // 		if (players::opponent_player->minerals_lost >= 600.0) was_rushed = true;
@@ -93,14 +84,24 @@ struct strat_z_vp_hydra : strat_z_base {
 		else attack_interval = 0;
 		if (army_supply < enemy_army_supply + 15.0) attack_interval = 0;
 
-		if (enemy_attacking_army_supply >= 8.0) {
-			combat::no_aggressive_groups = !is_defending;
-			combat::aggressive_groups_done_only = false;
-			combat::aggressive_zerglings = false;
+		if (players::opponent_player->race != race_zerg) {
+			if (enemy_attacking_army_supply >= 8.0) {
+				combat::no_aggressive_groups = !is_defending;
+				combat::aggressive_groups_done_only = false;
+				combat::aggressive_zerglings = false;
+			}
+			if ((maybe_being_rushed || was_rushed) && army_supply > enemy_army_supply) {
+				combat::no_aggressive_groups = false;
+				combat::aggressive_groups_done_only = false;
+			}
 		}
-		if ((maybe_being_rushed || was_rushed) && army_supply > enemy_army_supply) {
-			combat::no_aggressive_groups = false;
-			combat::aggressive_groups_done_only = false;
+
+		//if ((being_rushed || enemy_barracks_count >= 2 || enemy_marine_count >= 6) && !defence_fight_ok && sunken_count == 0) {
+		if ((being_rushed || (maybe_being_rushed && completed_hatch_count < 2 && (enemy_barracks_count >= 2 || enemy_marine_count >= 4))) && !defence_fight_ok && sunken_count == 0) {
+			//place_static_defence_only_at_main = true;
+			call_place_static_defence = false;
+		} else if (sunken_count >= 2) {
+			call_place_static_defence = true;
 		}
 
 		damaged_overlord_count = 0;
@@ -276,70 +277,41 @@ struct strat_z_vp_hydra : strat_z_base {
 			}
 		}
 
-// 		if (maybe_being_rushed && enemy_gateway_count >= 2 && zergling_count < 14 && sunken_count < 2) {
-// 			army = [army](state&st) {
-// 				return nodelay(st, unit_types::zergling, army);
-// 			};
-// 		}
-		//if (zergling_count < enemy_army_supply * 2 + 4 && sunken_count == 0) {
-// 		if (drone_count < 20 && zergling_count < enemy_army_supply * 2 + 4 && sunken_count < 2) {
-// 			army = [army](state&st) {
-// 				return nodelay(st, unit_types::zergling, army);
-// 			};
-// 		}
-		if (my_completed_units_of_type[unit_types::hatchery].size() >= 2 && enemy_gateway_count >= 2 && sunken_count < 2) {
-			army = [army](state&st) {
-				return nodelay(st, unit_types::sunken_colony, army);
-			};
-		}
 
-		if (my_completed_units_of_type[unit_types::hatchery].size() >= 2) {
-			if (maybe_being_rushed || drone_count >= 14) {
-			//if (!maybe_being_rushed && drone_count >= 13) {
-				if (sunken_count < 1) {
-					army = [army](state&st) {
-						return nodelay(st, unit_types::sunken_colony, army);
-					};
-				}
+		if (players::opponent_player->race != race_zerg || drone_count >= 18) {
+			if (my_completed_units_of_type[unit_types::hatchery].size() >= 2 && (enemy_gateway_count >= 2 || enemy_barracks_count >= 2 || enemy_army_supply >= 4.0) && sunken_count < 2) {
+				army = [army](state&st) {
+					return nodelay(st, unit_types::sunken_colony, army);
+				};
 			}
-			if (maybe_being_rushed || enemy_attacking_army_supply > 4.0) {
-				if (!defence_fight_ok || (maybe_being_rushed && drone_count >= 20 && sunken_count < 4) || (drone_count >= 20 && sunken_count == 0)) {
-					//if ((army_supply >= 4.0 && army_supply > enemy_army_supply && sunken_count >= 2) || st.bases.size() >= 3 || sunken_count >= 2) {
-					if ((army_supply >= 4.0 && army_supply > enemy_army_supply && sunken_count >= 2) || st.bases.size() >= 3) {
-					} else {
-						if (sunken_count < (enemy_attacking_army_supply > 2.0 ? 4 : (drone_count >= 22 ? 3 : (drone_count >= 15 ? 2 : 1)))) {
-							army = [army](state&st) {
-								return nodelay(st, unit_types::sunken_colony, army);
-							};
+
+			if (my_completed_units_of_type[unit_types::hatchery].size() >= 2 || !call_place_static_defence) {
+				if (maybe_being_rushed || drone_count >= 14) {
+					if (sunken_count < 1) {
+						army = [army](state&st) {
+							return nodelay(st, unit_types::sunken_colony, army);
+						};
+					}
+				}
+				if (maybe_being_rushed || enemy_attacking_army_supply > 4.0) {
+					if (!defence_fight_ok || (maybe_being_rushed && drone_count >= 20 && sunken_count < 4) || (drone_count >= 20 && sunken_count == 0)) {
+						if ((army_supply >= 4.0 && army_supply > enemy_army_supply && sunken_count >= 2) || st.bases.size() >= 3) {
+						} else {
+							if (sunken_count < (enemy_attacking_army_supply > 2.0 ? 4 : (drone_count >= 22 ? 3 : (drone_count >= 15 ? 2 : 1)))) {
+								army = [army](state&st) {
+									return nodelay(st, unit_types::sunken_colony, army);
+								};
+							}
 						}
 					}
-// 					if (sunken_count < 1) {
-// 						army = [army](state&st) {
-// 							return nodelay(st, unit_types::sunken_colony, army);
-// 						};
-// 					} else {
-// 						if (drone_count >= 24) {
-// 							if (sunken_count < 5) {
-// 								army = [army](state&st) {
-// 									return nodelay(st, unit_types::sunken_colony, army);
-// 								};
-// 							}
-// 						} else {
-// 							if (zergling_count < 12) {
-// 								army = [army](state&st) {
-// 									return nodelay(st, unit_types::zergling, army);
-// 								};
-// 							} else {
-// 								if (sunken_count < 2) {
-// 									army = [army](state&st) {
-// 										return nodelay(st, unit_types::sunken_colony, army);
-// 									};
-// 								}
-// 							}
-// 						}
-// 					}
 				}
 			}
+		}
+
+		if (players::opponent_player->race == race_zerg && (army_supply < enemy_army_supply || army_supply < 12.0)) {
+			army = [army](state&st) {
+				return nodelay(st, unit_types::zergling, army);
+			};
 		}
 
 		if (enemy_reaver_count || enemy_shuttle_count) {
@@ -400,6 +372,9 @@ struct strat_z_vp_hydra : strat_z_base {
 // 		}
 
 		double desired_army_supply = drone_count*drone_count * 0.015 + drone_count * 0.8 - 16;
+		if (players::opponent_player->race == race_zerg) {
+			desired_army_supply = drone_count*drone_count * 0.08 + drone_count * 0.5 - 4;
+		}
 		if (army_supply >= desired_army_supply) {
 			if (defence_fight_ok || (army_supply >= 30.0 && !is_defending)) {
 				army = [army](state&st) {
