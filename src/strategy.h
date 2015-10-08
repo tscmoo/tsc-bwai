@@ -323,6 +323,141 @@ bool run_strat(const a_string& name, std::function<void()> check_transition_func
 	return r;
 }
 
+struct strat_choice_t {
+	a_string name;
+	double my_lost_minerals;
+	double my_lost_gas;
+	double op_lost_minerals;
+	double op_lost_gas;
+	int end_frame;
+	int dead_frames;
+};
+a_vector<strat_choice_t> strat_choices;
+bool strat_choice_active = false;
+double strat_choice_begin_my_lost_minerals;
+double strat_choice_begin_my_lost_gas;
+double strat_choice_begin_op_lost_minerals;
+double strat_choice_begin_op_lost_gas;
+
+int strat_choice_dead_frames;
+
+void end_strat_choice() {
+	if (!strat_choice_active || strat_choices.empty()) return;
+	strat_choice_active = false;
+	auto&e = strat_choices.back();
+	e.my_lost_minerals = players::my_player->minerals_lost - strat_choice_begin_my_lost_minerals;
+	e.my_lost_gas = players::my_player->gas_lost - strat_choice_begin_my_lost_gas;
+	e.op_lost_minerals = players::opponent_player->minerals_lost - strat_choice_begin_op_lost_minerals;
+	e.op_lost_gas = players::opponent_player->gas_lost - strat_choice_begin_op_lost_gas;
+	e.end_frame = current_frame;
+	e.dead_frames = strat_choice_dead_frames;
+}
+
+void set_strat_choice(const a_string& name) {
+	if (strat_choice_active) end_strat_choice();
+	strat_choice_t t;
+	t.name = name;
+	strat_choices.push_back(std::move(t));
+	strat_choice_begin_my_lost_minerals = players::my_player->minerals_lost;
+	strat_choice_begin_my_lost_gas = players::my_player->gas_lost;
+	strat_choice_begin_op_lost_minerals = players::opponent_player->minerals_lost;
+	strat_choice_begin_op_lost_gas = players::opponent_player->gas_lost;
+	strat_choice_dead_frames = 0;
+	strat_choice_active = true;
+}
+
+enum {
+	tag_pool_first = 1,
+	tag_hatch_first = 2,
+	tag_aggressive = 4,
+	tag_very_aggressive = 8,
+	tag_safe = 0x10,
+	tag_greedy = 0x20,
+	tag_low_econ = 0x40,
+	tag_high_econ = 0x80,
+	tag_defensive = 0x100,
+	tag_opening = 0x200,
+	tag_midgame = 0x400,
+	tag_lategame = 0x800
+};
+
+a_map<int, a_string> tag_names = {
+	{ tag_pool_first, "pool first" },
+	{ tag_hatch_first, "hatch first" },
+	{ tag_aggressive, "aggressive" },
+	{ tag_very_aggressive, "very aggressive" },
+	{ tag_safe, "safe" },
+	{ tag_greedy, "greedy" },
+	{ tag_low_econ, "low econ" },
+	{ tag_high_econ, "high econ" },
+	{ tag_defensive, "defensive" },
+	{ tag_opening, "opening" },
+	{ tag_midgame, "midgame" },
+	{ tag_lategame, "lategame" }
+};
+
+struct choice_t {
+	a_string name;
+	int tags = 0;
+//	std::function<void()> execute;
+	choice_t(a_string name, int tags) : name(name), tags(tags) {}
+};
+
+a_vector<choice_t> choices = {
+	{ "zvz opening", tag_opening | tag_pool_first | tag_aggressive },
+	{ "z 5pool", tag_opening | tag_pool_first | tag_very_aggressive | tag_low_econ },
+	{ "z 9pool", tag_opening | tag_pool_first | tag_safe },
+	{ "z 10hatch", tag_opening | tag_hatch_first },
+	{ "z 9pool speed into 1hatch spire", tag_opening | tag_pool_first | tag_aggressive | tag_low_econ },
+	{ "z 2hatch muta", tag_opening | tag_safe | tag_high_econ },
+	{ "z 9pool -> 10hatch ling", tag_opening | tag_pool_first | tag_very_aggressive | tag_low_econ },
+	{ "z 10hatch ling", tag_opening | tag_hatch_first | tag_very_aggressive | tag_low_econ },
+	{ "z fast mass expand", tag_opening | tag_hatch_first | tag_greedy | tag_high_econ},
+	{ "z 13pool muta", tag_opening | tag_aggressive },
+
+	{ "z vp hydra", tag_midgame | tag_safe | tag_high_econ },
+	{ "z 9pool speed into 1hatch spire (midgame)", tag_midgame | tag_aggressive | tag_low_econ },
+	{ "z 2hatch muta (midgame)", tag_midgame | tag_high_econ },
+	{ "z econ2", tag_midgame | tag_safe | tag_defensive },
+	{ "z hydra into muta", tag_midgame | tag_safe | tag_high_econ },
+	{ "z 3hatch spire", tag_midgame | tag_safe},
+	{ "z queen", tag_midgame | tag_greedy },
+	{ "z econ", tag_midgame | tag_high_econ },
+
+	{ "z lategame", tag_lategame },
+	{ "z lategame2", tag_lategame },
+};
+
+void validate_strat_name() {
+}
+template<typename A, typename...Ax>
+void validate_strat_name(A&&a, Ax&&...ax) {
+	for (auto&v : choices) {
+		if (v.name == a) {
+			validate_strat_name(std::forward<Ax>(ax)...);
+			return;
+		}
+	}
+	xcept("no such choice: %s\n", a);
+}
+
+template<typename A>
+choice_t find_choice(A&&name) {
+	for (auto&v : choices) {
+		if (v.name == name) {
+			return v;
+		}
+	}
+	return { "", 0 };
+}
+
+template<typename...args_T>
+a_string choose_strat(args_T&&...args) {
+	validate_strat_name(args...);
+	return adapt::choose(std::forward<args_T>(args)...);
+}
+
+
 void strategy_task() {
 
 	multitasking::sleep(1);
@@ -381,48 +516,85 @@ void strategy_task() {
 
 		if (players::opponent_player->race == race_terran) {
 
-			a_string opening = adapt::choose("z 5pool", "z 9pool", "z 10hatch", "z 10hatch ling", "z fast mass expand", "z 13pool muta", "z 2hatch muta");
-			run_strat(opening);
-			if (current_used_total_supply < 80) {
-				a_string midgame = adapt::choose("z vp hydra", "z econ2", "z 3hatch spire", "z queen", "z econ");
-				run_strat(midgame);
+			a_string main = choose_strat("z 5pool", "z 10hatch ling", "z 13pool muta", "z 2hatch muta", "z vp hydra", "z econ2", "z 3hatch spire", "z econ");
+
+			if (find_choice(main).tags & tag_midgame) {
+				a_string opening = choose_strat("z 9pool", "z 10hatch");
+				set_strat_choice(opening);
+				run_strat(opening);
+				set_strat_choice(main);
+				run_strat(main);
+			} else {
+				set_strat_choice(main);
+				run_strat(main);
+				if (current_used_total_supply < 80) {
+					a_string midgame = choose_strat("z vp hydra", "z econ2", "z 3hatch spire", "z econ");
+					set_strat_choice(midgame);
+					run_strat(midgame);
+				}
 			}
+
 			a_string lategame = adapt::choose("z lategame", "z lategame2");
+			set_strat_choice(lategame);
 			run_strat(lategame);
 
 		} else if (players::opponent_player->race == race_protoss) {
 
-			a_string opening = adapt::choose("z 5pool", "z 9pool", "z 10hatch", "z 10hatch ling", "z fast mass expand", "z 13pool muta", "z 2hatch muta");
-			run_strat(opening);
-			if (current_used_total_supply < 80) {
-				a_string midgame = adapt::choose("z vp hydra", "z econ2", "z hydra into muta");
-				run_strat(midgame);
+			a_string main = choose_strat("z 5pool", "z 10hatch ling", "z 13pool muta", "z 2hatch muta", "z vp hydra", "z econ2", "z hydra into muta");
+
+			if (find_choice(main).tags & tag_midgame) {
+				a_string opening = choose_strat("z 9pool", "z 10hatch");
+				set_strat_choice(opening);
+				run_strat(opening);
+				set_strat_choice(main);
+				run_strat(main);
+			} else {
+				set_strat_choice(main);
+				run_strat(main);
+				if (current_used_total_supply < 80) {
+					a_string midgame = choose_strat("z vp hydra", "z econ2", "z hydra into muta");
+					set_strat_choice(midgame);
+					run_strat(midgame);
+				}
 			}
+
 			a_string lategame = adapt::choose("z lategame", "z lategame2");
+			set_strat_choice(lategame);
 			run_strat(lategame);
 
 		} else if (players::opponent_player->race == race_zerg) {
 
-			a_string opening = adapt::choose("zvz opening", "z 5pool", "z 9pool", "z 10hatch", "z 10hatch ling", "z 9pool speed into 1hatch spire", "z 2hatch muta", "z 9pool -> 10hatch ling");
-			if (opening == "z 9pool -> 10hatch ling") {
-				run_strat("z 9pool");
-				run_strat("z 10hatch ling");
-			} else {
-				run_strat(opening);
+			a_string main = choose_strat("zvz opening", "z 5pool", "z 9pool -> 10hatch ling", "z 9pool speed into 1hatch spire", "z 2hatch muta", "z vp hydra", "z econ2");
+
+			if (main == "zvz opening") {
+				set_strat_choice(main);
+				run_strat(main);
+				run_strat("zvz");
 			}
-			if (opening == "zvz opening") run_strat("zvz");
-			if (current_used_total_supply < 80) {
-				if (opening == "z 5pool" || opening == "z 9pool" || opening=="z 10hatch" || opening == "z 10hatch ling") {
-					a_string midgame = adapt::choose("z vp hydra", "z 9pool speed into 1hatch spire (midgame)", "z 2hatch muta (midgame)");
+
+			if (find_choice(main).tags & tag_midgame) {
+				a_string opening = choose_strat("z 9pool", "z 10hatch");
+				set_strat_choice(opening);
+				run_strat(opening);
+				set_strat_choice(main);
+				run_strat(main);
+			} else {
+				set_strat_choice(main);
+				if (main == "z 9pool -> 10hatch ling") {
+					run_strat("z 9pool");
+					run_strat("z 10hatch ling");
+				} else run_strat(main);
+				if (current_used_total_supply < 80) {
+					a_string midgame = choose_strat("z vp hydra", "z 9pool speed into 1hatch spire (midgame)", "z 2hatch muta (midgame)", "z econ2", "z hydra into muta");
+					set_strat_choice(midgame);
 					if (midgame == "z 9pool speed into 1hatch spire (midgame)") midgame = "z 9pool speed into 1hatch spire";
 					if (midgame == "z 2hatch muta (midgame)") midgame = "z 2hatch muta";
 					run_strat(midgame);
-				} else {
-					a_string midgame = adapt::choose("z vp hydra", "z lategame", "z lategame2");
-					run_strat(midgame);
 				}
 			}
+
 			a_string lategame = adapt::choose("z lategame", "z lategame2");
+			set_strat_choice(lategame);
 			run_strat(lategame);
 
 		}
@@ -448,18 +620,68 @@ void strategy_task() {
 
 }
 
+void strategy_count_dead_frames_task() {
+	
+	while (true) {
+		int f = current_frame;
+		bool dead = current_minerals_per_frame < 0.125;
+		multitasking::sleep(10);
+		if (dead) strat_choice_dead_frames += current_frame - f;
+	}
+
+}
+
 bool group_adapt_by_opponent_name = true;
 bool group_adapt_by_race = true;
-a_string adapt_read_filename = "bwapi-data/read/tsc-bwai-adapt.txt";
-a_string adapt_write_filename = "bwapi-data/write/tsc-bwai-adapt.txt";
+a_string adapt_read_filename = "bwapi-data/read/tsc-bwai-adapt-";
+a_string adapt_write_filename = "bwapi-data/write/tsc-bwai-adapt-";
+bool adapt_filename_append_opponent_name = true;
 
 a_string opponent_name;
 a_string opponent_race;
 
+a_string escape_filename(const a_string&str) {
+	a_string r;
+	const char*c = str.c_str();
+	const char*lc = c;
+	auto flush = [&]() {
+		r.append(lc, c - lc);
+		lc = c;
+	};
+	while (*c) {
+		if (*c == '-' || *c == '.' || (*c >= 'A' && *c <= 'Z') || (*c >= 'a' && *c <= 'z') || (*c >= '0' && *c <= '9')) ++c;
+		else {
+			flush();
+			++lc;
+			char buf[3];
+			buf[0] = '_';
+			buf[1] = *c >> 4 & 0xf;
+			if (buf[1] < 10) buf[1] += '0';
+			else buf[1] += -10 + 'a';
+			buf[2] = *c & 0xf;
+			if (buf[2] < 10) buf[2] += '0';
+			else buf[2] += -10 + 'a';
+			r.append(buf, 3);
+			++c;
+		}
+	}
+	flush();
+	return r;
+}
+
+a_string get_read_filename() {
+	if (adapt_filename_append_opponent_name) return adapt_read_filename + escape_filename(opponent_name) + ".txt";
+	return adapt_read_filename;
+}
+a_string get_write_filename() {
+	if (adapt_filename_append_opponent_name) return adapt_write_filename + escape_filename(opponent_name) + ".txt";
+	return adapt_write_filename;
+}
 
 void init() {
 
 	multitasking::spawn(strategy_task, "strategy");
+	multitasking::spawn(strategy_count_dead_frames_task, "strategy count dead frames");
 
 	int enemies = 0;
 	int enemy_race = race_unknown;
@@ -483,43 +705,48 @@ void init() {
 	else if (enemy_race == race_zerg) opponent_race = "zerg";
 	else opponent_race = "unknown";
 
-	auto dat = read_json(adapt_read_filename);
+	auto dat = read_json(get_read_filename());
 
 	adapt::weights["z lategame2"] = 2.5;
 	adapt::weights["z lategame"] = 1.0;
-	if (enemy_race == race_terran) {
-		adapt::weights["z fast mass expand"] = 2.0;
-		adapt::weights["z 10hatch"] = 3.0;
-		adapt::weights["z 10hatch ling"] = 2.0;
+// 	if (enemy_race == race_terran) {
+// 		adapt::weights["z fast mass expand"] = 2.0;
+// 		adapt::weights["z 10hatch"] = 3.0;
+// 		adapt::weights["z 10hatch ling"] = 2.0;
+// 
+// 		adapt::weights["z econ2"] = 5.0;
+// 		adapt::weights["z 3hatch spire"] = 2.5;
+// 	} else if (enemy_race == race_protoss) {
+// 		adapt::weights["z fast mass expand"] = 2.0;
+// 		adapt::weights["z 10hatch"] = 3.0;
+// 		adapt::weights["z 10hatch ling"] = 2.0;
+// 
+// 		adapt::weights["z vp hydra"] = 5.0;
+// 	} else if (enemy_race == race_zerg) {
+// 		adapt::weights["z 10hatch ling"] = 3.0;
+// 		adapt::weights["z 2hatch muta (midgame)"] = 2.5;
+// 		adapt::weights["z 9pool -> 10hatch ling"] = 3.0;
+// 	}
 
-		adapt::weights["z econ2"] = 5.0;
-		adapt::weights["z 3hatch spire"] = 2.5;
-	} else if (enemy_race == race_protoss) {
-		adapt::weights["z fast mass expand"] = 2.0;
-		adapt::weights["z 10hatch"] = 3.0;
-		adapt::weights["z 10hatch ling"] = 2.0;
+// 	adapt::weights["t bio tank"] = 2.0;
+// 	adapt::weights["t mech"] = 2.0;
+// 	if (enemy_race == race_terran) {
+// 		adapt::weights["t 14cc"] = 3.0;
+// 		adapt::weights["t 2fact vulture"] = 3.0;
+// 		adapt::weights["t proxy tank"] = 2.0;
+// 	} else if (enemy_race == race_protoss) {
+// 		adapt::weights["t siege expand"] = 3.0;
+// 		adapt::weights["tvp opening"] = 2.0;
+// 		adapt::weights["t wraith rush"] = 1.5;
+// 	} else if (enemy_race == race_zerg) {
+// 		adapt::weights["t 8rax fe"] = 3.0;
+// 		adapt::weights["tvz opening"] = 2.0;
+// 		adapt::weights["z 2fact vulture"] = 2.0;
+// 	}
 
-		adapt::weights["z vp hydra"] = 5.0;
-	} else if (enemy_race == race_zerg) {
-		adapt::weights["z 10hatch ling"] = 3.0;
-		adapt::weights["z 2hatch muta (midgame)"] = 2.5;
-		adapt::weights["z 9pool -> 10hatch ling"] = 3.0;
-	}
-
-	adapt::weights["t bio tank"] = 2.0;
-	adapt::weights["t mech"] = 2.0;
-	if (enemy_race == race_terran) {
-		adapt::weights["t 14cc"] = 3.0;
-		adapt::weights["t 2fact vulture"] = 3.0;
-		adapt::weights["t proxy tank"] = 2.0;
-	} else if (enemy_race == race_protoss) {
-		adapt::weights["t siege expand"] = 3.0;
-		adapt::weights["tvp opening"] = 2.0;
-		adapt::weights["t wraith rush"] = 1.5;
-	} else if (enemy_race == race_zerg) {
-		adapt::weights["t 8rax fe"] = 3.0;
-		adapt::weights["tvz opening"] = 2.0;
-		adapt::weights["z 2fact vulture"] = 2.0;
+	for (auto&ch : choices) {
+		double& w = adapt::weights[ch.name];
+		if (w == 0.0) w = 1.0;
 	}
 
 	auto& a = dat["adapt"][opponent_name][opponent_race];
@@ -534,23 +761,167 @@ void init() {
 		++total_games;
 		if (won) ++wins;
 		else ++losses;
-		for (a_string choice : v["choices"].vector) {
+		a_vector<a_string> cur_choices;
+// 		if (v["strat choices"]) {
+// 			for (auto&v : v["strat choices"].vector) {
+// 				cur_choices.push_back(v["name"]);
+// 			}
+// 		} else {
+			for (a_string choice : v["choices"].vector) {
+				cur_choices.push_back(choice);
+			}
+//		}
+		if (true) {
+			a_vector<a_string> prev_choices;
+			a_vector<a_string> combination_choices;
+			for (auto&v : cur_choices) {
+				if (!prev_choices.empty()) {
+					a_string seq;
+					for (auto&v : prev_choices) {
+						seq += ".";
+						seq += v;
+					}
+					seq += ".";
+					seq += v;
+					combination_choices.push_back(seq);
+				}
+				prev_choices.push_back(v);
+			}
+			for (auto&v : combination_choices) cur_choices.push_back(std::move(v));
+		}
+		int n = 0;
+		for (a_string choice : cur_choices) {
+			++n;
 			double& w = adapt::weights[choice];
 			if (w == 0.0) w = 1.0;
-			if (won) w += 1.0;
-			else if (w > 5.0) w *= 0.8;
-			else if (w <= 2.0) w *= 0.5;
-			else w -= 1.0;
-			if (!won) {
-				if (choice == "z 5pool") w *= 0.5;
-				if (choice == "z 10hatch ling") w *= 0.5;
-				if (choice == "z fast mass expand") w *= 0.5;
+			if (n == 1 && (choice.empty() || choice[0] != '.')) {
+				if (won) w += 1.0;
+				else if (w > 5.0) w *= 0.8;
+				else if (w <= 2.0) w *= 0.5;
+				else w -= 1.0;
+			} else {
+				if (won) w += 0.15;
+				else if (w > 1.0) w /= 1.25;
 			}
 			log("%s %s - w adjusted to %g\n", choice, won ? "won" : "lost", w);
 
 			if (won) ++choice_wins[choice];
 			else ++choice_losses[choice];
 		}
+
+		if (!won) {
+			for (auto&v : adapt::weights) {
+				double& w = std::get<1>(v);
+				if (std::get<0>(v).empty() || std::get<0>(v)[0] != '.') {
+					double adj = (2.5 - w) / 20.0;
+					w += adj;
+				} else {
+					double adj = (1.0 - w) / 20.0;
+					w += adj;
+				}
+			}
+		}
+	}
+	a_map<a_string, int> rewards;
+	auto reward_tags = [&](int tags) {
+		log(log_level_info, "reward tags - ");
+		for (int i = 0; i < 32; ++i) {
+			if (tags&(1 << i)) log(log_level_info, "%s ", tag_names[1 << i]);
+		}
+		log(log_level_info, "\n");
+		int gamestage_tags = tags & (tag_opening | tag_midgame | tag_lategame);
+		tags &= ~(tag_opening | tag_midgame | tag_lategame);
+		for (auto&v : choices) {
+			if (v.tags & gamestage_tags && v.tags & tags) rewards[v.name] += tsc::bit_popcount(v.tags & tags);
+		}
+	};
+	auto reward_if_missing_tags = [&](int tags) {
+		log(log_level_info, "reward if missing tags - ");
+		for (int i = 0; i < 32; ++i) {
+			if (tags&(1 << i)) log(log_level_info, "%s ", tag_names[1 << i]);
+		}
+		log(log_level_info, "\n");
+		int gamestage_tags = tags & (tag_opening | tag_midgame | tag_lategame);
+		tags &= ~(tag_opening | tag_midgame | tag_lategame);
+		for (auto&v : choices) {
+			if (v.tags & gamestage_tags && (~v.tags & tags) == tags) ++rewards[v.name];
+		}
+	};
+	for (size_t i = hist.vector.size(); i; --i) {
+		auto&hist_v = hist.vector[i - 1];
+		bool won = hist_v["result"] == "won";
+		int prev_tags = 0;
+		int all_tags = 0;
+		int frames = 0;
+		int last_frame = 0;
+		for (auto&v : hist_v["strat choices"].vector) {
+			auto ch = find_choice((a_string)v["name"]);
+			double my_lost_minerals = v["my lost minerals"];
+			double my_lost_gas = v["my lost gas"];
+			double op_lost_minerals = v["op lost minerals"];
+			double op_lost_gas = v["op lost gas"];
+			int end_frame = v["end frame"];
+			int dead_frames = v["dead frames"];
+
+			double my_lost = my_lost_minerals + my_lost_gas;
+			double op_lost = op_lost_minerals + op_lost_gas;
+			int tags = ch.tags;
+
+			all_tags |= tags;
+
+			frames += end_frame - last_frame - dead_frames;
+			last_frame = end_frame;
+
+			int gamestage_tags = tags & (tag_opening | tag_midgame | tag_lategame);
+
+			if (~tags & tag_lategame) {
+				if (op_lost >= 250 && op_lost > my_lost * 1.5) {
+					reward_tags(tags);
+					reward_tags(prev_tags);
+				}
+			}
+
+			if (tags & (tag_aggressive | tag_very_aggressive)) {
+				if (my_lost >= op_lost) {
+					reward_if_missing_tags(gamestage_tags | tag_aggressive | tag_very_aggressive);
+				}
+			}
+
+			prev_tags = tags;
+		}
+
+		if (!won) {
+
+			if (all_tags & tag_greedy) reward_if_missing_tags(tag_opening | tag_midgame | tag_greedy);
+
+			if (frames < 15 * 60 * 8) {
+				if (all_tags & tag_hatch_first) reward_tags(tag_opening | tag_midgame | tag_pool_first);
+				if (all_tags & tag_safe) reward_tags(tag_opening | tag_aggressive | tag_very_aggressive);
+			}
+			if (frames >= 15 * 60 * 20) {
+				if (all_tags & tag_low_econ) reward_if_missing_tags(tag_opening | tag_midgame | tag_low_econ);
+				if (~all_tags & (tag_low_econ | tag_high_econ)) {
+					reward_tags(tag_midgame | tag_high_econ);
+				}
+			} else {
+				if (~all_tags & (tag_safe | tag_defensive)) reward_tags(tag_midgame | tag_safe | tag_defensive);
+				else reward_tags(tag_opening | tag_midgame | tag_aggressive | tag_very_aggressive);
+				if (all_tags & tag_pool_first) reward_tags(tag_opening | tag_hatch_first);
+			}
+		}
+
+	}
+	for (auto&v : rewards) {
+		log(log_level_info, "reward %s x%d\n", v.first, v.second);
+	}
+	int highest_reward = 0;
+	for (auto&v : rewards) {
+		if (v.second > highest_reward) highest_reward = v.second;
+	}
+	for (auto&v : rewards) {
+		double& w = adapt::weights[v.first];
+		if (w == 0.0) w = 1.0;
+		w *= 1.0 + (double)v.second / (double)highest_reward * 3.0;
 	}
 	for (auto&v : choice_wins) {
 		log("%s: %d wins\n", v.first, v.second);
@@ -573,11 +944,11 @@ void init() {
 		}
 	}
 	a_string str = format("adapt %s %s - wins: %d  losses: %d  winrate: %.02f", opponent_name, opponent_race, wins, losses, (double)wins / total_games * 100);
-	log("%s\n", str);
+	log(log_level_info, "%s\n", str);
 	send_text(str);
-	log("weights loaded - \n");
+	log(log_level_info, "weights loaded - \n");
 	for (auto&v : adapt::weights) {
-		log(" %s - %g\n", v.first, v.second);
+		log(log_level_info, " %s - %g\n", v.first, v.second);
 	}
 
 }
@@ -587,7 +958,9 @@ void on_end(bool won) {
 		f(won);
 	}
 
-	auto dat = read_json(adapt_read_filename);
+	end_strat_choice();
+
+	auto dat = read_json(get_read_filename());
 
 	auto& a = dat["adapt"][opponent_name][opponent_race];
 	auto& hist = a["history"];
@@ -600,7 +973,23 @@ void on_end(bool won) {
 	}
 	e["choices"] = choices;
 
-	write_json(adapt_write_filename, dat);
+	json_value jv_strat_choices;
+	jv_strat_choices.type = json_value::t_array;
+	for (size_t i = 0; i < strat_choices.size(); ++i) {
+		auto&e = strat_choices[i];
+		json_object jv_e;
+		jv_e["name"] = e.name;
+		jv_e["my lost minerals"] = e.my_lost_minerals;
+		jv_e["my lost gas"] = e.my_lost_gas;
+		jv_e["op lost minerals"] = e.op_lost_minerals;
+		jv_e["op lost gas"] = e.op_lost_gas;
+		jv_e["end frame"] = e.end_frame;
+		jv_e["dead frames"] = e.dead_frames;
+		jv_strat_choices[i] = std::move(jv_e);
+	}
+	e["strat choices"] = jv_strat_choices;
+
+	write_json(get_write_filename(), dat);
 	
 }
 
