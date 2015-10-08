@@ -200,6 +200,16 @@ void update_mineral_reserved_task() {
 			invalidate(u);
 		}
 
+		for (unit*u : my_resource_depots) {
+			for (unit*u2 : resource_units) {
+				if (units_distance(u, u2) >= 32 * 8) continue;
+				xy relpos = u2->pos - u->pos;
+				for (int i = 0; i < 8; ++i) {
+					get_build_square(u->pos + relpos / 8 * (i + 1)).mineral_reserved = true;
+				}
+			}
+		}
+
 		// quick hack to allow space for comsats
 		for (unit*u : my_resource_depots) {
 			if (u->type != unit_types::cc) continue;
