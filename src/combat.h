@@ -303,10 +303,20 @@ tsc::dynamic_bitset entire_threat_area;
 tsc::dynamic_bitset entire_threat_area_edge;
 
 void update_group_area(group_t&g) {
+
+	double my_army_supply = current_used_total_supply - my_workers.size();
+	double enemy_army_supply = 0.0;
+	for (unit*u : enemy_units) {
+		if (u->gone || u->type->is_worker) continue;
+		enemy_army_supply += u->type->required_supply;
+	}
+
 	g.threat_area.reset();
 	for (unit*e : g.enemies) {
 		if (e->type == unit_types::overlord) continue;
-		if (e->building && !e->stats->air_weapon && !e->stats->ground_weapon && e->type != unit_types::bunker) continue;
+		if (enemy_army_supply >= my_army_supply * 0.5) {
+			if (e->building && !e->stats->air_weapon && !e->stats->ground_weapon && e->type != unit_types::bunker) continue;
+		}
 		tsc::dynamic_bitset visited(grid::build_grid_width*grid::build_grid_height);
 		a_deque<xy> walk_open;
 		a_deque<std::tuple<xy, xy>> threat_open;
