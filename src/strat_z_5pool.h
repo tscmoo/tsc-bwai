@@ -100,7 +100,7 @@ struct strat_z_5pool: strat_z_base {
 			};
 		}
 
-		if (players::opponent_player->minerals_lost < 250 || is_defending || (being_rushed && count_production(st, unit_types::drone))) {
+		if ((players::opponent_player->minerals_lost < 250 && players::my_player->minerals_lost < 250) || is_defending || (being_rushed && count_production(st, unit_types::drone))) {
 			if (enemy_static_defence_count == 0 || army_supply < enemy_army_supply + 4) {
 				army = [army](state&st) {
 					return nodelay(st, unit_types::zergling, army);
