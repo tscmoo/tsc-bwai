@@ -314,7 +314,7 @@ void update_group_area(group_t&g) {
 	g.threat_area.reset();
 	for (unit*e : g.enemies) {
 		if (e->type == unit_types::overlord) continue;
-		if (enemy_army_supply >= my_army_supply * 0.5) {
+		if (my_army_supply >= 40.0 && enemy_army_supply >= my_army_supply * 0.5) {
 			if (e->building && !e->stats->air_weapon && !e->stats->ground_weapon && e->type != unit_types::bunker) continue;
 		}
 		tsc::dynamic_bitset visited(grid::build_grid_width*grid::build_grid_height);
