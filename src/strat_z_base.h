@@ -425,6 +425,7 @@ struct strat_z_base {
 						double v = 1.0 / 64;
 						double dist = 0.0;
 						for (xy p : path) {
+							if (place_static_defence_only_at_main && diag_distance(p - my_start_location) >= 32 * 12) continue;
 							double d = diag_distance(pos - p);
 							if (d <= 32 * 7) {
 								in_range = true;
@@ -467,7 +468,8 @@ struct strat_z_base {
 			for (auto&b : build::build_tasks) {
 				if (b.built_unit || b.dead) continue;
 				if (b.type->unit == unit_types::creep_colony) {
-					if (b.build_near != combat::defence_choke.center) {
+					//if (b.build_near != combat::defence_choke.center) {
+					if (true) {
 						b.build_near = combat::defence_choke.center;
 						b.require_existing_creep = true;
 						build::unset_build_pos(&b);
@@ -845,7 +847,7 @@ struct strat_z_base {
 			}
 
 			if (pull_workers_for_ling_zealot_defence && is_defending && my_completed_units_of_type[unit_types::sunken_colony].empty() && army_supply < 12.0) {
-				log(log_level_info, "pull_workers_for_ling_zealot_defence!\n");
+				//log(log_level_info, "pull_workers_for_ling_zealot_defence!\n");
 				for (auto&g : combat::groups) {
 					if (g.is_aggressive_group || g.is_defensive_group) continue;
 					if (g.ground_dpf < 2.0) continue;
@@ -859,13 +861,13 @@ struct strat_z_base {
 						if (current_frame - e->last_attacked <= 15 * 12) any_attacking = true;
 						if (!combat::my_base.test(grid::build_square_index(e->pos))) continue;
 					}
-					log(log_level_info, "skip is %d\n", skip);
+					//log(log_level_info, "skip is %d\n", skip);
 					if (skip) continue;
 					int my_non_workers = 0;
 					for (combat::combat_unit*cu : g.allies) {
 						if (!cu->u->type->is_worker) ++my_non_workers;
 					}
-					log(log_level_info, "my_non_workers is %d\n", my_non_workers);
+					//log(log_level_info, "my_non_workers is %d\n", my_non_workers);
 					if (my_non_workers < 3) continue;
 
 					a_vector<unit*> pulls;
@@ -901,13 +903,13 @@ struct strat_z_base {
 							if (pulls.size() - prev_size >= 2) break;
 						}
 						if (prev_size == pulls.size()) {
-							log(log_level_info, "tried pulling %d workers, not good enough and nothing more to pull :(\n", pulls.size());
+							//log(log_level_info, "tried pulling %d workers, not good enough and nothing more to pull :(\n", pulls.size());
 							//pulls.clear();
 							break;
 						}
 					}
 
-					log(log_level_info, "pull %d workers!\n", pulls.size());
+					//log(log_level_info, "pull %d workers!\n", pulls.size());
 
 					if (!pulls.empty()) {
 						combat::combat_mult_override = 0.0;
