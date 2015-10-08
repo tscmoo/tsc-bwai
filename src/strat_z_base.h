@@ -84,6 +84,12 @@ struct strat_z_base {
 				++gas_trick_state;
 			}
 		} else {
+			bool done = false;
+			int gases = 0;
+			for (auto&b : build::build_tasks) {
+				if (b.type->unit && b.type->unit->is_gas) ++gases;
+			}
+			if (gases == 0) done = true;
 			for (unit*u : my_units_of_type[unit_types::extractor]) {
 				if (!u->is_completed) {
 					u->game_unit->cancelConstruction();
@@ -93,10 +99,13 @@ struct strat_z_base {
 							break;
 						}
 					}
-					++opening_state;
-					gas_trick_state = 0;
+					done = true;
 					break;
 				}
+			}
+			if (done) {
+				++opening_state;
+				gas_trick_state = 0;
 			}
 		}
 	};
@@ -587,7 +596,6 @@ struct strat_z_base {
 		};
 
 		bool maxed_out_aggression = false;
-		int opening_state = 0;
 		while (true) {
 
 			my_hatch_count = my_units_of_type[unit_types::hatchery].size() + my_units_of_type[unit_types::lair].size() + my_units_of_type[unit_types::hive].size();
@@ -682,7 +690,7 @@ struct strat_z_base {
 				if (e->type == unit_types::photon_cannon) ++enemy_static_defence_count;
 				if (e->type == unit_types::sunken_colony) ++enemy_static_defence_count;
 				if (e->type == unit_types::spore_colony) ++enemy_static_defence_count;
-				if (true) {
+				if (!e->type->is_refinery) {
 					double e_d = get_best_score_value(possible_start_locations, [&](xy pos) {
 						return unit_pathing_distance(unit_types::scv, e->pos, pos);
 					});
@@ -1057,6 +1065,39 @@ struct strat_z_base {
 			can_expand = get_next_base();
 			force_expand = can_expand && long_distance_miners() >= 1 && my_units_of_type[unit_types::hatchery].size() == my_completed_units_of_type[unit_types::hatchery].size();
 			if (can_expand && free_mineral_patches() == 0 && my_workers.size() >= 45) force_expand = true;
+
+			if (opening_state != -1 && current_used_supply[race_zerg] + 0.5 >= current_max_supply[race_zerg]) {
+				for (auto&b : build::build_tasks) {
+					if (b.dead) continue;
+					if (b.type->unit && b.type->unit->is_gas) {
+						auto st = get_my_current_state();
+						int gas_count = 0;
+						for (auto&base : st.bases) {
+							for (auto&r : base.s->resources) {
+								if (r.u->type == unit_types::vespene_geyser) ++gas_count;
+								if (r.u->type == unit_types::extractor && r.u->owner == players::my_player) ++gas_count;
+							}
+						}
+						if (gas_count == 0) {
+							b.dead = true;
+						}
+					}
+				}
+
+				auto st = get_my_current_state();
+				int overlords = 0;
+				int buildings = 0;
+				double supply_needed = 0.0;
+				for (auto&b : build::build_tasks) {
+					if (b.type->unit == unit_types::overlord) ++overlords;
+					if (b.dead || b.built_unit) continue;
+					if (b.type->unit && b.type->unit->is_building) ++buildings;
+					if (b.type->unit) supply_needed += b.type->unit->required_supply;
+				}
+				if (overlords == 0 && st.used_supply[race_zerg] + supply_needed - buildings > st.max_supply[race_zerg]) {
+					bo_cancel_all();
+				}
+			}
 
 			if (tick() || should_transition()) {
 				bo_cancel_all();
