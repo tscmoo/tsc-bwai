@@ -5,10 +5,22 @@ namespace adapt {
 
 a_unordered_map<a_string, double> weights;
 
+a_vector<a_string> all_choices;
+
 double getweight(a_string name) {
 	double&weight = weights[name];
  	if (weight == 0.0) weight = 1.0;
-	return weight;
+	if (all_choices.empty()) return weight;
+	a_string seq;
+	for (auto&v : all_choices) {
+		seq += ".";
+		seq += v;
+	}
+	seq += ".";
+	seq += name;
+	double&weight2 = weights[seq];
+	if (weight2 == 0.0) weight2 = 1.0;
+	return weight * weight2;
 }
 
 namespace detail {
@@ -44,8 +56,6 @@ namespace detail {
 		else return s;
 	}
 }
-
-a_vector<a_string> all_choices;
 
 template<typename...args_T>
 a_string choose(args_T&&...args) {
