@@ -4300,10 +4300,8 @@ void do_run(combat_unit*a, const a_vector<unit*>&enemies) {
 		return units_distance(u, e);
 	});
 	size_t u_index = grid::build_square_index(u->pos);
-	//if (!no_aggressive_groups || entire_threat_area.test(u_index) || my_base.test(u_index) || diag_distance(u->pos - my_closest_base) <= 32 * 8) {
-	if (true) {
+	if (current_used_total_supply >= 40 || entire_threat_area.test(u_index) || my_base.test(u_index) || diag_distance(u->pos - my_closest_base) <= 32 * 12) {
 		a_deque<xy> path = find_path(u->type, u->pos, [&](xy pos, xy npos) {
-			//return true;
 			return diag_distance(npos - u->pos) <= 32 * 20;
 		}, [&](xy pos, xy npos) {
 			double cost = 0.0;
@@ -4318,7 +4316,6 @@ void do_run(combat_unit*a, const a_vector<unit*>&enemies) {
 			}
 			return cost + diag_distance(a->goal_pos - a->u->pos);
 		}, [&](xy pos) {
-			//if ((pos - a->u->pos).length() < 128) return false;
 			size_t index = grid::build_square_index(pos);
 			return entire_threat_area_edge.test(index) && (u->is_flying || !run_spot_taken.test(index));
 		});
@@ -5081,10 +5078,10 @@ void fight() {
 
 // 			double fact = 1.0;
 
-// 			bool already_fighting = test_pred(nearby_combat_units, [&](combat_unit*cu) {
-// 				return current_frame - cu->last_fight <= 60 && cu->last_fight - cu->last_run > 0;
-// 			});
-// 			if (already_fighting) mult *= 0.4;
+			bool already_fighting = test_pred(nearby_combat_units, [&](combat_unit*cu) {
+				return current_frame - cu->last_fight <= 60 && cu->last_fight - cu->last_run > 0;
+			});
+			if (already_fighting) mult *= 0.5;
 
 // 			if (already_fighting) fact = 0.5;
 // 			else if (current_used_total_supply >= 20) fact = 1.5;
