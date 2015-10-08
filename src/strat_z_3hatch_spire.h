@@ -217,12 +217,23 @@ struct strat_z_3hatch_spire : strat_z_base {
 // 				};
 // 			}
 // 		}
-		if (my_completed_units_of_type[unit_types::hatchery].size() >= 2 && (enemy_attacking_army_supply ||  drone_count >= 18)) {
-			if (sunken_count < 5) {
-				if (!defence_fight_ok) {
-					army = [army](state&st) {
-						return nodelay(st, unit_types::sunken_colony, army);
-					};
+
+		if (army_supply < enemy_army_supply && army_supply < 6.0) {
+			if (spire_progress == 0.0) {
+				army = [army](state&st) {
+					return nodelay(st, unit_types::zergling, army);
+				};
+			}
+		}
+
+		if (my_completed_units_of_type[unit_types::hatchery].size() >= 2) {
+			if (enemy_attacking_army_supply || drone_count >= 13) {
+				if (sunken_count < 5) {
+					if (!defence_fight_ok) {
+						army = [army](state&st) {
+							return nodelay(st, unit_types::sunken_colony, army);
+						};
+					}
 				}
 			}
 			if (maybe_being_rushed && sunken_count < (drone_count >= 24 ? 3 : 1)) {
@@ -231,7 +242,6 @@ struct strat_z_3hatch_spire : strat_z_base {
 				};
 			}
 		}
-
 
 		if (maybe_being_rushed) {
 			if (drone_count >= 11 && zergling_count < 4) {
