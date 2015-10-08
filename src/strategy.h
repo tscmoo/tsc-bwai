@@ -709,6 +709,10 @@ void init() {
 
 	adapt::weights["z lategame2"] = 2.5;
 	adapt::weights["z lategame"] = 1.0;
+
+	adapt::weights[".z econ2.z 10hatch"] = 4.0;
+	adapt::weights[".z vp hydra.z 10hatch"] = 4.0;
+
 // 	if (enemy_race == race_terran) {
 // 		adapt::weights["z fast mass expand"] = 2.0;
 // 		adapt::weights["z 10hatch"] = 3.0;
@@ -874,13 +878,6 @@ void init() {
 
 			int gamestage_tags = tags & (tag_opening | tag_midgame | tag_lategame);
 
-			if (~tags & tag_lategame) {
-				if (op_lost >= 250 && op_lost > my_lost * 1.5) {
-					reward_tags(tags);
-					reward_tags(prev_tags);
-				}
-			}
-
 			if (tags & (tag_aggressive | tag_very_aggressive)) {
 				if (my_lost >= op_lost) {
 					reward_if_missing_tags(gamestage_tags | tag_aggressive | tag_very_aggressive);
@@ -891,22 +888,24 @@ void init() {
 		}
 
 		if (!won) {
+			for (int i = 0; i < 2; ++i) {
 
-			if (all_tags & tag_greedy) reward_if_missing_tags(tag_opening | tag_midgame | tag_greedy);
+				if (all_tags & tag_greedy) reward_if_missing_tags(tag_opening | tag_midgame | tag_greedy);
 
-			if (frames < 15 * 60 * 8) {
-				if (all_tags & tag_hatch_first) reward_tags(tag_opening | tag_midgame | tag_pool_first);
-				if (all_tags & tag_safe) reward_tags(tag_opening | tag_aggressive | tag_very_aggressive);
-			}
-			if (frames >= 15 * 60 * 20) {
-				if (all_tags & tag_low_econ) reward_if_missing_tags(tag_opening | tag_midgame | tag_low_econ);
-				if (~all_tags & (tag_low_econ | tag_high_econ)) {
-					reward_tags(tag_midgame | tag_high_econ);
+				if (frames < 15 * 60 * 8) {
+					if (all_tags & tag_hatch_first) reward_tags(tag_opening | tag_midgame | tag_pool_first);
+					if (all_tags & tag_safe) reward_tags(tag_opening | tag_aggressive | tag_very_aggressive);
 				}
-			} else {
-				if (~all_tags & (tag_safe | tag_defensive)) reward_tags(tag_midgame | tag_safe | tag_defensive);
-				else reward_tags(tag_opening | tag_midgame | tag_aggressive | tag_very_aggressive);
-				if (all_tags & tag_pool_first) reward_tags(tag_opening | tag_hatch_first);
+				if (frames >= 15 * 60 * 20) {
+					if (all_tags & tag_low_econ) reward_if_missing_tags(tag_opening | tag_midgame | tag_low_econ);
+					if (~all_tags & (tag_low_econ | tag_high_econ)) {
+						reward_tags(tag_midgame | tag_high_econ);
+					}
+				} else {
+					if (~all_tags & (tag_safe | tag_defensive)) reward_tags(tag_midgame | tag_safe | tag_defensive);
+					else reward_tags(tag_opening | tag_midgame | tag_aggressive | tag_very_aggressive);
+					if (all_tags & tag_pool_first) reward_tags(tag_opening | tag_hatch_first);
+				}
 			}
 		}
 
