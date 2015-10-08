@@ -314,7 +314,7 @@ struct strat_z_econ2 : strat_z_base {
 
 		bool maybe_being_rushed = being_rushed || (!opponent_has_expanded && enemy_cannon_count + enemy_bunker_count == 0);
 
-		if (my_completed_units_of_type[unit_types::hatchery].size() + my_units_of_type[unit_types::lair].size() >= 2 && drone_count >= 13) {
+		if (my_completed_units_of_type[unit_types::hatchery].size() + my_units_of_type[unit_types::lair].size() >= 2 && drone_count >= 11) {
 			if (!defence_fight_ok && sunken_count < 5) {
 				army = [army](state&st) {
 					return nodelay(st, unit_types::sunken_colony, army);
@@ -352,18 +352,19 @@ struct strat_z_econ2 : strat_z_base {
 // 			}
 // 		}
 
-		bool build_army = is_defending && army_supply < enemy_army_supply;
+		bool build_army = (is_defending && army_supply < enemy_army_supply) || (being_rushed && army_supply < enemy_attacking_army_supply);
 		if (drone_count >= 28 && army_supply < 8.0) build_army = true;
 		if (maybe_being_rushed && drone_count >= 24 && army_supply < 12.0) build_army = true;
 		if (sunken_count == 0 && !defence_fight_ok) {
 			if (is_defending || count_production(st, unit_types::drone)) build_army = true;
 		}
-		//if (enemy_tank_count || enemy_vulture_count) {
-		if (true) {
+		if (!being_rushed) {
 			if (army_supply > enemy_attacking_army_supply) build_army = false;
+			if (is_defending && army_supply < enemy_army_supply) build_army = true;
+			if (drone_count < 26 && defence_fight_ok) build_army = false;
 		}
-		if (is_defending && army_supply < enemy_army_supply) build_army = true;
-		if (drone_count < 26 && defence_fight_ok) build_army = false;
+
+		if (players::opponent_player->race == race_zerg && army_supply < (being_rushed ? drone_count >= 16.0 ? 20.0 : 12.0 : 8.0)) build_army = true;
 
 		if (build_army) {
 			army = [army](state&st) {
