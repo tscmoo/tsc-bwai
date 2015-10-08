@@ -79,7 +79,8 @@ struct strat_z_10hatch_ling : strat_z_base {
 // 			combat::no_aggressive_groups = true;
 // 			if ((int)my_units_of_type[unit_types::zergling].size() > enemy_army_supply * 2 + 4) combat::no_aggressive_groups = false;
 // 		}
-		combat::no_aggressive_groups = army_supply < enemy_army_supply;
+		combat::no_aggressive_groups = army_supply < enemy_army_supply + 2.0;
+		combat::no_scout_around = true;
 
 		if (!my_completed_units_of_type[unit_types::lair].empty() && !my_completed_units_of_type[unit_types::hydralisk_den].empty()) {
 			get_upgrades::set_upgrade_value(upgrade_types::lurker_aspect, -1.0);
@@ -149,7 +150,7 @@ struct strat_z_10hatch_ling : strat_z_base {
 			}
 		}
 		
-		if (enemy_zealot_count >= 8 && !fight_ok) {
+		if (enemy_zealot_count >= 6 && !fight_ok) {
 			if (!defence_fight_ok) {
 				if (sunken_count < 4) {
 					army = [army](state&st) {
@@ -159,6 +160,13 @@ struct strat_z_10hatch_ling : strat_z_base {
 			} else {
 				army = [army](state&st) {
 					return nodelay(st, unit_types::drone, army);
+				};
+			}
+		}
+		if (enemy_marine_count + enemy_attacking_worker_count / 2 >= 8 && !fight_ok) {
+			if (sunken_count == 0) {
+				army = [army](state&st) {
+					return nodelay(st, unit_types::sunken_colony, army);
 				};
 			}
 		}
