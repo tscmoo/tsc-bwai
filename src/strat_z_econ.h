@@ -179,6 +179,10 @@ struct strat_z_econ : strat_z_base {
 				army = [army](state&st) {
 					return nodelay(st, unit_types::drone, army);
 				};
+			} else if (army_supply < enemy_attacking_army_supply) {
+				army = [army](state&st) {
+					return nodelay(st, unit_types::zergling, army);
+				};
 			}
 		}
 
