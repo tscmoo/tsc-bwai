@@ -212,6 +212,7 @@ bool should_transition() {
 #include "strat_z_10hatch_ling.h"
 #include "strat_z_fast_mass_expand.h"
 #include "strat_z_2hatch_muta.h"
+#include "strat_z_vr_scout.h"
 
 #include "strat_z_hydra_lurker.h"
 #include "strat_z_hydra_into_muta.h"
@@ -273,6 +274,7 @@ a_map<a_string, std::function<void()>> strat_map = {
 	{ "z 10hatch ling", wrap<strat_z_10hatch_ling>() },
 	{ "z fast mass expand", wrap<strat_z_fast_mass_expand>() },
 	{ "z 2hatch muta", wrap<strat_z_2hatch_muta>() },
+	{ "z vr scout", wrap<strat_z_vr_scout>() },
 
 	{ "z 3hatch spire", wrap<strat_z_3hatch_spire>() },
 	{ "z ling defiler", wrap<strat_z_ling_defiler>() },
@@ -411,7 +413,7 @@ a_vector<choice_t> choices = {
 	{ "z 9pool speed into 1hatch spire", tag_opening | tag_pool_first | tag_aggressive | tag_low_econ },
 	{ "z 2hatch muta", tag_opening | tag_safe | tag_high_econ },
 	{ "z 9pool -> 10hatch ling", tag_opening | tag_pool_first | tag_very_aggressive | tag_low_econ },
-	{ "z 10hatch ling", tag_opening | tag_hatch_first | tag_very_aggressive | tag_low_econ },
+	{ "z 10hatch ling", tag_opening | tag_very_aggressive | tag_low_econ },
 	{ "z fast mass expand", tag_opening | tag_hatch_first | tag_greedy | tag_high_econ},
 	{ "z 13pool muta", tag_opening | tag_aggressive },
 
@@ -457,6 +459,7 @@ a_string choose_strat(args_T&&...args) {
 	return adapt::choose(std::forward<args_T>(args)...);
 }
 
+void initialize_weights();
 
 void strategy_task() {
 
@@ -513,6 +516,12 @@ void strategy_task() {
 	} else if (players::my_player->race == race_zerg) {
 		if (game->getGameType() == BWAPI::GameTypes::Use_Map_Settings) run_strat("z ums");
 		//run_strat("ums");
+
+		
+		if (players::opponent_player->random) {
+			run_strat("z vr scout");
+			initialize_weights();
+		}
 
 		if (players::opponent_player->race == race_terran) {
 
@@ -678,11 +687,7 @@ a_string get_write_filename() {
 	return adapt_write_filename;
 }
 
-void init() {
-
-	multitasking::spawn(strategy_task, "strategy");
-	multitasking::spawn(strategy_count_dead_frames_task, "strategy count dead frames");
-
+void initialize_weights() {
 	int enemies = 0;
 	int enemy_race = race_unknown;
 	for (auto&v : game->getPlayers()) {
@@ -766,15 +771,9 @@ void init() {
 		if (won) ++wins;
 		else ++losses;
 		a_vector<a_string> cur_choices;
-// 		if (v["strat choices"]) {
-// 			for (auto&v : v["strat choices"].vector) {
-// 				cur_choices.push_back(v["name"]);
-// 			}
-// 		} else {
-			for (a_string choice : v["choices"].vector) {
-				cur_choices.push_back(choice);
-			}
-//		}
+		for (a_string choice : v["choices"].vector) {
+			cur_choices.push_back(choice);
+		}
 		if (true) {
 			a_vector<a_string> prev_choices;
 			a_vector<a_string> combination_choices;
@@ -828,11 +827,11 @@ void init() {
 	}
 	a_map<a_string, int> rewards;
 	auto reward_tags = [&](int tags) {
-		log(log_level_info, "reward tags - ");
+		log("reward tags - ");
 		for (int i = 0; i < 32; ++i) {
-			if (tags&(1 << i)) log(log_level_info, "%s ", tag_names[1 << i]);
+			if (tags&(1 << i)) log("%s ", tag_names[1 << i]);
 		}
-		log(log_level_info, "\n");
+		log("\n");
 		int gamestage_tags = tags & (tag_opening | tag_midgame | tag_lategame);
 		tags &= ~(tag_opening | tag_midgame | tag_lategame);
 		for (auto&v : choices) {
@@ -840,11 +839,11 @@ void init() {
 		}
 	};
 	auto reward_if_missing_tags = [&](int tags) {
-		log(log_level_info, "reward if missing tags - ");
+		log("reward if missing tags - ");
 		for (int i = 0; i < 32; ++i) {
-			if (tags&(1 << i)) log(log_level_info, "%s ", tag_names[1 << i]);
+			if (tags&(1 << i)) log("%s ", tag_names[1 << i]);
 		}
-		log(log_level_info, "\n");
+		log( "\n");
 		int gamestage_tags = tags & (tag_opening | tag_midgame | tag_lategame);
 		tags &= ~(tag_opening | tag_midgame | tag_lategame);
 		for (auto&v : choices) {
@@ -949,6 +948,15 @@ void init() {
 	for (auto&v : adapt::weights) {
 		log(log_level_info, " %s - %g\n", v.first, v.second);
 	}
+}
+
+void init() {
+
+	multitasking::spawn(strategy_task, "strategy");
+	multitasking::spawn(strategy_count_dead_frames_task, "strategy count dead frames");
+
+	
+	initialize_weights();
 
 }
 
