@@ -906,7 +906,7 @@ void initialize_weights() {
 
 	}
 	for (auto&v : rewards) {
-		log(log_level_info, "reward %s x%d\n", v.first, v.second);
+		log("reward %s x%d\n", v.first, v.second);
 	}
 	int highest_reward = 0;
 	for (auto&v : rewards) {
@@ -938,11 +938,11 @@ void initialize_weights() {
 		}
 	}
 	a_string str = format("adapt %s %s - wins: %d  losses: %d  winrate: %.02f", opponent_name, opponent_race, wins, losses, (double)wins / total_games * 100);
-	log(log_level_info, "%s\n", str);
+	log("%s\n", str);
 	send_text(str);
-	log(log_level_info, "weights loaded - \n");
+	log("weights loaded - \n");
 	for (auto&v : adapt::weights) {
-		log(log_level_info, " %s - %g\n", v.first, v.second);
+		log(" %s - %g\n", v.first, v.second);
 	}
 }
 
