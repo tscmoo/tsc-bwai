@@ -129,6 +129,8 @@ struct strat_z_base {
 
 	bool is_attacking = false;
 
+	bool static_defence_pos_is_valid = false;
+
 	virtual void init() = 0;
 	virtual bool tick() = 0;
 
@@ -349,58 +351,6 @@ struct strat_z_base {
 
 		resource_gathering::max_gas = 0.0;
 
-// 
-// 		auto get_static_defence_pos = [&]() {
-// 			a_vector<xy> my_bases;
-// 			for (auto&v : buildpred::get_my_current_state().bases) {
-// 				my_bases.push_back(square_pathing::get_nearest_node_pos(unit_types::siege_tank_tank_mode, v.s->cc_build_pos));
-// 			}
-// 			xy op_base = combat::op_closest_base;
-// 			a_vector<a_deque<xy>> paths;
-// 			for (xy pos : my_bases) {
-// 				auto path = combat::find_bigstep_path(unit_types::siege_tank_tank_mode, op_base, pos, square_pathing::pathing_map_index::no_enemy_buildings);
-// 				if (path.empty()) continue;
-// 				double len = 0.0;
-// 				xy lp;
-// 				for (size_t i = 0; i < path.size(); ++i) {
-// 					if (lp != xy()) {
-// 						len += diag_distance(path[i] - lp);
-// 						if (len >= 32 * 30) {
-// 							path.resize(i);
-// 							break;
-// 						}
-// 					}
-// 					lp = path[i];
-// 				}
-// 				paths.push_back(std::move(path));
-// 			}
-// 			if (!paths.empty()) {
-// 				std::array<xy, 1> starts;
-// 				starts[0] = combat::defence_choke.center;
-// 
-// 				auto pred = [&](grid::build_square&bs) {
-// 					if (!build::build_has_existing_creep(bs, unit_types::sunken_colony)) return false;
-// 					if (!build_spot_finder::can_build_at(unit_types::sunken_colony, bs)) return false;
-// 					if (combat::entire_threat_area.test(grid::build_square_index(bs))) return false;
-// 					return true;
-// 				};
-// 				auto score = [&](xy pos) {
-// 					double r = 0.0;
-// 					for (auto&path : paths) {
-// 						double v = 1.0;
-// 						for (xy p : path) {
-// 							double d = diag_distance(pos - p);
-// 							if (d <= 32 * 7) r -= v / std::max(d, 32.0);
-// 							v += 1.0;
-// 						}
-// 					}
-// 					return r;
-// 				};
-// 				return build_spot_finder::find_best(starts, 256, pred, score);
-// 			}
-// 			return xy();
-// 		};
-
 		auto get_static_defence_pos = [&](unit_type*ut) {
 			a_vector<std::tuple<xy, xy>> my_bases;
 			for (auto&v : buildpred::get_my_current_state().bases) {
@@ -423,7 +373,26 @@ struct strat_z_base {
 			if (!paths.empty()) {
 
 				auto pred = [&](grid::build_square&bs) {
-					if (!build::build_has_existing_creep(bs, ut)) return false;
+					if (!build::build_has_existing_creep(bs, ut)) {
+						bool is_next_to_hatchery = false;
+						for (unit*u : my_units_of_type[unit_types::hatchery]) {
+							if (!u->building) continue;
+							if (u->is_completed) continue;
+							if (u->remaining_build_time > 15 * 20) continue;
+							xy pos = u->building->build_pos;
+							xy a0 = bs.pos;
+							xy a1 = bs.pos + xy(ut->tile_width * 32, ut->tile_height * 32);
+							xy b0 = u->pos;
+							xy b1 = u->pos + xy(u->type->tile_width * 32, u->type->tile_height * 32);
+							if (a0.x > b1.x) continue;
+							else if (b0.x > a1.x) continue;
+							if (a0.y > b1.y) continue;
+							else if (b0.y > a1.y) continue;
+							is_next_to_hatchery = true;
+							break;
+						}
+						if (!is_next_to_hatchery) return false;
+					}
 					if (!build_spot_finder::can_build_at(ut, bs)) return false;
 					return true;
 				};
@@ -481,11 +450,12 @@ struct strat_z_base {
 					if (true) {
 						b.build_near = combat::defence_choke.center;
 						b.require_existing_creep = true;
+						xy prev_pos = b.build_pos;
 						build::unset_build_pos(&b);
 						xy pos = get_static_defence_pos(b.type->unit);
 						if (pos != xy()) {
 							build::set_build_pos(&b, pos);
-						}
+						} else build::set_build_pos(&b, prev_pos);
 					}
 				}
 			}
@@ -756,6 +726,8 @@ struct strat_z_base {
 					}
 				}
 			}
+
+			static_defence_pos_is_valid = get_static_defence_pos(unit_types::creep_colony) != xy();
 
 // 			if (army_supply < 8.0 && enemy_proxy_building_count) {
 // 				for (unit*u : my_workers) {
