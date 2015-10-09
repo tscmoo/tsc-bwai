@@ -333,6 +333,7 @@ void update_group_area(group_t&g) {
 		if (e->type == unit_types::carrier) threat_radius = 32 * 10;
 		if (e->type == unit_types::mutalisk) threat_radius += 64;
 		if (e->type == unit_types::zergling) threat_radius += 64;
+		if (e->type == unit_types::corsair) threat_radius += 64;
 		//double walk_radius = e->stats->max_speed * 15 * 2;
 		double walk_radius = e->stats->max_speed * 20;
 		//double walk_radius = 32;
