@@ -278,6 +278,15 @@ void add_build_sum(double priority, upgrade_type*type, int count) {
 	for (; sum < count; ++sum) add_build_task(priority, type);
 }
 
+void add_build_total(double priority, unit_type*type, int count) {
+	int sum = my_completed_units_of_type[type].size();
+	for (build::build_task&b : build::build_tasks) {
+		if (b.dead) continue;
+		if (b.type->unit == type) ++sum;
+	}
+	for (; sum < count; ++sum) add_build_task(priority, type);
+}
+
 void cancel_build_task(build_task*t) {
 
 	if (t->reference_count) {
