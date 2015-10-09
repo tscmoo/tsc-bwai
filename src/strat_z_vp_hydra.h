@@ -34,7 +34,10 @@ struct strat_z_vp_hydra : strat_z_base {
 		bool maybe_being_rushed = being_rushed || (!opponent_has_expanded && enemy_cannon_count + enemy_bunker_count == 0);
 		max_bases = maybe_being_rushed && army_supply < 24.0 && my_workers.size() < 30.0 ? 2 : 0;
 		if (max_bases == 0 && my_hatch_count < 5) max_bases = 3;
-
+		if (hydralisk_count) {
+			min_bases = 3;
+			max_bases = 0;
+		}
 
 // 		if (enemy_attacking_army_supply >= 12.0) was_rushed = true;
 // 		if (players::opponent_player->minerals_lost >= 600.0) was_rushed = true;
@@ -111,6 +114,7 @@ struct strat_z_vp_hydra : strat_z_base {
 
 		resource_gathering::max_gas = 100.0;
 		if (my_workers.size() >= 14) resource_gathering::max_gas = 250.0;
+		if (my_workers.size() >= 30) resource_gathering::max_gas = 500.0;
 
 		if (!has_added_sunken_at_third && defence_fight_ok) {
 			auto st = buildpred::get_my_current_state();
@@ -150,7 +154,7 @@ struct strat_z_vp_hydra : strat_z_base {
 			}
 		}
 		
-		return current_used_total_supply >= 110;
+		return current_used_total_supply >= 125;
 	}
 	virtual bool build(buildpred::state&st) override {
 		using namespace buildpred;
@@ -158,14 +162,30 @@ struct strat_z_vp_hydra : strat_z_base {
 		auto army = this->army;
 
 		st.auto_build_hatcheries = true;
-		//st.dont_build_refineries = drone_count < 22 && count_units_plus_production(st, unit_types::extractor);
 		st.dont_build_refineries = drone_count < 26 || (drone_count < 35 && count_units_plus_production(st, unit_types::extractor) >= 2);
 
 		bool maybe_being_rushed = being_rushed || (!opponent_has_expanded && enemy_cannon_count + enemy_bunker_count == 0);
 
-		army = [army](state&st) {
-			return nodelay(st, unit_types::drone, army);
-		};
+		double desired_army_supply = drone_count*drone_count * 0.015 + drone_count * 0.8 - 16;
+		if (players::opponent_player->race == race_zerg) {
+			desired_army_supply = drone_count*drone_count * 0.08 + drone_count * 0.5 - 4;
+		}
+
+		if (army_supply >= desired_army_supply || drone_count < 32) {
+			army = [army](state&st) {
+				return nodelay(st, unit_types::drone, army);
+			};
+		} else {
+			army = [army](state&st) {
+				return nodelay(st, unit_types::hydralisk, army);
+			};
+		}
+
+		if (drone_count >= 15 && count_units_plus_production(st, unit_types::extractor) == 0) {
+			army = [army](state&st) {
+				return nodelay(st, unit_types::extractor, army);
+			};
+		}
 
 		if (hatch_count < 3) {
 			if (!maybe_being_rushed || (sunken_count && defence_fight_ok)) {
@@ -182,14 +202,6 @@ struct strat_z_vp_hydra : strat_z_base {
 			}
 		}
 
-		// 		if (drone_count >= 18) {
-		// 			if (hydralisk_count < 2) {
-		// 				army = [army](state&st) {
-		// 					return nodelay(st, unit_types::hydralisk, army);
-		// 				};
-		// 			}
-		// 		}
-		//if ((drone_count >= 36 && army_supply < drone_count) || (drone_count <= 45 && army_supply < drone_count * 2)) {
 		if (drone_count >= 36 + enemy_static_defence_count * 3) {
 			army = [army](state&st) {
 				return nodelay(st, unit_types::hydralisk, army);
@@ -222,16 +234,6 @@ struct strat_z_vp_hydra : strat_z_base {
 				return nodelay(st, unit_types::hydralisk, army);
 			};
 		}
-// 		if (drone_count >= 50 && enemy_static_defence_count < 4 && army_supply < 70.0) {
-// 			army = [army](state&st) {
-// 				return nodelay(st, unit_types::hydralisk, army);
-// 			};
-// 			if (lurker_count < hydralisk_count / 2 && hydralisk_count > enemy_air_army_supply) {
-// 				army = [army](state&st) {
-// 					return nodelay(st, unit_types::lurker, army);
-// 				};
-// 			}
-// 		}
 
 		if (was_rushed && drone_count >= 20 && enemy_static_defence_count == 0) {
 			army = [army](state&st) {
@@ -239,11 +241,6 @@ struct strat_z_vp_hydra : strat_z_base {
 			};
 		}
 
-// 		if (army_supply >= 20.0 && drone_count < army_supply * 2 && !is_defending && defence_fight_ok) {
-// 			army = [army](state&st) {
-// 				return nodelay(st, unit_types::drone, army);
-// 			};
-// 		}
 
 		if (drone_count >= 30 && defence_fight_ok) {
 			if (count_units_plus_production(st, unit_types::evolution_chamber) < (army_supply >= 16 ? 2 : 1)) {
@@ -279,34 +276,12 @@ struct strat_z_vp_hydra : strat_z_base {
 
 
 		if (players::opponent_player->race != race_zerg || drone_count >= 18) {
-			//if (my_completed_units_of_type[unit_types::hatchery].size() >= 2 && (enemy_gateway_count >= 2 || enemy_barracks_count >= 2 || enemy_army_supply >= 4.0) && sunken_count < 2) {
 			if (my_completed_units_of_type[unit_types::hatchery].size() >= 2 && (maybe_being_rushed || enemy_army_supply >= 4.0) && sunken_count < 2) {
 				army = [army](state&st) {
 					return nodelay(st, unit_types::sunken_colony, army);
 				};
 			}
 
-			if (my_completed_units_of_type[unit_types::hatchery].size() >= 2 || !call_place_static_defence) {
-				if (maybe_being_rushed || drone_count >= 14) {
-					if (sunken_count < 1) {
-						army = [army](state&st) {
-							return nodelay(st, unit_types::sunken_colony, army);
-						};
-					}
-				}
-				if (maybe_being_rushed || enemy_attacking_army_supply > 4.0) {
-					if (!defence_fight_ok || (maybe_being_rushed && drone_count >= 20 && sunken_count < 4) || (drone_count >= 20 && sunken_count == 0)) {
-						if ((army_supply >= 4.0 && army_supply > enemy_army_supply && sunken_count >= 2) || st.bases.size() >= 3) {
-						} else {
-							if (sunken_count < (enemy_attacking_army_supply > 2.0 ? 4 : (drone_count >= 22 ? 3 : (drone_count >= 15 ? 2 : 1)))) {
-								army = [army](state&st) {
-									return nodelay(st, unit_types::sunken_colony, army);
-								};
-							}
-						}
-					}
-				}
-			}
 		}
 
 		if (players::opponent_player->race == race_zerg && (army_supply < enemy_army_supply || army_supply < 12.0)) {
@@ -330,7 +305,7 @@ struct strat_z_vp_hydra : strat_z_base {
 			}
 		}
 
-		if (is_defending && !fight_ok && zergling_count < 14) {
+		if ((is_defending && !fight_ok && zergling_count < 14) || (drone_count >= 18 && sunken_count >= 2 && maybe_being_rushed && zergling_count < 14 && players::opponent_player->minerals_lost < 250.0)) {
 			army = [army](state&st) {
 				return nodelay(st, unit_types::zergling, army);
 			};
@@ -364,18 +339,6 @@ struct strat_z_vp_hydra : strat_z_base {
 			}
 		}
 
-// 		if ((defence_fight_ok && army_supply >= 15.0) || army_supply >= 30.0) {
-// 			if (count_production(st, unit_types::drone) == 0) {
-// 				army = [army](state&st) {
-// 					return nodelay(st, unit_types::drone, army);
-// 				};
-// 			}
-// 		}
-
-		double desired_army_supply = drone_count*drone_count * 0.015 + drone_count * 0.8 - 16;
-		if (players::opponent_player->race == race_zerg) {
-			desired_army_supply = drone_count*drone_count * 0.08 + drone_count * 0.5 - 4;
-		}
 		if (army_supply >= desired_army_supply) {
 			if (defence_fight_ok || (army_supply >= 30.0 && !is_defending)) {
 				army = [army](state&st) {
@@ -383,12 +346,6 @@ struct strat_z_vp_hydra : strat_z_base {
 				};
 			}
 		}
-
-// 		if (enemy_static_defence_count == 0 && drone_count >= 36) {
-// 			army = [army](state&st) {
-// 				return nodelay(st, unit_types::hydralisk, army);
-// 			};
-// 		}
 
 		if (force_expand && count_production(st, unit_types::hatchery) == 0) {
 			army = [army](state&st) {
