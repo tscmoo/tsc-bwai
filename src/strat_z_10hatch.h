@@ -12,13 +12,9 @@ struct strat_z_10hatch : strat_z_base {
 	}
 	virtual bool tick() override {
 		if (opening_state == 0) {
-			if (my_resource_depots.size() != 1 || my_workers.size() != 4) opening_state = -1;
+			if (my_resource_depots.size() != 1 || my_workers.size() > 9) opening_state = -1;
 			else {
-				build::add_build_task(0.0, unit_types::drone);
-				build::add_build_task(0.0, unit_types::drone);
-				build::add_build_task(0.0, unit_types::drone);
-				build::add_build_task(0.0, unit_types::drone);
-				build::add_build_task(0.0, unit_types::drone);
+				build::add_build_total(0.0, unit_types::drone, 9);
 				++opening_state;
 			}
 		} else if (opening_state == 1) {
@@ -27,7 +23,7 @@ struct strat_z_10hatch : strat_z_base {
 			build::add_build_task(0.0, unit_types::hatchery);
 			build::add_build_task(1.0, unit_types::spawning_pool);
 			build::add_build_task(2.0, unit_types::drone);
-			build::add_build_task(3.0, unit_types::overlord);
+			build::add_build_total(3.0, unit_types::overlord, 2);
 			build::add_build_task(4.0, unit_types::drone);
 			if (players::opponent_player->race == race_zerg || players::opponent_player->random) {
 				build::add_build_task(5.0, unit_types::zergling);
