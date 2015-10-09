@@ -53,6 +53,7 @@ struct strat_z_base {
 	int enemy_worker_count = 0;
 	int enemy_spawning_pool_count = 0;
 	int enemy_evolution_chamber_count = 0;
+	int enemy_corsair_count = 0;
 
 	bool opponent_has_expanded = false;
 	bool being_rushed = false;
@@ -622,6 +623,7 @@ struct strat_z_base {
 			enemy_worker_count = 0;
 			enemy_spawning_pool_count = 0;
 			enemy_evolution_chamber_count = 0;
+			enemy_corsair_count = 0;
 
 			update_possible_start_locations();
 			for (unit*e : enemy_units) {
@@ -688,6 +690,7 @@ struct strat_z_base {
 				if (e->type->is_worker) ++enemy_worker_count;
 				if (e->type == unit_types::spawning_pool) ++enemy_spawning_pool_count;
 				if (e->type == unit_types::evolution_chamber) ++enemy_evolution_chamber_count;
+				if (e->type == unit_types::corsair) ++enemy_corsair_count;
 			}
 
 			if (enemy_terran_unit_count + enemy_protoss_unit_count) overlord_scout(enemy_gas_count + enemy_units_that_shoot_up_count + enemy_barracks_count == 0);
