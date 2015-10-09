@@ -198,8 +198,6 @@ bool should_transition() {
 #include "strat_t_1rax_fe.h"
 #include "strat_t_8rax_fe.h"
 
-#include "strat_t_test.h"
-
 #include "strat_z_base.h"
 #include "strat_z_5pool.h"
 #include "strat_z_9pool.h"
@@ -256,8 +254,6 @@ a_map<a_string, std::function<void()>> strat_map = {
 	{ "t proxy tank", wrap<strat_t_proxy_tank>() },
 	{ "t 1rax fe", wrap<strat_t_1rax_fe>() },
 	{ "t 8rax fe", wrap<strat_t_8rax_fe>() },
-
-	{ "t test", wrap<strat_t_test>() },
 
 	{ "t bio tank", wrap<strat_t_bio_tank>() },
 	{ "t mech", wrap<strat_t_mech>() },
