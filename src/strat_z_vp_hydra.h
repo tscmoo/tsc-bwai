@@ -279,7 +279,8 @@ struct strat_z_vp_hydra : strat_z_base {
 
 
 		if (players::opponent_player->race != race_zerg || drone_count >= 18) {
-			if (my_completed_units_of_type[unit_types::hatchery].size() >= 2 && (enemy_gateway_count >= 2 || enemy_barracks_count >= 2 || enemy_army_supply >= 4.0) && sunken_count < 2) {
+			//if (my_completed_units_of_type[unit_types::hatchery].size() >= 2 && (enemy_gateway_count >= 2 || enemy_barracks_count >= 2 || enemy_army_supply >= 4.0) && sunken_count < 2) {
+			if (my_completed_units_of_type[unit_types::hatchery].size() >= 2 && (maybe_being_rushed || enemy_army_supply >= 4.0) && sunken_count < 2) {
 				army = [army](state&st) {
 					return nodelay(st, unit_types::sunken_colony, army);
 				};
