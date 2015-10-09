@@ -181,17 +181,6 @@ struct strat_z_lategame : strat_z_base {
 				}
 			}
 
-			if (hydralisk_count < 40 && hydralisk_count < enemy_air_army_supply) {
-				army = [army](state&st) {
-					return nodelay(st, unit_types::hydralisk, army);
-				};
-			}
-			if (scourge_count < enemy_air_army_supply && (hydralisk_count >= enemy_air_army_supply / 2 || enemy_air_army_supply < 20.0)) {
-				army = [army](state&st) {
-					return nodelay(st, unit_types::scourge, army);
-				};
-			}
-
 			if (hydralisk_count < enemy_ground_large_army_supply) {
 				army = [army](state&st) {
 					return nodelay(st, unit_types::hydralisk, army);
@@ -247,6 +236,23 @@ struct strat_z_lategame : strat_z_base {
 						return nodelay(st, unit_types::queen, army);
 					};
 				}
+			}
+
+			if (mutalisk_count + hydralisk_count < enemy_air_army_supply) {
+				if ((st.gas > st.minerals || hydralisk_count > mutalisk_count * 2) && mutalisk_count + mutalisk_count / 2 > enemy_corsair_count) {
+					army = [army](state&st) {
+						return nodelay(st, unit_types::mutalisk, army);
+					};
+				} else {
+					army = [army](state&st) {
+						return nodelay(st, unit_types::hydralisk, army);
+					};
+				}
+			}
+			if (scourge_count < enemy_air_army_supply && (hydralisk_count >= enemy_air_army_supply / 2 || enemy_air_army_supply < 20.0)) {
+				army = [army](state&st) {
+					return nodelay(st, unit_types::scourge, army);
+				};
 			}
 
 			if (!st.units[unit_types::defiler_mound].empty()) {
