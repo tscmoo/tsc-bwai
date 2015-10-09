@@ -27,14 +27,10 @@ struct strat_z_13pool_muta : strat_z_base {
 		if (being_early_rushed) being_rushed = true;
 
 		if (opening_state == 0) {
-			if (my_resource_depots.size() != 1 || my_workers.size() != 4) opening_state = -1;
+			if (my_resource_depots.size() != 1 || my_workers.size() > 9) opening_state = -1;
 			else {
-				build::add_build_task(0.0, unit_types::drone);
-				build::add_build_task(0.0, unit_types::drone);
-				build::add_build_task(0.0, unit_types::drone);
-				build::add_build_task(0.0, unit_types::drone);
-				build::add_build_task(0.0, unit_types::drone);
-				build::add_build_task(1.0, unit_types::overlord);
+				build::add_build_total(0.0, unit_types::drone, 9);
+				build::add_build_total(1.0, unit_types::overlord, 12);
 				build::add_build_task(2.0, unit_types::drone);
 				build::add_build_task(2.0, unit_types::drone);
 				build::add_build_task(2.0, unit_types::drone);
