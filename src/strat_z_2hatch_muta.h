@@ -6,27 +6,24 @@ struct strat_z_2hatch_muta : strat_z_base {
 
 		scouting::scout_supply = 12.0;
 
-		pull_workers_for_ling_zealot_defence = true;
+		//pull_workers_for_ling_zealot_defence = true;
 
 		sleep_time = 15;
 	}
 
 	bool fight_ok = true;
 	bool defence_fight_ok = true;
+	bool defence_fight_x1_sunken_ok = true;
 	int damaged_overlord_count = 0;
 	double spire_progress = 0.0;
 	virtual bool tick() override {
 
 		if (opening_state == 0) {
-			if (my_resource_depots.size() != 1 || my_workers.size() != 4) opening_state = -1;
+			if (my_resource_depots.size() != 1 || my_workers.size() > 9) opening_state = -1;
 			else {
 				if (players::opponent_player->race == race_zerg || players::opponent_player->random) {
-					build::add_build_task(0.0, unit_types::drone);
-					build::add_build_task(0.0, unit_types::drone);
-					build::add_build_task(0.0, unit_types::drone);
-					build::add_build_task(0.0, unit_types::drone);
-					build::add_build_task(0.0, unit_types::drone);
-					build::add_build_task(1.0, unit_types::overlord);
+					build::add_build_total(0.0, unit_types::drone, 9);
+					build::add_build_total(1.0, unit_types::overlord, 2);
 					build::add_build_task(2.0, unit_types::spawning_pool);
 					build::add_build_task(3.0, unit_types::extractor);
 					build::add_build_task(4.0, unit_types::drone);
@@ -37,29 +34,9 @@ struct strat_z_2hatch_muta : strat_z_base {
 					build::add_build_task(5.0, unit_types::zergling);
  					build::add_build_task(5.0, unit_types::zergling);
 					build::add_build_task(6.0, unit_types::hatchery);
-
-// 					build::add_build_task(0.0, unit_types::drone);
-// 					build::add_build_task(0.0, unit_types::drone);
-// 					build::add_build_task(0.0, unit_types::drone);
-// 					build::add_build_task(0.0, unit_types::drone);
-// 					build::add_build_task(0.0, unit_types::drone);
-// 					build::add_build_task(1.0, unit_types::spawning_pool);
-// 					build::add_build_task(1.5, unit_types::overlord);
-// 					build::add_build_task(2.0, unit_types::hatchery);
-// 					//build::add_build_task(3.0, unit_types::drone);
-// 					//build::add_build_task(3.0, unit_types::drone);
-// 					//build::add_build_task(3.5, unit_types::overlord);
-// 					build::add_build_task(4.0, unit_types::zergling);
-// 					build::add_build_task(4.0, unit_types::zergling);
-// 					build::add_build_task(4.0, unit_types::zergling);
-// 					build::add_build_task(5.0, unit_types::extractor);
 				} else {
-					build::add_build_task(0.0, unit_types::drone);	
-					build::add_build_task(0.0, unit_types::drone);
-					build::add_build_task(0.0, unit_types::drone);
-					build::add_build_task(0.0, unit_types::drone);
-					build::add_build_task(0.0, unit_types::drone);
-					build::add_build_task(1.0, unit_types::overlord);
+					build::add_build_total(0.0, unit_types::drone, 9);
+					build::add_build_total(1.0, unit_types::overlord, 2);
 					build::add_build_task(2.0, unit_types::drone);
 					build::add_build_task(2.0, unit_types::drone);
 					build::add_build_task(2.0, unit_types::drone);
@@ -67,12 +44,6 @@ struct strat_z_2hatch_muta : strat_z_base {
 					build::add_build_task(4.0, unit_types::spawning_pool);
 					build::add_build_task(4.25, unit_types::drone);
 					build::add_build_task(4.5, unit_types::extractor);
-					build::add_build_task(5.0, unit_types::zergling);
-					if (players::opponent_player->race != race_terran) {
-						build::add_build_task(5.0, unit_types::zergling);
-						build::add_build_task(5.0, unit_types::zergling);
-						build::add_build_task(5.0, unit_types::zergling);
-					}
 				}
 				++opening_state;
 			}
@@ -84,6 +55,7 @@ struct strat_z_2hatch_muta : strat_z_base {
 
 		fight_ok = eval_combat(false, 0);
 		defence_fight_ok = eval_combat(true, 0);
+		defence_fight_x1_sunken_ok = eval_combat(true, 1);
 
 		army_supply = current_used_total_supply - my_workers.size();
 
@@ -125,18 +97,6 @@ struct strat_z_2hatch_muta : strat_z_base {
 			}
 		}
 		if (spire_progress) resource_gathering::max_gas = 900;
-
-		if (!my_completed_units_of_type[unit_types::evolution_chamber].empty() && hatch_count >= 2) {
-			if (defence_fight_ok) {
-				get_upgrades::set_upgrade_value(upgrade_types::zerg_melee_attacks_1, -1.0);
-				get_upgrades::set_upgrade_value(upgrade_types::zerg_carapace_1, -1.0);
-
-				if (resource_gathering::max_gas < 150.0) resource_gathering::max_gas = 150.0;
-			}
-		}
-		if (defence_fight_ok && zergling_count >= 12) {
-			get_upgrades::set_upgrade_value(upgrade_types::metabolic_boost, -1.0);
-		}
 		
 		return current_used_total_supply >= 120;
 	}
@@ -146,20 +106,7 @@ struct strat_z_2hatch_muta : strat_z_base {
 
 		auto army = this->army;
 
-		st.auto_build_hatcheries = true;
-		//st.dont_build_refineries = drone_count < 20;
-
-// 		if (spire_progress >= 0.5 && (spire_progress < 1.0 || my_units_of_type[unit_types::mutalisk].empty())) {
-// 			if (drone_count < 20 && enemy_zergling_count == 0) {
-// 				army = [army](state&st) {
-// 					return nodelay(st, unit_types::drone, army);
-// 				};
-// 			}
-// 			army = [army](state&st) {
-// 				return nodelay(st, unit_types::mutalisk, army);
-// 			};
-// 			return army(st);
-// 		}
+		st.auto_build_hatcheries = current_minerals >= 400 || !my_units_of_type[unit_types::spire].empty();
 
 		if (spire_progress && count_units_plus_production(st, unit_types::extractor) < 2 && st.bases.size() >= 2) {
 			army = [army](state&st) {
@@ -174,15 +121,13 @@ struct strat_z_2hatch_muta : strat_z_base {
 
 		bool maybe_being_rushed = being_rushed || (!opponent_has_expanded && enemy_cannon_count + enemy_bunker_count == 0);
 
-		army = [army](state&st) {
-			return nodelay(st, unit_types::drone, army);
-		};
-
-// 		if (drone_count >= 10 && hatch_count < 2) {
-// 			army = [army](state&st) {
-// 				return nodelay(st, unit_types::hatchery, army);
-// 			};
-// 		}
+		if ((!maybe_being_rushed || !my_completed_units_of_type[unit_types::spawning_pool].empty()) && (drone_count >= 9 || zergling_count)) {
+			if (!maybe_being_rushed || zergling_count >= 8) {
+				army = [army](state&st) {
+					return nodelay(st, unit_types::drone, army);
+				};
+			}
+		}
 
 		if (current_gas >= 100.0 && drone_count >= 12) {
 			if (zergling_count > enemy_zergling_count || sunken_count) {
@@ -214,7 +159,7 @@ struct strat_z_2hatch_muta : strat_z_base {
 						return nodelay(st, unit_types::zergling, army);
 					};
 				}
-				if (enemy_attacking_army_supply && !defence_fight_ok && sunken_count < 3) {
+				if (maybe_being_rushed && drone_count >= 14 && sunken_count < (drone_count >= 18 ? 4 : 3)) {
 					army = [army](state&st) {
 						return nodelay(st, unit_types::sunken_colony, army);
 					};
@@ -225,13 +170,6 @@ struct strat_z_2hatch_muta : strat_z_base {
 					};
 				}
 			}
-// 			if (maybe_being_rushed && drone_count >= 14) {
-// 				if (sunken_count < (spire_progress ? 4 : drone_count >= 18 ? 3 : 1)) {
-// 					army = [army](state&st) {
-// 						return nodelay(st, unit_types::sunken_colony, army);
-// 					};
-// 				}
-// 			}
 		} else {
 			if (!defence_fight_ok || (players::opponent_player->race == race_zerg && army_supply < drone_count)) {
 				if (zergling_count < 12 || (drone_count > enemy_worker_count && zergling_count < enemy_zergling_count + 4)) {
@@ -247,36 +185,27 @@ struct strat_z_2hatch_muta : strat_z_base {
 			}
 		}
 
-// 		if (spire_progress < 1.0 && players::opponent_player->race == race_zerg) {
-// 			//if (drone_count > enemy_worker_count && zergling_count < enemy_zergling_count + 4) {
-// 			if (drone_count > enemy_worker_count && zergling_count < enemy_zergling_count + 14) {
-// 				army = [army](state&st) {
-// 					return nodelay(st, unit_types::zergling, army);
-// 				};
-// 			}
-// 		}
+		if (static_defence_pos_is_valid || my_completed_units_of_type[unit_types::hatchery].size() + my_units_of_type[unit_types::lair].size() >= 2) {
+			if (!defence_fight_ok || players::opponent_player->minerals_lost < 200.0) {
+				if (maybe_being_rushed && sunken_count < (enemy_attacking_army_supply >= 5.0 ? 3 : 2) && drone_count >= 11) {
+					army = [army](state&st) {
+						return nodelay(st, unit_types::sunken_colony, army);
+					};
+				}
+				if (sunken_count && is_defending && (!defence_fight_x1_sunken_ok || (drone_count >= 12 && zergling_count < 8))) {
+					army = [army](state&st) {
+						return nodelay(st, unit_types::zergling, army);
+					};
+				}
+			}
+		}
 
-// 		if (my_completed_units_of_type[unit_types::hatchery].size() + my_units_of_type[unit_types::lair].size() >= 2) {
-// 			//if (enemy_zergling_count >= 12 && spire_progress) {
-// 			if ((enemy_zergling_count || enemy_spawning_pool_count || players::opponent_player->race == race_zerg) && spire_progress < 1.0) {
-// 				if (!defence_fight_ok || (enemy_zergling_count && drone_count >= 14 && drone_count > enemy_worker_count && sunken_count < 8 && enemy_spire_count == 0)) {
-// 					army = [army](state&st) {
-// 						return nodelay(st, unit_types::sunken_colony, army);
-// 					};
-// 				}
-// 				//if (sunken_count >= 4 || is_defending || (enemy_zergling_count && drone_count > enemy_worker_count + 4)) {
-// 				if (drone_count > enemy_worker_count && zergling_count < 20) {
-// 					army = [army](state&st) {
-// 						return nodelay(st, unit_types::zergling, army);
-// 					};
-// 				}
-// 				if (sunken_count == 0) {
-// 					army = [army](state&st) {
-// 						return nodelay(st, unit_types::sunken_colony, army);
-// 					};
-// 				}
-// 			}
-// 		}
+		if (maybe_being_rushed && zergling_count < 8) {
+			army = [army](state&st) {
+				return nodelay(st, unit_types::zergling, army);
+			};
+		}
+
 
 		if (players::opponent_player->race == race_zerg && hatch_count >= 2) {
 			if (drone_count > enemy_worker_count + 2 && zergling_count < enemy_zergling_count * 2) {
@@ -284,11 +213,6 @@ struct strat_z_2hatch_muta : strat_z_base {
 					return nodelay(st, unit_types::zergling, army);
 				};
 			}
-// 			if (enemy_evolution_chamber_count && count_units_plus_production(st, unit_types::evolution_chamber) < 2) {
-// 				army = [army](state&st) {
-// 					return nodelay(st, unit_types::evolution_chamber, army);
-// 				};
-// 			}
 			if (zergling_count < enemy_zergling_count || !defence_fight_ok) {
 				army = [army](state&st) {
 					return nodelay(st, unit_types::zergling, army);
@@ -296,18 +220,17 @@ struct strat_z_2hatch_muta : strat_z_base {
 			}
 		}
 
-// 		if (defence_fight_ok && drone_count < enemy_worker_count + 4) {
-// 			army = [army](state&st) {
-// 				return nodelay(st, unit_types::drone, army);
-// 			};
-// 		}
-
 		double desired_army_supply = drone_count*drone_count * 0.015 + drone_count * 0.8 - 16;
 
 		if (spire_progress >= 1.0 && army_supply < desired_army_supply) {
 			army = [army](state&st) {
 				return nodelay(st, unit_types::mutalisk, army);
 			};
+			if (enemy_corsair_count >= 6) {
+				army = [army](state&st) {
+					return nodelay(st, unit_types::hydralisk, army);
+				};
+			}
 		}
 		if (spire_progress >= 0.75) {
 			if ((enemy_zergling_count || enemy_spawning_pool_count) && mutalisk_count < drone_count && drone_count > enemy_worker_count) {
@@ -329,10 +252,18 @@ struct strat_z_2hatch_muta : strat_z_base {
 			};
 		}
 
-		if (damaged_overlord_count && st.used_supply[race_zerg] >= st.max_supply[race_zerg] - damaged_overlord_count * 8 - 12) {
+		if (damaged_overlord_count && st.used_supply[race_zerg] >= st.max_supply[race_zerg] - 8 && st.used_supply[race_zerg] >= st.max_supply[race_zerg] - damaged_overlord_count * 8 - 12) {
 			army = [army](state&st) {
 				return nodelay(st, unit_types::overlord, army);
 			};
+		} else {
+			if (spire_progress >= 1.0 && players::opponent_player->race == race_protoss && defence_fight_ok && mutalisk_count == 0) {
+				if (scourge_count < 2) {
+					army = [army](state&st) {
+						return nodelay(st, unit_types::scourge, army);
+					};
+				}
+			}
 		}
 
 		return army(st);
