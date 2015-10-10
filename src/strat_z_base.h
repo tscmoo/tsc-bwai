@@ -54,6 +54,7 @@ struct strat_z_base {
 	int enemy_spawning_pool_count = 0;
 	int enemy_evolution_chamber_count = 0;
 	int enemy_corsair_count = 0;
+	int enemy_lair_count = 0;
 
 	bool opponent_has_expanded = false;
 	bool being_rushed = false;
@@ -624,6 +625,7 @@ struct strat_z_base {
 			enemy_spawning_pool_count = 0;
 			enemy_evolution_chamber_count = 0;
 			enemy_corsair_count = 0;
+			enemy_lair_count = 0;
 
 			update_possible_start_locations();
 			for (unit*e : enemy_units) {
@@ -683,7 +685,7 @@ struct strat_z_base {
 				if (e->type == unit_types::barracks) ++enemy_barracks_count;
 				if (e->type == unit_types::gateway) ++enemy_gateway_count;
 				if (e->type == unit_types::zergling) ++enemy_zergling_count;
-				if (e->type == unit_types::spire) ++enemy_spire_count;
+				if (e->type == unit_types::spire || e->type == unit_types::greater_spire) ++enemy_corsair_count;
 				if (e->cloaked) ++enemy_cloaked_unit_count;
 				if (e->type == unit_types::zealot) ++enemy_zealot_count;
 				if (e->type == unit_types::dragoon) ++enemy_dragoon_count;
@@ -691,6 +693,7 @@ struct strat_z_base {
 				if (e->type == unit_types::spawning_pool) ++enemy_spawning_pool_count;
 				if (e->type == unit_types::evolution_chamber) ++enemy_evolution_chamber_count;
 				if (e->type == unit_types::corsair) ++enemy_corsair_count;
+				if (e->type == unit_types::lair || e->type == unit_types::hive) ++enemy_lair_count;
 			}
 
 			if (enemy_terran_unit_count + enemy_protoss_unit_count) overlord_scout(enemy_gas_count + enemy_units_that_shoot_up_count + enemy_barracks_count == 0);
