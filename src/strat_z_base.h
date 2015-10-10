@@ -685,7 +685,7 @@ struct strat_z_base {
 				if (e->type == unit_types::barracks) ++enemy_barracks_count;
 				if (e->type == unit_types::gateway) ++enemy_gateway_count;
 				if (e->type == unit_types::zergling) ++enemy_zergling_count;
-				if (e->type == unit_types::spire || e->type == unit_types::greater_spire) ++enemy_corsair_count;
+				if (e->type == unit_types::spire || e->type == unit_types::greater_spire) ++enemy_spire_count;
 				if (e->cloaked) ++enemy_cloaked_unit_count;
 				if (e->type == unit_types::zealot) ++enemy_zealot_count;
 				if (e->type == unit_types::dragoon) ++enemy_dragoon_count;
