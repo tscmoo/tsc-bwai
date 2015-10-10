@@ -761,6 +761,7 @@ void initialize_weights() {
 	int total_games = 0;
 	a_unordered_map<a_string, int> choice_wins;
 	a_unordered_map<a_string, int> choice_losses;
+	a_unordered_map<a_string, int> choice_games;
 	for (auto&v : hist.vector) {
 		bool won = v["result"] == "won";
 		++total_games;
@@ -804,6 +805,7 @@ void initialize_weights() {
 			}
 			log("%s %s - w adjusted to %g\n", choice, won ? "won" : "lost", w);
 
+			++choice_games[choice];
 			if (won) ++choice_wins[choice];
 			else ++choice_losses[choice];
 		}
@@ -934,9 +936,26 @@ void initialize_weights() {
 		}
 	} else {
 		for (auto&v : adapt::weights) {
-			if (choice_wins[v.first] + choice_losses[v.first]) v.second /= 4;
+			if (choice_games[v.first]) v.second /= 4;
 		}
 	}
+
+	if (players::opponent_player->race == race_terran) {
+		if (choice_games[".z econ2.z 10hatch"] == 0) {
+			adapt::weights["z econ2"] = 1000.0;
+			adapt::weights["z 10hatch"] = 1000.0;
+		}
+	}
+	if (players::opponent_player->race == race_protoss) {
+		if (choice_games[".z vp hydra.z 10hatch"] == 0) {
+			adapt::weights["z vp hydra"] = 1000.0;
+			adapt::weights["z 10hatch"] = 1000.0;
+		}
+	}
+	if (choice_games["z 2hatch muta"] == 0) {
+		adapt::weights["z 2hatch muta"] = 1000.0;
+	}
+
 	a_string str = format("adapt %s %s - wins: %d  losses: %d  winrate: %.02f", opponent_name, opponent_race, wins, losses, (double)wins / total_games * 100);
 	log("%s\n", str);
 	send_text(str);
