@@ -45,9 +45,9 @@ player_t*get_player(BWAPI_Player game_player) {
 		p->random = false;
 		p->rescuable = game_player->getType() == BWAPI::PlayerTypes::RescuePassive;
 		if (game_player->getRace() == BWAPI::Races::Terran) p->race = race_terran;
-		if (game_player->getRace() == BWAPI::Races::Protoss) p->race = race_protoss;
-		if (game_player->getRace() == BWAPI::Races::Zerg) p->race = race_zerg;
-		if (game_player->getRace() == BWAPI::Races::Random) {
+		else if (game_player->getRace() == BWAPI::Races::Protoss) p->race = race_protoss;
+		else if (game_player->getRace() == BWAPI::Races::Zerg) p->race = race_zerg;
+		else {
 			p->random = true;
 			p->race = race_protoss;
 		}
