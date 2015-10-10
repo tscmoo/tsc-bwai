@@ -4923,9 +4923,13 @@ void fight() {
 		if (!nearby_enemies.empty() && !nearby_allies.empty()) {
 
 			bool is_base_defence = false;
+			int n_enemy_lings = 0;
 			for (unit*e : nearby_enemies) {
+				if (e->type == unit_types::zergling) ++n_enemy_lings;
 				if (!is_base_defence) is_base_defence = my_base.test(grid::build_square_index(e->pos));
 			}
+
+			bool is_mostly_lings = n_enemy_lings > (int)nearby_enemies.size() - (int)nearby_enemies.size() / 3;
 
 			bool has_siege_mode = players::my_player->upgrades.count(upgrade_types::siege_mode) != 0;
 			auto add = [&](combat_eval::eval&eval, unit*u, int team) -> combat_eval::combatant& {
@@ -4982,6 +4986,7 @@ void fight() {
 				combat_unit*lowest_hp = get_best_score(nearby_combat_units, [&](combat_unit*a) {
 					if (current_frame < a->retreat_until) return std::numeric_limits<double>::infinity();
 					if (!a->u->stats->ground_weapon && !a->u->stats->air_weapon) return std::numeric_limits<double>::infinity();
+					if (a->u->type == unit_types::zergling && is_base_defence && is_mostly_lings) return std::numeric_limits<double>::infinity();
 					for (unit*e : nearby_enemies) {
 						weapon_stats*ew = a->u->is_flying ? e->stats->air_weapon : e->stats->ground_weapon;
 						if (ew && units_distance(e, a->u) <= ew->max_range - 32) return std::numeric_limits<double>::infinity();
