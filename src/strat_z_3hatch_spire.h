@@ -243,17 +243,18 @@ struct strat_z_3hatch_spire : strat_z_base {
 			}
 		}
 
-		if (maybe_being_rushed) {
-			if (drone_count >= 11 && zergling_count < 4) {
-				army = [army](state&st) {
-					return nodelay(st, unit_types::zergling, army);
-				};
-			}
-		}
 		if (defence_fight_ok && count_production(st, unit_types::drone) == 0) {
 			army = [army](state&st) {
 				return nodelay(st, unit_types::drone, army);
 			};
+		}
+
+		if (maybe_being_rushed) {
+			if (drone_count >= 11 && zergling_count < 12) {
+				army = [army](state&st) {
+					return nodelay(st, unit_types::zergling, army);
+				};
+			}
 		}
 
 		if (force_expand && count_production(st, unit_types::hatchery) == 0) {
