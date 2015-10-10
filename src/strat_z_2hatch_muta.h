@@ -108,6 +108,16 @@ struct strat_z_2hatch_muta : strat_z_base {
 
 		st.auto_build_hatcheries = current_minerals >= 400 || !my_units_of_type[unit_types::spire].empty();
 
+		bool maybe_being_rushed = being_rushed || (!opponent_has_expanded && enemy_cannon_count + enemy_bunker_count == 0);
+
+		if ((!maybe_being_rushed || !my_completed_units_of_type[unit_types::spawning_pool].empty()) && (drone_count >= 9 || zergling_count)) {
+			if (!maybe_being_rushed || zergling_count >= 8) {
+				army = [army](state&st) {
+					return nodelay(st, unit_types::drone, army);
+				};
+			}
+		}
+
 		if (spire_progress && count_units_plus_production(st, unit_types::extractor) < 2 && st.bases.size() >= 2) {
 			army = [army](state&st) {
 				return nodelay(st, unit_types::extractor, army);
@@ -117,16 +127,6 @@ struct strat_z_2hatch_muta : strat_z_base {
 			army = [army](state&st) {
 				return nodelay(st, unit_types::extractor, army);
 			};
-		}
-
-		bool maybe_being_rushed = being_rushed || (!opponent_has_expanded && enemy_cannon_count + enemy_bunker_count == 0);
-
-		if ((!maybe_being_rushed || !my_completed_units_of_type[unit_types::spawning_pool].empty()) && (drone_count >= 9 || zergling_count)) {
-			if (!maybe_being_rushed || zergling_count >= 8) {
-				army = [army](state&st) {
-					return nodelay(st, unit_types::drone, army);
-				};
-			}
 		}
 
 		if (current_gas >= 100.0 && drone_count >= 12) {
