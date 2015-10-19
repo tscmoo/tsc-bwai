@@ -187,7 +187,7 @@ xy find(starts_T&&starts, unit_type*ut, const pred_T&pred, bool only_walkable = 
 			else {
 				for (xy start_pos : start_locations) {
 					if (start_pos == my_start_location) continue;
-					r += unit_pathing_distance(unit_types::drone, e->pos, start_pos);
+					r += unit_pathing_distance(unit_types::drone, start_pos, pos);
 				}
 			}
 		} else if (ut != unit_types::bunker) {
