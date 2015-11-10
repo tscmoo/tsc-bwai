@@ -311,14 +311,14 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep, bool no
 					}
 				}
 			}
-			// TODO: properly calculate the required supply for morphing units, instead of just checking for mutalisk
-			if (build->required_supply && build->builder_type != unit_types::mutalisk) {
+			// TODO: properly calculate the required supply for morphing units, instead of just checking for mutalisk etc.
+			if (build->required_supply && build->builder_type != unit_types::mutalisk && build != unit_types::archon && build != unit_types::dark_archon) {
 				if (st.used_supply[build->race] + build->required_supply > 200) return failed;
 				if (st.used_supply[build->race] + build->required_supply > st.max_supply[build->race]) {
 					//if (nodep) return failed;
 					//return unit_types::supply_depot;
-					if (st.race == race_terran) add_built(unit_types::supply_depot, true);
-					else if (st.race == race_protoss) add_built(unit_types::pylon, true);
+					if (build->race == race_terran) add_built(unit_types::supply_depot, true);
+					else if (build->race == race_protoss) add_built(unit_types::pylon, true);
 					else add_built(unit_types::overlord, true);
 // 					if (no_refinery_depots) return failed;
 // 					return nullptr;
@@ -327,6 +327,7 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep, bool no
 			}
 			if (has_enough_minerals && has_enough_gas && !prereq_in_prod) {
 				st_unit*builder = nullptr;
+				st_unit*builder2 = nullptr;
 				st_unit*builder_without_addon = nullptr;
 				bool builder_exists = false;
 				if (build->builder_type == unit_types::larva) {
@@ -361,6 +362,17 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep, bool no
 								builder = &u;
 								break;
 							}
+						}
+					}
+					if (builder && (build == unit_types::archon || build == unit_types::dark_archon)) {
+						for (st_unit&u : st.units[build->builder_type]) {
+							if (&u == builder) continue;
+							builder2 = &u;
+							break;
+						}
+						if (!builder2) {
+							builder = nullptr;
+							builder_exists = false;
 						}
 					}
 				}
@@ -426,6 +438,10 @@ unit_type* advance(state&st, unit_type*build, int end_frame, bool nodep, bool no
 					st.used_supply[build->race] += build->required_supply;
 					if (build->is_addon) builder->has_addon = true;
 					if (builder->type->race == race_zerg && builder->type != unit_types::hatchery && builder->type != unit_types::lair && builder->type != unit_types::hive) rm_unit_and_supply(st, builder->type);
+					if (build == unit_types::archon || build == unit_types::dark_archon) {
+						rm_unit_and_supply(st, builder->type);
+						rm_unit_and_supply(st, builder2->type);
+					}
 					//log("%s successfully built\n", build->name);
 					return (unit_type*)nullptr;
 				}
