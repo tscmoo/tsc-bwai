@@ -152,6 +152,10 @@ struct combat_unit {
 	bool is_nearest = false;
 	int retreat_until = 0;
 	int try_retreat_until = 0;
+	int use_for_drops_until = 0;
+	xy drop_target;
+	xy drop_move_target;
+	bool force_attack = false;
 };
 a_unordered_map<unit*, combat_unit> combat_unit_map;
 
@@ -968,7 +972,7 @@ void update_groups() {
 				return get_best_score(available_units, [&](combat_unit*c) {
 					if (c->u->type == unit_types::overlord) return std::numeric_limits<double>::infinity();
 					if (c->u->type->is_worker && !c->u->force_combat_unit && !allow_worker) return std::numeric_limits<double>::infinity();
-					if (no_aggressive_groups && (c->u->type != unit_types::vulture || !aggressive_vultures) && (c->u->type != unit_types::wraith || !aggressive_wraiths) && (c->u->type != unit_types::valkyrie || !aggressive_valkyries) && (c->u->type != unit_types::zergling || !aggressive_zerglings) && (c->u->type != unit_types::mutalisk || !aggressive_mutalisks)) {
+					if (no_aggressive_groups && !c->force_attack && (c->u->type != unit_types::vulture || !aggressive_vultures) && (c->u->type != unit_types::wraith || !aggressive_wraiths) && (c->u->type != unit_types::valkyrie || !aggressive_valkyries) && (c->u->type != unit_types::zergling || !aggressive_zerglings) && (c->u->type != unit_types::mutalisk || !aggressive_mutalisks)) {
 						if (g.is_aggressive_group) return std::numeric_limits<double>::infinity();
 					} else if (!aggressive_groups_done_only && g.is_defensive_group) return std::numeric_limits<double>::infinity();
 					if (c->u->type->is_worker && !c->u->force_combat_unit && g.is_defensive_group) return std::numeric_limits<double>::infinity();
@@ -1227,11 +1231,11 @@ void update_groups() {
 			if (cu->u->type == unit_types::dropship) dropships.push_back(cu);
 			moving_units.push_back(cu);
 		}
-		int process_uid = current_frame;
-		for (auto*cu : dropships) {
-			if (given_lifts.count(cu)) continue;
-			if (give_lifts(cu, moving_units, process_uid)) given_lifts.insert(cu);
-		}
+// 		int process_uid = current_frame;
+// 		for (auto*cu : dropships) {
+// 			if (given_lifts.count(cu)) continue;
+// 			if (give_lifts(cu, moving_units, process_uid)) given_lifts.insert(cu);
+// 		}
 	}
 	if (true) {
 		a_vector<combat_unit*> dropships;
@@ -1245,10 +1249,10 @@ void update_groups() {
 				}
 			}
 		}
-		for (auto*cu : dropships) {
-			if (given_lifts.count(cu)) continue;
-			if (give_lifts(cu, pickup_workers, current_frame)) given_lifts.insert(cu);
-		}
+// 		for (auto*cu : dropships) {
+// 			if (given_lifts.count(cu)) continue;
+// 			if (give_lifts(cu, pickup_workers, current_frame)) given_lifts.insert(cu);
+// 		}
 	}
 	
 	std::lock_guard<multitasking::mutex> l(groups_mut);
@@ -1289,6 +1293,9 @@ a_unordered_map<unit*, std::tuple<combat_unit*, int>> optical_flare_target_taken
 a_map<xy, std::tuple<combat_unit*, int>> dark_swarm_target_taken;
 a_map<xy, std::tuple<combat_unit*, int>> plague_target_taken;
 tsc::dynamic_bitset existing_dark_swarm;
+
+a_map<xy, std::tuple<combat_unit*, int>> storm_target_taken;
+a_map<xy, std::tuple<combat_unit*, int>> stasis_target_taken;
 
 a_unordered_set<unit*> shuttle_target_taken;
 
@@ -1421,6 +1428,16 @@ void prepare_attack() {
 		else ++i;
 	}
 
+	for (auto i = storm_target_taken.begin(); i != storm_target_taken.end();) {
+		if (current_frame >= std::get<1>(i->second)) i = storm_target_taken.erase(i);
+		else ++i;
+	}
+
+	for (auto i = stasis_target_taken.begin(); i != stasis_target_taken.end();) {
+		if (current_frame >= std::get<1>(i->second)) i = stasis_target_taken.erase(i);
+		else ++i;
+	}
+
 	need_detector.clear();
 
 	shuttle_target_taken.clear();
@@ -1467,6 +1484,13 @@ auto lay_mine = [&](combat_unit*c, bool forced = false) {
 
 a_unordered_map<combat_unit*, xy> use_dark_swarm_please;
 a_unordered_map<combat_unit*, xy> use_plague_please;
+
+a_unordered_map<combat_unit*, xy> use_storm_please;
+a_unordered_map<combat_unit*, xy> use_stasis_please;
+
+a_vector<std::pair<combat_unit*, combat_unit*>> pickup_list;
+
+a_map<xy, std::pair<int, int>> active_nukes;
 
 void finish_attack() {
 	a_vector<combat_unit*> spider_mine_layers;
@@ -1557,10 +1581,9 @@ void finish_attack() {
 			if (current_frame - c->last_fight >= 15 * 5) continue;
 			if (c->u->hp >= c->u->stats->hp) {
 				if (c->last_win_ratio >= 4.0 && c->u->energy < 240) continue;
-				if (c->last_win_ratio >= 2.0 && c->u->energy < 140) continue;
+				if (c->last_win_ratio >= 0.25 && c->u->energy < 140) continue;
 			}
-			if (c->u->detected) continue;
-			if (c->last_op_detectors == 0 || c->u->hp < c->u->stats->hp || c->last_win_ratio < 1.0) {
+			if (c->last_op_detectors == 0) {
 				c->subaction = combat_unit::subaction_use_ability;
 				c->ability = upgrade_types::personal_cloaking;
 				c->last_used_special = current_frame;
@@ -1933,32 +1956,17 @@ void finish_attack() {
 	}
 
 	if (!my_completed_units_of_type[unit_types::scv].empty()) {
-//		a_unordered_map<unit*, group_t*> unit_group;
 		a_vector<combat_unit*> scvs;
 		int non_scv_count = 0;
-// 		for (auto&g : groups) {
-// 			if (g.allies.size() == 1) continue;
-// 			for (auto*a : g.allies) {
-// 				if (a->u->hp < a->u->stats->hp) continue;
-// 				unit_group[a->u] = &g;
-// 				if (a->u->type == unit_types::scv) scvs.push_back(a);
-// 				else ++non_scv_count;
-// 			}
-// 		}
 		for (auto*a : live_combat_units) {
 			if (current_frame < a->strategy_busy_until) continue;
-			//if (a->u->hp < a->u->stats->hp) continue;
 			if (a->u->type == unit_types::scv) {
 				if (current_used_total_supply < 80 || !entire_threat_area.test(grid::build_square_index(a->u->pos))) {
 					scvs.push_back(a);
 				}
 			} else ++non_scv_count;
 		}
-		//if (scvs.size() < 3 && my_workers.size() > 20) {
-// 			for (auto*a : live_combat_units) {
-// 				if (a->u->controller->action == unit_controller::action_repair) scvs.push_back(a);
-// 			}
-		//}
+		if (!scvs.empty()) scvs.pop_back();
 		for (auto*c : live_combat_units) {
 			if (current_frame < c->strategy_busy_until) continue;
 			if (c->subaction == combat_unit::subaction_repair) {
@@ -2157,7 +2165,7 @@ void finish_attack() {
 				}
 				if (c->u > moved_to && (u->type != unit_types::battlecruiser || current_frame - cu->last_fight >= 15 * 5)) {
 					moved_to = c->u;
-					if (move) {
+					if (move && current_frame > cu->strategy_busy_until) {
 						cu->subaction = combat_unit::subaction_move_directly;
 						cu->target_pos = c->u->pos;
 					}
@@ -2632,6 +2640,204 @@ void finish_attack() {
 					}
 				}
 			}
+		}
+	}
+
+	if (!my_completed_units_of_type[unit_types::high_templar].empty()) {
+		a_vector<combat_unit*> high_templars;
+		for (auto*c : live_combat_units) {
+			if (current_frame < c->strategy_busy_until) continue;
+			if (c->u->type == unit_types::high_templar) high_templars.push_back(c);
+		}
+		if (players::my_player->has_upgrade(upgrade_types::psionic_storm)) {
+			for (auto*c : high_templars) {
+				if (c->u->energy < 75) continue;
+				auto i = use_storm_please.find(c);
+				if (i == use_storm_please.end()) continue;
+				xy target_pos = i->second;
+				if (current_frame - c->last_used_special >= 15) {
+					storm_target_taken[target_pos] = std::make_tuple(c, current_frame + 60);
+					c->u->game_unit->useTech(upgrade_types::psionic_storm->game_tech_type, BWAPI::Position(target_pos.x, target_pos.y));
+					c->last_used_special = current_frame;
+					c->u->controller->noorder_until = current_frame + 8;
+					c->subaction = combat_unit::subaction_idle;
+				}
+			}
+		}
+	}
+
+	if (!my_completed_units_of_type[unit_types::arbiter].empty()) {
+		a_vector<combat_unit*> arbiters;
+		for (auto*c : live_combat_units) {
+			if (current_frame < c->strategy_busy_until) continue;
+			if (c->u->type == unit_types::arbiter) arbiters.push_back(c);
+		}
+		if (players::my_player->has_upgrade(upgrade_types::stasis_field)) {
+			for (auto*c : arbiters) {
+				if (c->u->energy < 100) continue;
+				auto i = use_stasis_please.find(c);
+				if (i == use_stasis_please.end()) continue;
+				xy target_pos = i->second;
+				if (current_frame - c->last_used_special >= 15) {
+					stasis_target_taken[target_pos] = std::make_tuple(c, current_frame + 60);
+					c->u->game_unit->useTech(upgrade_types::stasis_field->game_tech_type, BWAPI::Position(target_pos.x, target_pos.y));
+					c->last_used_special = current_frame;
+					c->u->controller->noorder_until = current_frame + 8;
+					c->subaction = combat_unit::subaction_idle;
+				}
+			}
+		}
+	}
+
+	if (!my_completed_units_of_type[unit_types::dark_archon].empty()) {
+		a_vector<combat_unit*> dark_archons;
+		for (auto*c : live_combat_units) {
+			if (current_frame < c->strategy_busy_until) continue;
+			if (c->u->type == unit_types::dark_archon) dark_archons.push_back(c);
+		}
+		if (players::my_player->has_upgrade(upgrade_types::mind_control)) {
+
+			for (auto*c : dark_archons) {
+				if (c->u->energy < 150) continue;
+				unit*target = get_best_score(enemy_units, [&](unit*e) {
+					if (!e->visible || !e->detected) return std::numeric_limits<double>::infinity();
+					if (e->building) return std::numeric_limits<double>::infinity();
+					if (e->lockdown_timer) return std::numeric_limits<double>::infinity();
+					if (e->invincible) return std::numeric_limits<double>::infinity();
+					double value = e->minerals_value + e->gas_value;
+					if (e->type->is_worker && my_units_of_type[e->type].empty()) value += 300.0;
+					double min_value = 300;
+					if (dark_archons.size() >= 6) min_value = 200;
+					if (dark_archons.size() >= 10) min_value = 100;
+					if (value < min_value && c->u->hp > c->u->stats->hp*0.25) return std::numeric_limits<double>::infinity();
+					double d = diag_distance(e->pos - c->u->pos);
+					if (d > 32 * 15) return std::numeric_limits<double>::infinity();
+					if (d < 32 * 10) d = 32 * 10;
+
+					double ehp = e->shields + e->hp;
+					value *= ehp / (e->stats->shields + e->stats->hp);
+
+					auto it = disable_target_taken.find(e);
+					if (it != disable_target_taken.end() && std::get<0>(it->second) != c) return std::numeric_limits<double>::infinity();
+
+					return d / value / (ehp / (e->stats->shields + e->stats->hp));
+				}, std::numeric_limits<double>::infinity());
+				if (target) {
+					c->subaction = combat_unit::subaction_idle;
+					if (current_frame - c->last_used_special >= 15) {
+						c->u->game_unit->useTech(upgrade_types::mind_control->game_tech_type, target->game_unit);
+						c->last_used_special = current_frame;
+						c->u->controller->noorder_until = current_frame + 60;
+
+						disable_target_taken[target] = std::make_tuple(c, current_frame + 60);
+					}
+				}
+			}
+		}
+	}
+
+	for (auto&v : pickup_list) {
+		combat_unit*dropship = v.first;
+		combat_unit*pickup = v.second;
+
+		pickup->last_given_a_lift = current_frame;
+		pickup->u->controller->no_unload_until = current_frame + 15 * 5;
+		dropship->subaction = combat_unit::subaction_move;
+		dropship->target_pos = pickup->u->pos;
+		if (diag_distance(pickup->u->pos - dropship->u->pos) <= 32 * 4) {
+			dropship->subaction = combat_unit::subaction_idle;
+			dropship->u->controller->action = unit_controller::action_idle;
+			if (current_frame >= dropship->u->controller->noorder_until) {
+				pickup->u->game_unit->rightClick(dropship->u->game_unit);
+				pickup->u->controller->noorder_until = current_frame + 15;
+				dropship->u->controller->noorder_until = current_frame + 4;
+			}
+		}
+	}
+
+	for (auto*c : live_combat_units) {
+		if (current_frame < c->strategy_busy_until) continue;
+		if (c->drop_target == xy()) continue;
+
+		bool drop_now = false;
+
+		double distance_left = unit_pathing_distance(unit_types::scv, c->u->pos, c->drop_target);
+
+		size_t index = grid::build_square_index(c->u->pos);
+		if (entire_threat_area.test(index)) {
+			for (auto&g : groups) {
+				if (g.air_dpf < 1.0 && g.ground_dpf < 1.0) continue;
+				if (g.threat_area.test(index)) {
+					if (g.air_dpf >= 5.0 || g.ground_dpf >= 5.0) drop_now = true;
+					else if (distance_left <= 32 * 12) drop_now = true;
+				}
+			}
+		}
+
+		if (distance_left <= 32 * 6) {
+			drop_now = true;
+		}
+
+		if (drop_now) {
+			//log(log_level_info, "drop now!\n");
+			if (current_frame - c->u->controller->last_unload >= 8) {
+				c->u->controller->last_unload = current_frame;
+				c->u->controller->noorder_until = current_frame + 8;
+				//c->u->game_unit->unloadAll();
+				//c->u->game_unit->unload(c->u->game_unit);
+				if (!c->u->loaded_units.empty()) c->u->game_unit->unload(c->u->loaded_units.front()->game_unit);
+			}
+		} else {
+			c->subaction = combat_unit::subaction_move;
+			c->target_pos = c->drop_move_target;
+		}
+
+		if (c->u->loaded_units.empty()) {
+			c->drop_target = xy();
+			c->drop_move_target = xy();
+		}
+
+	}
+
+	a_vector<xy> all_landing_nukes;
+	for (auto i = active_nukes.begin(); i != active_nukes.end();) {
+		if (current_frame - i->second.second >= 15 * 8) i = active_nukes.erase(i);
+		else ++i;
+	}
+	for (auto&v : game->getNukeDots()) {
+		xy pos = bwapi_pos(v);
+		auto&active_nuke = active_nukes[pos];
+		if (active_nuke.first == 0) active_nuke.first = current_frame;
+		active_nuke.second = current_frame;
+	}
+	for (auto&v : active_nukes) {
+		if (current_frame - v.second.first >= 15 * 18) all_landing_nukes.push_back(v.first);
+	}
+
+	if (!all_landing_nukes.empty()) {
+		int iterations = 0;
+		for (auto*a : live_combat_units) {
+			xy nearest_nuke = get_best_score(all_landing_nukes, [&](xy pos) {
+				double d = diag_distance(pos - a->u->pos);
+				if (d > 32 * 10) return std::numeric_limits<double>::infinity();
+				return d;
+			}, std::numeric_limits<double>::infinity());
+			if (nearest_nuke == xy()) continue;
+
+			//log(log_level_info, " waa dodge nuke!\n");
+
+			a_deque<xy> path = find_path(a->u->type, a->u->pos, [&](xy pos, xy npos) {
+				if (++iterations % 1024 == 0) multitasking::yield_point();
+				return diag_distance(npos - a->u->pos) <= 32 * 20;
+			}, [&](xy pos, xy npos) {
+				return -diag_distance(nearest_nuke - npos);
+			}, [&](xy pos) {
+				return diag_distance(nearest_nuke - pos) >= 32 * 12;
+			});
+
+			a->subaction = combat_unit::subaction_move;
+			a->target_pos = path.empty() ? a->goal_pos : path.back();
+
 		}
 	}
 
@@ -3761,7 +3967,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 		}
 	}
 
-	if (target && (a->u->type == unit_types::science_vessel || a->u->type == unit_types::overlord)) {
+	if (target && (a->u->type == unit_types::science_vessel || a->u->type == unit_types::overlord || a->u->type == unit_types::observer)) {
 	//if (target && a->u->type == unit_types::science_vessel) {
 		bool moved = false;
 		if (a->u->irradiate_timer) {
@@ -3861,7 +4067,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 		}
 	}
 
-	if (target && (a->u->type == unit_types::defiler || a->u->type == unit_types::queen)) {
+	if (target && (a->u->type == unit_types::defiler || a->u->type == unit_types::queen || (a->u->type == unit_types::high_templar && (a->u->energy < 75 || a->u->shields < a->u->stats->shields)) || a->u->type == unit_types::arbiter) || a->u->type == unit_types::dark_archon) {
 		unit*net = get_best_score(enemies, [&](unit*e) {
 			if (e->type == unit_types::bunker) {
 				return units_distance(e, a->u) - 32 * 6;
@@ -5397,7 +5603,6 @@ void fight() {
 				}
 				//if (a->u->type == unit_types::shuttle && ground_fight) attack = true;
 				if (a->u->type == unit_types::shuttle) attack = true;
-				if (a->u->type == unit_types::reaver) attack = true;
 				if (a->u->type == unit_types::science_vessel) attack = true;
 				if (a->u->type == unit_types::overlord) attack = true;
 				if (my_workers.size() == current_used_total_supply) attack = true;
@@ -5694,16 +5899,19 @@ void update_defence_choke_task() {
 
 tsc::dynamic_bitset dark_swarm_grid;
 
-void update_dark_swarm_plague() {
+void update_aoe_spellcasting() {
 	while (true) {
 		
 		dark_swarm_grid.reset();
 		use_dark_swarm_please.clear();
 		use_plague_please.clear();
 
+		use_storm_please.clear();
+		use_stasis_please.clear();
+
 		existing_dark_swarm.reset();
 
-		auto add = [&](xy pos) {
+		auto add_dark_swarm = [&](xy pos) {
 			xy upper_left = pos - xy(3 * 16, 3 * 16);
 			for (int y = 0; y < 32 * 6; y += 32) {
 				for (int x = 0; x < 32 * 6; x += 32) {
@@ -5716,18 +5924,18 @@ void update_dark_swarm_plague() {
 		a_vector<xy> existing_dark_swarms;
 		for (unit*u : visible_units) {
 			if (u->type != unit_types::spell_dark_swarm) continue;
-			add(u->pos);
+			add_dark_swarm(u->pos);
 			existing_dark_swarms.push_back(u->pos);
 		}
 		for (auto&v : dark_swarm_target_taken) {
-			add(v.first);
+			add_dark_swarm(v.first);
 			existing_dark_swarms.push_back(v.first);
 		}
 
-		if (!players::my_player->has_upgrade(upgrade_types::dark_swarm) || my_completed_units_of_type[unit_types::defiler].empty()) {
-			multitasking::sleep(60);
-			continue;
-		}
+// 		if (!players::my_player->has_upgrade(upgrade_types::dark_swarm) || my_completed_units_of_type[unit_types::defiler].empty()) {
+// 			multitasking::sleep(60);
+// 			continue;
+// 		}
 
 		auto do_dark_swarm = [&]() {
 			a_vector<xy> swarm_positions;
@@ -5822,33 +6030,35 @@ void update_dark_swarm_plague() {
 
 			}
 		};
-		auto do_plague = [&]() {
-			a_vector<combat_unit*> defilers;
+		auto do_aoe = [&](unit_type*spellcaster_type, auto&target_taken, double energy, double radius, double cast_range, double acquire_range, double min_value, auto&use_please) {
+			a_vector<combat_unit*> spellcasters;
 
-			a_vector<xy> existing_plagues;
-			for (auto&v : plague_target_taken) {
-				existing_plagues.push_back(v.first);
+			a_vector<xy> existing_aoe;
+			for (auto&v : target_taken) {
+				existing_aoe.push_back(v.first);
 			}
-			auto existing_plague_at = [&](xy pos) {
-				for (xy v : existing_plagues) {
-					if (manhattan_distance(v - pos) <= 32 * 2) return true;
+			auto existing_aoe_at = [&](xy pos) {
+				for (xy v : existing_aoe) {
+					if (manhattan_distance(v - pos) <= radius) return true;
 				}
 				return false;
 			};
 
 			for (auto&g : groups) {
 
-				defilers.clear();
+				spellcasters.clear();
 				for (auto*a : g.allies) {
-					if (a->u->type == unit_types::defiler && a->u->energy >= 150) defilers.push_back(a);
+					if (a->u->type == spellcaster_type && a->u->energy >= energy) spellcasters.push_back(a);
 				}
-				if (defilers.empty()) continue;
+				if (spellcasters.empty()) continue;
 
-				auto get_defiler_in_range = [&](xy pos) {
-					for (auto*a : defilers) {
-						if (diag_distance(pos - a->u->pos) <= 32 * 9) return a;
-					}
-					return (combat_unit*)nullptr;
+				auto get_spellcaster_in_range = [&](xy pos) {
+					return get_best_score(spellcasters, [&](combat_unit*a) {
+						double r = diag_distance(pos - a->u->pos);
+						if (r <= cast_range) return 0.0;
+						if (r <= acquire_range) return r;
+						return std::numeric_limits<double>::infinity();
+					}, std::numeric_limits<double>::infinity());
 				};
 
 				xy best_pos;
@@ -5858,15 +6068,17 @@ void update_dark_swarm_plague() {
 					if (e->stasis_timer) continue;
 					if (e->plague_timer) continue;
 
-					if (!get_defiler_in_range(e->pos)) continue;
+					auto*spellcaster = get_spellcaster_in_range(e->pos);
+					if (!spellcaster) continue;
 
 					double total_value = 0.0;
 					for (auto*e2 : g.enemies) {
 						if (!e->visible) continue;
 						if (e->stasis_timer) continue;
 						if (e->plague_timer) continue;
-						if (manhattan_distance(e->pos - e2->pos) > 32 * 2) continue;
-						if (existing_plague_at(e2->pos)) continue;
+						if (e->building) continue;
+						if (manhattan_distance(e->pos - e2->pos) > radius) continue;
+						if (existing_aoe_at(e2->pos)) continue;
 						double value = e->type->total_minerals_cost + e->type->total_gas_cost;
 						value *= e->hp / e->stats->hp;
 						total_value += value;
@@ -5875,14 +6087,16 @@ void update_dark_swarm_plague() {
 					for (auto*a : g.allies) {
 						if (a->u->stasis_timer) continue;
 						if (a->u->plague_timer) continue;
-						if (existing_plague_at(a->u->pos)) continue;
-						if (manhattan_distance(e->pos - a->u->pos) > 32 * 2) continue;
+						if (e->building) continue;
+						if (existing_aoe_at(a->u->pos)) continue;
+						if (manhattan_distance(e->pos - a->u->pos) > radius) continue;
 						double value = e->type->total_minerals_cost + e->type->total_gas_cost;
 						value *= e->hp / e->stats->hp;
 						total_value -= value;
 					}
-
-					if (total_value < 200.0) continue;
+					double minval = min_value;
+					minval *= (spellcaster->u->hp + spellcaster->u->shields) / (spellcaster->u->stats->hp + spellcaster->u->stats->shields);
+					if (total_value < minval) continue;
 					if (total_value > best_value) {
 						best_value = total_value;
 						best_pos = e->pos;
@@ -5890,20 +6104,182 @@ void update_dark_swarm_plague() {
 				}
 
 				if (best_pos != xy()) {
-					auto*a = get_defiler_in_range(best_pos);
+					auto*a = get_spellcaster_in_range(best_pos);
 					if (a) {
-						use_plague_please[a] = best_pos;
+						use_please[a] = best_pos;
 					}
 				}
 
 			}
 		};
 
-		do_dark_swarm();
-		do_plague();
+		if (!my_completed_units_of_type[unit_types::defiler].empty()) {
+			if (players::my_player->has_upgrade(upgrade_types::dark_swarm)) {
+				do_dark_swarm();
+				multitasking::yield_point();
+			}
+			if (players::my_player->has_upgrade(upgrade_types::plague)) {
+				do_aoe(unit_types::defiler, plague_target_taken, 100.0, 32 * 1.5, 32 * 9, 32 * 9, 200.0, use_plague_please);
+				multitasking::yield_point();
+			}
+		}
+		if (!my_completed_units_of_type[unit_types::high_templar].empty()) {
+			if (players::my_player->has_upgrade(upgrade_types::psionic_storm)) {
+				do_aoe(unit_types::high_templar, storm_target_taken, 75.0, 32 * 1.5, 32 * 9, 32 * 9 + 32 * 0, 200.0, use_storm_please);
+				multitasking::yield_point();
+			}
+		}
+		if (!my_completed_units_of_type[unit_types::arbiter].empty()) {
+			if (players::my_player->has_upgrade(upgrade_types::stasis_field)) {
+				do_aoe(unit_types::arbiter, stasis_target_taken, 100.0, 32 * 1.5, 32 * 9, 32 * 9 + 32 * 6, 250.0, use_stasis_please);
+				multitasking::yield_point();
+			}
+		}
 
 
 		multitasking::sleep(8);
+	}
+}
+
+void drops_task() {
+	a_vector<combat_unit*> dropships;
+	while (true) {
+		dropships.clear();
+		for (auto*a : combat::live_combat_units) {
+			if (a->u->type == unit_types::dropship) {
+				dropships.push_back(a);
+			}
+		}
+
+		a_unordered_set<combat_unit*> available_units;
+		for (auto*a : combat::live_combat_units) {
+			if (a->force_attack) continue;
+			if (a->use_for_drops_until > current_frame && !a->u->is_flying && !a->u->is_loaded) {
+				available_units.insert(a);
+			}
+		}
+
+		//log(log_level_info, "available_units.size() is %d\n", available_units.size());
+
+		pickup_list.clear();
+
+		for (auto*a : dropships) {
+			if (a->u->loaded_units.empty() && a->u->hp < a->u->stats->hp) continue;
+			if (a->drop_target != xy()) continue;
+
+			int space = a->u->type->space_provided;
+			int ghost_count = 0;
+			int marine_count = 0;
+			int medic_count = 0;
+			for (unit*lu : a->u->loaded_units) {
+				space -= lu->type->space_required;
+				if (lu->type == unit_types::ghost) ++ghost_count;
+				if (lu->type == unit_types::marine) ++marine_count;
+				if (lu->type == unit_types::medic) ++medic_count;
+
+				combat_unit_map[lu].last_given_a_lift = current_frame;
+				lu->controller->no_unload_until = current_frame + 15 * 5;
+			}
+			a_vector<combat_unit*> units_to_pick_up;
+			while (space > 0) {
+				combat_unit*nu = get_best_score(available_units, [&](combat_unit*nu) {
+					if (nu->u->type->is_flyer) return std::numeric_limits<double>::infinity();
+					if (nu->u->is_loaded) return std::numeric_limits<double>::infinity();
+					if (nu->u->type->space_required > space) return std::numeric_limits<double>::infinity();
+					double r = 0.0;
+					if (nu->u->type == unit_types::medic) {
+						if (ghost_count + marine_count == 0 || medic_count >= 4) return std::numeric_limits<double>::infinity();
+						r += medic_count * 32;
+					}
+					if (nu->u->type == unit_types::ghost) {
+						r += -32 + ghost_count * 16;
+					}
+					double d = diag_distance(nu->u->pos - a->u->pos);
+					if (d < 32 * 6) d /= 10.0;
+					return r + d;
+				}, std::numeric_limits<double>::infinity());
+				if (!nu) break;
+				available_units.erase(nu);
+				units_to_pick_up.push_back(nu);
+				space -= nu->u->type->space_required;
+			}
+
+			//log(log_level_info, "units_to_pick_up.size() is %d\n", units_to_pick_up.size());
+
+			for (auto*nu : units_to_pick_up) {
+				pickup_list.emplace_back(a, nu);
+			}
+
+			if (units_to_pick_up.empty() && !a->u->loaded_units.empty()) {
+
+				group_t*goal = get_best_score_p(groups, [&](group_t*g) {
+					double r = 0.0;
+					for (unit*e : g->enemies) {
+						if (e->type->is_worker) r += 1.0;
+						if (e->type->is_building) r += 1.0;
+						if (!e->type->is_worker && (e->stats->air_weapon || e->stats->ground_weapon)) r -= 1.0;
+					}
+					return -r * rng(1.0);
+				});
+
+				if (goal) {
+					a->drop_target = goal->enemies.front()->pos;
+					//log("%p - drop_target set to %d %d\n", a, a->drop_target.x, a->drop_target.y);
+
+					for (auto*na : live_combat_units) {
+						if (na->u->loaded_into == a->u) na->force_attack = true;
+					}
+				}
+			}
+
+		}
+
+		for (auto*a : dropships) {
+			if (a->drop_target == xy()) continue;
+
+			for (unit*lu : a->u->loaded_units) {
+				combat_unit_map[lu].last_given_a_lift = current_frame;
+				lu->controller->no_unload_until = current_frame + 15 * 5;
+			}
+
+			int iterations = 0;
+			struct node_data_t {
+				double total_cost = 0.0;
+			};
+			a_deque<xy> path = combat::find_path<node_data_t>(a->u->type, a->u->pos, [&](xy pos, xy npos, node_data_t&n) {
+				if (++iterations % 1024 == 0) multitasking::yield_point();
+				if (combat::entire_threat_area.test(grid::build_square_index(npos))) n.total_cost += 32 * 2;
+				return true;
+			}, [&](xy pos, xy npos, const node_data_t&n) {
+				return diag_distance(npos - a->drop_target) + n.total_cost;
+			}, [&](xy pos, const node_data_t&n) {
+				return diag_distance(pos - a->drop_target) <= 32 * 2;
+			});
+			xy go_to = a->drop_target;
+			if (!path.empty()) {
+				double move_distance = a->u->stats->max_speed * 15;
+				for (xy pos : path) {
+					if (diag_distance(pos - a->u->pos) >= move_distance) {
+						go_to = pos;
+						break;
+					}
+				}
+			}
+			xy relpos = go_to - a->u->pos;
+			double ang = std::atan2(relpos.y, relpos.x);
+			double x = std::cos(ang) * 32 * 8;
+			double y = std::sin(ang) * 32 * 8;
+			go_to = a->u->pos + xy((int)x, (int)y);
+			if (go_to.x < 0) go_to.x = 0;
+			if (go_to.x >= grid::map_width) go_to.x = grid::map_width;
+			if (go_to.y < 0) go_to.y = 0;
+			if (go_to.y >= grid::map_height) go_to.y = grid::map_height;
+			a->drop_move_target = go_to;
+
+		}
+
+
+		multitasking::sleep(6);
 	}
 }
 
@@ -6057,7 +6433,8 @@ void init() {
 	multitasking::spawn(combat_task, "combat");
 	multitasking::spawn(update_combat_groups_task, "update combat groups");
 	multitasking::spawn(update_defence_choke_task, "update defence choke spot");
-	multitasking::spawn(update_dark_swarm_plague, "update dark swarm plague");
+	multitasking::spawn(update_aoe_spellcasting, "update aoe spellcasting");
+	multitasking::spawn(drops_task, "drops");
 
 	render::add(render);
 
