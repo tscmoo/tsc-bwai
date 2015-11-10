@@ -54,6 +54,7 @@ namespace combat_eval {
 			bool wait_until_attacked = false;
 			double start_hp = 0.0;
 			double end_hp = 0.0;
+			double shield_battery_energy = 0.0;
 		};
 		std::array<team_t, 2> teams;
 		int total_frames = 0;
@@ -98,6 +99,7 @@ namespace combat_eval {
 			c.stim_pack_timer = u->game_unit->getStimTimer();
 			c.spider_mine_count = u->spider_mine_count;
 			if (u->lockdown_timer) c.cooldown += u->lockdown_timer;
+			if (u->maelstrom_timer) c.cooldown += u->maelstrom_timer;
 			if (u->defensive_matrix_hp) c.hp += u->defensive_matrix_hp;
 			if (u->irradiate_timer) c.irradiate_timer = u->irradiate_timer;
 		}
@@ -264,6 +266,12 @@ namespace combat_eval {
 											c.next_damage_override = 0.0;
 										}
 										//if (target->move + c.move < (w ? w->min_range : 0.0)) damage /= 2;
+										if (enemy_team.shield_battery_energy && target->st->shields) {
+											double heal = std::min(enemy_team.shield_battery_energy * 2.0, damage);
+											damage -= heal;
+											enemy_team.shield_battery_energy -= heal / 2.0;
+											//log(log_level_info, "%s dealt %g damage to %s after healing %g by shield battery\n", c.st->type->name, damage, target->st->type->name, heal);
+										}
 										if (target->shields > 0) {
 											target->shields -= damage;
 											if (target->shields < 0) {
