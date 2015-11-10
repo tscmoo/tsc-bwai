@@ -193,6 +193,7 @@ struct unit {
 	int spider_mine_count;
 	bool has_nuke;
 	int lockdown_timer;
+	int maelstrom_timer;
 	int stasis_timer;
 	int defensive_matrix_timer;
 	double defensive_matrix_hp;
@@ -750,6 +751,7 @@ void update_unit_stuff(unit*u) {
 	// These timer functions seem to return a value in multiple of 8 frames
 	// (the timer is decremented every 8 frames)
 	u->lockdown_timer = u->game_unit->getLockdownTimer() * 8;
+	u->maelstrom_timer = u->game_unit->getMaelstromTimer() * 8;
 	u->stasis_timer = u->game_unit->getStasisTimer() * 8;
 	u->defensive_matrix_timer = u->game_unit->getDefenseMatrixTimer() * 8;
 	u->defensive_matrix_hp = u->game_unit->getDefenseMatrixPoints();
