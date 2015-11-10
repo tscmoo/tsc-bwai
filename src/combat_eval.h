@@ -304,6 +304,7 @@ namespace combat_eval {
 									if (c.st->type == unit_types::siege_tank_siege_mode || c.st->type == unit_types::valkyrie || c.st->type == unit_types::firebat || c.st->type == unit_types::lurker) {
 										attack(target, 1.0);
 										c.cooldown /= 2;
+										if (c.st->type == unit_types::siege_tank_siege_mode && target->st->type == unit_types::zealot) c.cooldown *= 2;
 									} else if (use_spider_mine) {
 										w = my_team.spider_mine_weapon;
 										hits = 1;
