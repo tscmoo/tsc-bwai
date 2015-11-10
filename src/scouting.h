@@ -310,6 +310,9 @@ double scan_best_score;
 int previous_overlord_count = 0;
 int overlords_lost = 0;
 int overlords_created = 0;
+int previous_observer_count = 0;
+int observers_lost = 0;
+int observers_created = 0;
 void scan() {
 
 	double scan_energy_cost = bwapi_tech_type_energy_cost(BWAPI::TechTypes::Scanner_Sweep);
@@ -327,9 +330,15 @@ void scan() {
 	int overlords_available = overlords_created - overlords_lost * 2 - 4;
 	log("overlords  created: %d  lost: %d  available: %d\n", overlords_created, overlords_lost, overlords_available);
 
+	int observer_count = my_completed_units_of_type[unit_types::observer].size();
+	if (observer_count > previous_observer_count) ++observers_created;
+	if (observer_count < previous_observer_count) ++observers_lost;
+	previous_observer_count = observer_count;
+	int observers_available = observers_created - observers_lost * 2;
+
 	a_map<xy, double> values;
 
-	if (scans_available > 2 || overlords_available > 2) {
+	if (scans_available > 2 || overlords_available > 2 || observers_available > 2) {
 		for (auto&s : resource_spots::spots) {
 			int t = (current_frame - grid::get_build_square(s.pos).last_seen) - 15 * 60 * 10;
 			if (t < 0) continue;
@@ -355,7 +364,7 @@ void scan() {
 	for (unit*u : my_workers) {
 		if (u->controller->action != unit_controller::action_build) continue;
 		if (u->controller->fail_build_count >= 10) {
-			values[u->pos] += 10000;
+			values[u->pos] += 100000.0;
 		}
 	}
 
@@ -468,19 +477,28 @@ void scan() {
 		}
 	}
 
-	if (scans_available == 0 && overlords_available > 0) {
+	if (scans_available == 0 && (overlords_available > 0 || observers_available > 0)) {
 
 		for (unit*u : my_completed_units_of_type[unit_types::overlord]) {
 			if (u->controller->action==unit_controller::action_scout) u->controller->action = unit_controller::action_idle;
+		}
+		for (unit*u : my_completed_units_of_type[unit_types::observer]) {
+			if (u->controller->action == unit_controller::action_scout) u->controller->action = unit_controller::action_idle;
 		}
 		xy pos = best_pos;
 		bool send_overlord = false;
 		send_overlord |= best_score >= 3000.0 && overlords_available > 4;
 		send_overlord |= best_score >= 6000.0 && overlords_available > 2;
 		send_overlord |= best_score >= 10000.0 && overlords_available > 0;
-		if (send_overlord) {
-			unit*u = get_best_score(my_completed_units_of_type[unit_types::overlord], [&](unit*u) {
-				if (u->controller->action != unit_controller::action_idle) return std::numeric_limits<double>::infinity();
+		send_overlord |= best_score >= 100000.0 && !my_completed_units_of_type[unit_types::overlord].empty();
+		bool send_observer = false;
+		send_observer |= best_score >= 3000.0 && observers_available > 4;
+		send_observer |= best_score >= 6000.0 && observers_available > 2;
+		send_observer |= best_score >= 10000.0 && observers_available > 0;
+		send_observer |= best_score >= 100000.0 && !my_completed_units_of_type[unit_types::observer].empty();
+		if (send_overlord || send_observer) {
+			unit*u = get_best_score(my_completed_units_of_type[send_overlord ? unit_types::overlord : unit_types::observer], [&](unit*u) {
+				if (u->type == unit_types::overlord && u->controller->action != unit_controller::action_idle) return std::numeric_limits<double>::infinity();
 				return diag_distance(best_pos - u->pos);
 			}, std::numeric_limits<double>::infinity());
 			if (u) {
