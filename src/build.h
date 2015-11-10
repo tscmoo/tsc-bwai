@@ -1049,12 +1049,30 @@ void execute_build(build_task&b) {
 					if (!wait) {
 						if (builder->remaining_whatever_time <= latency_frames) {
 							if (current_frame + latency_frames >= b.build_frame) {
-								if (builder->controller->noorder_until <= current_frame && builder->game_unit->train(b.type->unit->game_unit_type)) {
-									log("train hurray\n");
-									builder->controller->noorder_until = current_frame + latency_frames + 4;
+								if (b.type->unit == unit_types::archon || b.type->unit == unit_types::dark_archon) {
+									if (current_frame >= builder->controller->noorder_until) {
+										unit*n = get_best_score(my_units_of_type[builder->type], [&](unit*n) {
+											if (n == builder) return std::numeric_limits<double>::infinity();
+											double mult = 1.0;
+											if (n->stats->energy) mult = std::max(n->energy / n->stats->energy, 0.25);
+											return diag_distance(n->pos - builder->pos) * mult;
+										}, std::numeric_limits<double>::infinity());
+										if (n) {
+											auto tech = b.type->unit == unit_types::archon ? BWAPI::TechTypes::Archon_Warp : BWAPI::TechTypes::Dark_Archon_Meld;
+											builder->game_unit->useTech(tech, n->game_unit);
+											builder->controller->noorder_until = current_frame + 30;
+											n->game_unit->useTech(tech, builder->game_unit);
+											n->controller->noorder_until = current_frame + 30;
+										}
+									}
 								} else {
-									log("train failed\n");
-									builder = nullptr;
+									if (builder->controller->noorder_until <= current_frame && builder->game_unit->train(b.type->unit->game_unit_type)) {
+										log("train hurray\n");
+										builder->controller->noorder_until = current_frame + latency_frames + 4;
+									} else {
+										log("train failed\n");
+										builder = nullptr;
+									}
 								}
 							}
 						}
