@@ -181,6 +181,10 @@ struct unit {
 	unit*last_attack_target;
 	int prev_weapon_cooldown;
 
+	bool is_attacking;
+	bool prev_is_attacking;
+	int is_attacking_frame;
+
 	a_vector<unit*> loaded_units;
 	bool is_loaded;
 	unit*loaded_into;
@@ -223,7 +227,7 @@ namespace unit_types {
 	unit_type_pointer wraith, battlecruiser, dropship, science_vessel, valkyrie;
 	unit_type_pointer spider_mine, nuclear_missile;
 	unit_type_pointer nexus, pylon, gateway, photon_cannon, robotics_facility, stargate, forge, citadel_of_adun, templar_archives;
-	unit_type_pointer fleet_beacon, assimilator, observatory, cybernetics_core;
+	unit_type_pointer fleet_beacon, assimilator, observatory, cybernetics_core, shield_battery;
 	unit_type_pointer probe;
 	unit_type_pointer zealot, dragoon, dark_templar, high_templar, reaver;
 	unit_type_pointer archon, dark_archon;
@@ -293,6 +297,7 @@ namespace unit_types {
 		get(assimilator, BWAPI::UnitTypes::Protoss_Assimilator);
 		get(observatory, BWAPI::UnitTypes::Protoss_Observatory);
 		get(cybernetics_core, BWAPI::UnitTypes::Protoss_Cybernetics_Core);
+		get(shield_battery, BWAPI::UnitTypes::Protoss_Shield_Battery);
 
 		get(probe, BWAPI::UnitTypes::Protoss_Probe);
 		get(zealot, BWAPI::UnitTypes::Protoss_Zealot);
@@ -727,6 +732,10 @@ void update_unit_stuff(unit*u) {
 	if (u->weapon_cooldown > u->prev_weapon_cooldown) u->last_attacked = current_frame;
 	if (u->game_order == BWAPI::Orders::AttackUnit || u->last_attacked == current_frame) u->last_attack_target = u->order_target;
 
+	u->prev_is_attacking = u->is_attacking;
+	u->is_attacking = u->game_unit->isAttacking();
+	if (u->is_attacking != u->prev_is_attacking) u->is_attacking_frame = u->is_attacking ? current_frame : 0;
+
 	u->loaded_units.clear();
 	for (auto&gu : u->game_unit->getLoadedUnits()) {
 		u->loaded_units.push_back(get_unit(gu));
@@ -804,6 +813,10 @@ unit*new_unit(BWAPI_Unit game_unit) {
 	u->last_attacked = 0;
 	u->last_attack_target = nullptr;
 	u->prev_weapon_cooldown = 0;
+
+	u->is_attacking = false;
+	u->prev_is_attacking = false;
+	u->is_attacking_frame = 0;
 
 	u->container_indexes.fill(npos);
 
