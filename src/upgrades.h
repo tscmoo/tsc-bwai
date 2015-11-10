@@ -65,6 +65,9 @@ namespace upgrade_types {
 	upgrade_type_pointer singularity_charge, leg_enhancements;
 	upgrade_type_pointer gravitic_drive;
 	upgrade_type_pointer scarab_damage, reaver_capacity;
+	upgrade_type_pointer stasis_field, recall, khaydarin_core;
+	upgrade_type_pointer psionic_storm, hallucination, khaydarin_amulet;
+	upgrade_type_pointer feedback, maelstrom, mind_control, argus_talisman;
 
 	void init() {
 		get(terran_infantry_weapons_1, BWAPI::UpgradeTypes::Terran_Infantry_Weapons, 1);
@@ -168,6 +171,16 @@ namespace upgrade_types {
 		get(gravitic_drive, BWAPI::UpgradeTypes::Gravitic_Drive);
 		get(scarab_damage, BWAPI::UpgradeTypes::Scarab_Damage);
 		get(reaver_capacity, BWAPI::UpgradeTypes::Reaver_Capacity);
+		get(stasis_field, BWAPI::TechTypes::Stasis_Field);
+		get(recall, BWAPI::TechTypes::Recall);
+		get(khaydarin_core, BWAPI::UpgradeTypes::Khaydarin_Core);
+		get(psionic_storm, BWAPI::TechTypes::Psionic_Storm);
+		get(hallucination, BWAPI::TechTypes::Hallucination);
+		get(khaydarin_amulet, BWAPI::UpgradeTypes::Khaydarin_Amulet);
+		get(feedback, BWAPI::TechTypes::Feedback);
+		get(maelstrom, BWAPI::TechTypes::Maelstrom);
+		get(mind_control, BWAPI::TechTypes::Mind_Control);
+		get(argus_talisman, BWAPI::UpgradeTypes::Argus_Talisman);
 	}
 }
 
