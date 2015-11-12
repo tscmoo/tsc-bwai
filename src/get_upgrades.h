@@ -46,7 +46,7 @@ void get_upgrades() {
 		if (players::my_player->upgrades.count(&upg)) continue;
 		double sum = 0.0;
 		for (unit_type*ut : upg.what_uses) {
-			if (ut->is_worker) continue;
+			if (ut->is_worker || ut->is_building) continue;
 			double val = ut->total_minerals_cost + ut->total_gas_cost;
 			sum += my_units_of_type[ut].size()*val;
 		}
