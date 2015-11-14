@@ -42,6 +42,7 @@ struct build_task: refcounted {
 	int upgrade_done_frame;
 	int build_started_frame;
 	bool send_builder_immediately;
+	bool dont_find_build_pos;
 };
 
 a_list<build_type> build_type_container;
@@ -250,6 +251,7 @@ build_task*add_build_task(double priority,build_type*type) {
 	t->upgrade_done_frame = 0;
 	t->build_started_frame = 0;
 	t->send_builder_immediately = false;
+	t->dont_find_build_pos = false;
 	build_tasks_for_type[type].push_back(*t);
 	build_order.push_back(*t);
 	priority_groups[priority].push_back(*t);
@@ -661,7 +663,7 @@ void execute_build(build_task&b) {
 			// fixme: check build pos
 		}
 		//if (b.build_pos==xy() && current_frame-b.last_find_build_pos>=15*2) {
-		if (b.build_pos==xy()) {
+		if (b.build_pos == xy() && !b.dont_find_build_pos) {
 			b.last_find_build_pos = current_frame;
 			if (default_build_pos == xy() || current_frame - last_find_default_build_pos >= 15 * 15) {
 				last_find_default_build_pos = current_frame;
