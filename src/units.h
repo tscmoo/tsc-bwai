@@ -1042,11 +1042,12 @@ void update_units_task() {
 		update_unit_container(u, visible_buildings, u->visible && u->building);
 		update_unit_container(u, resource_units, !u->dead && !u->gone && (u->type->is_minerals || u->type->is_gas));
 
-		update_unit_container(u, my_units, u->visible && u->owner == players::my_player);
-		update_unit_container(u, my_workers, u->visible && u->owner == players::my_player && u->type->is_worker && u->is_completed && !u->is_morphing);
-		update_unit_container(u, my_buildings, u->visible && u->owner == players::my_player && u->building);
-		update_unit_container(u, my_resource_depots, u->visible && u->owner == players::my_player && u->type->is_resource_depot);
-		update_unit_container(u, my_detector_units, u->visible && u->owner == players::my_player && u->type->is_detector);
+		bool is_unpowered = u->type->requires_pylon && !u->is_powered;
+		update_unit_container(u, my_units, u->visible && u->owner == players::my_player && !is_unpowered);
+		update_unit_container(u, my_workers, u->visible && u->owner == players::my_player && u->type->is_worker && u->is_completed && !u->is_morphing && !is_unpowered);
+		update_unit_container(u, my_buildings, u->visible && u->owner == players::my_player && u->building && !is_unpowered);
+		update_unit_container(u, my_resource_depots, u->visible && u->owner == players::my_player && u->type->is_resource_depot && !is_unpowered);
+		update_unit_container(u, my_detector_units, u->visible && u->owner == players::my_player && u->type->is_detector && !is_unpowered);
 
 		update_unit_container(u, enemy_units, !u->dead && u->owner->is_enemy);
 		update_unit_container(u, visible_enemy_units, u->visible && u->owner->is_enemy);
