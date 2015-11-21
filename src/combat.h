@@ -115,7 +115,7 @@ struct combat_unit {
 	unit*u = nullptr;
 	enum { action_idle, action_offence, action_tactic };
 	int action = action_idle;
-	enum { subaction_idle, subaction_move, subaction_fight, subaction_kite, subaction_move_directly, subaction_use_ability, subaction_repair };
+	enum { subaction_idle, subaction_move, subaction_fight, subaction_kite, subaction_move_directly, subaction_use_ability, subaction_repair, subaction_recharge };
 	int subaction = subaction_idle;
 	xy defend_spot;
 	xy goal_pos;
@@ -156,6 +156,7 @@ struct combat_unit {
 	xy drop_target;
 	xy drop_move_target;
 	bool force_attack = false;
+	bool is_recharging = false;
 };
 a_unordered_map<unit*, combat_unit> combat_unit_map;
 
@@ -415,6 +416,7 @@ bool aggressive_vultures = true;
 bool aggressive_valkyries = false;
 bool aggressive_zerglings = false;
 bool aggressive_mutalisks = false;
+bool aggressive_corsairs = false;
 
 bool hide_wraiths = false;
 bool no_scout_around = false;
@@ -972,7 +974,7 @@ void update_groups() {
 				return get_best_score(available_units, [&](combat_unit*c) {
 					if (c->u->type == unit_types::overlord) return std::numeric_limits<double>::infinity();
 					if (c->u->type->is_worker && !c->u->force_combat_unit && !allow_worker) return std::numeric_limits<double>::infinity();
-					if (no_aggressive_groups && !c->force_attack && (c->u->type != unit_types::vulture || !aggressive_vultures) && (c->u->type != unit_types::wraith || !aggressive_wraiths) && (c->u->type != unit_types::valkyrie || !aggressive_valkyries) && (c->u->type != unit_types::zergling || !aggressive_zerglings) && (c->u->type != unit_types::mutalisk || !aggressive_mutalisks)) {
+					if (no_aggressive_groups && !c->force_attack && (c->u->type != unit_types::vulture || !aggressive_vultures) && (c->u->type != unit_types::wraith || !aggressive_wraiths) && (c->u->type != unit_types::valkyrie || !aggressive_valkyries) && (c->u->type != unit_types::zergling || !aggressive_zerglings) && (c->u->type != unit_types::mutalisk || !aggressive_mutalisks) && (c->u->type != unit_types::corsair || !aggressive_corsairs)) {
 						if (g.is_aggressive_group) return std::numeric_limits<double>::infinity();
 					} else if (!aggressive_groups_done_only && g.is_defensive_group) return std::numeric_limits<double>::infinity();
 					if (c->u->type->is_worker && !c->u->force_combat_unit && g.is_defensive_group) return std::numeric_limits<double>::infinity();
@@ -1158,6 +1160,7 @@ void update_groups() {
 
 	if (!new_groups.empty()) {
 		auto*largest_air_group = get_best_score_p(new_groups, [&](const group_t*g) {
+			if (g->is_defensive_group) return 2;
 			if ((no_aggressive_groups || aggressive_groups_done_only) && g->is_aggressive_group) return 2;
 			int flyers = 0;
 			for (auto*e : g->enemies) {
@@ -1167,6 +1170,7 @@ void update_groups() {
 			return -(int)g->allies.size();
 		});
 		auto*largest_ground_group = get_best_score_p(new_groups, [&](const group_t*g) {
+			if (g->is_defensive_group) return 2;
 			if ((no_aggressive_groups || aggressive_groups_done_only) && g->is_aggressive_group) return 2;
 			int non_flyers = 0;
 			for (auto*e : g->enemies) {
@@ -1176,6 +1180,7 @@ void update_groups() {
 			return -(int)g->allies.size();
 		});
 		auto*largest_total_group = get_best_score_p(new_groups, [&](const group_t*g) {
+			if (g->is_defensive_group) return 2;
 			if ((no_aggressive_groups || aggressive_groups_done_only) && g->is_aggressive_group) return 2;
 			if (g->allies.empty() && !g->is_defensive_group && (no_aggressive_groups || aggressive_groups_done_only)) return 1;
 			return -(int)g->allies.size();
@@ -1295,11 +1300,15 @@ a_map<xy, std::tuple<combat_unit*, int>> plague_target_taken;
 tsc::dynamic_bitset existing_dark_swarm;
 
 a_map<xy, std::tuple<combat_unit*, int>> storm_target_taken;
-a_map<xy, std::tuple<combat_unit*, int>> stasis_target_taken;
+a_map<xy, std::tuple<combat_unit*, int>> aoe_disable_target_taken;
+
+a_unordered_map<unit*, std::tuple<combat_unit*, int>> feedback_target_taken;
 
 a_unordered_set<unit*> shuttle_target_taken;
 
 a_vector<std::tuple<combat_unit*, unit*>> need_detector;
+
+tsc::dynamic_bitset run_spot_taken;
 
 void prepare_attack() {
 	for (auto i = registered_focus_fire.begin(); i != registered_focus_fire.end();) {
@@ -1433,8 +1442,13 @@ void prepare_attack() {
 		else ++i;
 	}
 
-	for (auto i = stasis_target_taken.begin(); i != stasis_target_taken.end();) {
-		if (current_frame >= std::get<1>(i->second)) i = stasis_target_taken.erase(i);
+	for (auto i = aoe_disable_target_taken.begin(); i != aoe_disable_target_taken.end();) {
+		if (current_frame >= std::get<1>(i->second)) i = aoe_disable_target_taken.erase(i);
+		else ++i;
+	}
+
+	for (auto i = feedback_target_taken.begin(); i != feedback_target_taken.end();) {
+		if (current_frame >= std::get<1>(i->second)) i = feedback_target_taken.erase(i);
 		else ++i;
 	}
 
@@ -1487,6 +1501,7 @@ a_unordered_map<combat_unit*, xy> use_plague_please;
 
 a_unordered_map<combat_unit*, xy> use_storm_please;
 a_unordered_map<combat_unit*, xy> use_stasis_please;
+a_unordered_map<combat_unit*, xy> use_maelstrom_please;
 
 a_vector<std::pair<combat_unit*, combat_unit*>> pickup_list;
 
@@ -1623,6 +1638,7 @@ void finish_attack() {
 				if (u->building) return std::numeric_limits<double>::infinity();
 				if (u->type->is_worker) return std::numeric_limits<double>::infinity();
 				if (u->lockdown_timer) return std::numeric_limits<double>::infinity();
+				if (u->maelstrom_timer) return std::numeric_limits<double>::infinity();
 
 				double r = units_distance(u, c->u) - 32 * 8;
 				if (r >= 32 * 6) return std::numeric_limits<double>::infinity();
@@ -1728,7 +1744,7 @@ void finish_attack() {
 							double damage = std::max(500.0, (e->shields + e->hp) * 2 / 3);
 							double mult = 1.0;
 							if (!e->type->is_building && e->stats->max_speed>1) mult = 1.0 / e->stats->max_speed;
-							if (e->lockdown_timer) mult = 1.0;
+							if (e->lockdown_timer || e->maelstrom_timer) mult = 1.0;
 							if (e->type->is_worker) mult *= 2;
 							if (e->shields + e->hp - damage > 0) mult = damage / (e->stats->shields + e->stats->hp);
 							score += (e->minerals_value + e->gas_value)*mult;
@@ -2398,6 +2414,7 @@ void finish_attack() {
 				if (!e->visible || !e->detected) return std::numeric_limits<double>::infinity();
 				if (e->building && !e->stats->air_weapon && !e->stats->ground_weapon && (e->type != unit_types::bunker || e->marines_loaded == 0)) return std::numeric_limits<double>::infinity();
 				if (e->lockdown_timer > 15 * 10) return std::numeric_limits<double>::infinity();
+				if (e->maelstrom_timer > 15 * 10) return std::numeric_limits<double>::infinity();
 				if (e->stasis_timer) return std::numeric_limits<double>::infinity();
 				double value = e->minerals_value + e->gas_value * 2;
 				if (value < 200 && c->u->hp > c->u->stats->hp*0.25) return std::numeric_limits<double>::infinity();
@@ -2501,6 +2518,7 @@ void finish_attack() {
 				if (u->building) return std::numeric_limits<double>::infinity();
 				if (u->type->is_worker) return std::numeric_limits<double>::infinity();
 				if (u->lockdown_timer) return std::numeric_limits<double>::infinity();
+				if (u->maelstrom_timer) return std::numeric_limits<double>::infinity();
 				if (u->is_flying) return std::numeric_limits<double>::infinity();
 
 				double r = units_distance(u, c->u) - 32 * 9;
@@ -2679,7 +2697,7 @@ void finish_attack() {
 				if (i == use_stasis_please.end()) continue;
 				xy target_pos = i->second;
 				if (current_frame - c->last_used_special >= 15) {
-					stasis_target_taken[target_pos] = std::make_tuple(c, current_frame + 60);
+					aoe_disable_target_taken[target_pos] = std::make_tuple(c, current_frame + 60);
 					c->u->game_unit->useTech(upgrade_types::stasis_field->game_tech_type, BWAPI::Position(target_pos.x, target_pos.y));
 					c->last_used_special = current_frame;
 					c->u->controller->noorder_until = current_frame + 8;
@@ -2695,6 +2713,54 @@ void finish_attack() {
 			if (current_frame < c->strategy_busy_until) continue;
 			if (c->u->type == unit_types::dark_archon) dark_archons.push_back(c);
 		}
+
+		if (players::my_player->has_upgrade(upgrade_types::feedback)) {
+
+			for (auto*c : dark_archons) {
+				if (c->u->energy < 50) continue;
+				unit*target = get_best_score(enemy_units, [&](unit*e) {
+					if (!e->visible || !e->detected) return std::numeric_limits<double>::infinity();
+					if (e->building) return std::numeric_limits<double>::infinity();
+					if (e->lockdown_timer) return std::numeric_limits<double>::infinity();
+					if (e->maelstrom_timer) return std::numeric_limits<double>::infinity();
+					if (e->invincible) return std::numeric_limits<double>::infinity();
+// 					bool do_it = e->energy >= e->shields + e->hp;
+// 					if (e->type == unit_types::high_templar && e->energy >= 75 - 5) do_it = true;
+// 					if (e->type == unit_types::dark_archon && e->energy >= 50 - 5) do_it = true;
+// 					if (e->type == unit_types::arbiter && e->energy >= 100 - 5) do_it = true;
+// 					if (e->type == unit_types::science_vessel && e->energy >= 100 - 5) do_it = true;
+// 					if (do_it && c->u->hp > c->u->stats->hp*0.25) return std::numeric_limits<double>::infinity();
+					double d = diag_distance(e->pos - c->u->pos);
+					if (d > 32 * 15) return std::numeric_limits<double>::infinity();
+					if (d < 32 * 10) d = 32 * 10;
+
+					auto it = disable_target_taken.find(e);
+					if (it != disable_target_taken.end() && std::get<0>(it->second) != c) return std::numeric_limits<double>::infinity();
+
+					auto it2 = feedback_target_taken.find(e);
+					if (it2 != feedback_target_taken.end()) return std::numeric_limits<double>::infinity();
+
+					return d / (double)e->energy;
+				}, std::numeric_limits<double>::infinity());
+				if (target) {
+					c->subaction = combat_unit::subaction_idle;
+					if (current_frame - c->last_used_special >= 8) {
+						if (c->u->game_order != BWAPI::Orders::CastFeedback) {
+							c->u->game_unit->useTech(upgrade_types::feedback->game_tech_type, target->game_unit);
+						}
+						c->last_used_special = current_frame;
+						c->u->controller->noorder_until = current_frame + 8;
+
+						disable_target_taken[target] = std::make_tuple(c, current_frame + 15);
+
+						if (units_distance(c->u, target) <= 32 * 10) {
+							disable_target_taken[target] = std::make_tuple(c, (int)(current_frame + (75 / (8.0 / 256))));
+						}
+					}
+				}
+			}
+		}
+
 		if (players::my_player->has_upgrade(upgrade_types::mind_control)) {
 
 			for (auto*c : dark_archons) {
@@ -2703,6 +2769,7 @@ void finish_attack() {
 					if (!e->visible || !e->detected) return std::numeric_limits<double>::infinity();
 					if (e->building) return std::numeric_limits<double>::infinity();
 					if (e->lockdown_timer) return std::numeric_limits<double>::infinity();
+					if (e->maelstrom_timer) return std::numeric_limits<double>::infinity();
 					if (e->invincible) return std::numeric_limits<double>::infinity();
 					double value = e->minerals_value + e->gas_value;
 					if (e->type->is_worker && my_units_of_type[e->type].empty()) value += 300.0;
@@ -2734,6 +2801,88 @@ void finish_attack() {
 				}
 			}
 		}
+
+		if (players::my_player->has_upgrade(upgrade_types::maelstrom)) {
+			for (auto*c : dark_archons) {
+				if (c->u->energy < 100) continue;
+				auto i = use_maelstrom_please.find(c);
+				if (i == use_maelstrom_please.end()) continue;
+				xy target_pos = i->second;
+				if (current_frame - c->last_used_special >= 15) {
+					aoe_disable_target_taken[target_pos] = std::make_tuple(c, current_frame + 60);
+					c->u->game_unit->useTech(upgrade_types::maelstrom->game_tech_type, BWAPI::Position(target_pos.x, target_pos.y));
+					c->last_used_special = current_frame;
+					c->u->controller->noorder_until = current_frame + 8;
+					c->subaction = combat_unit::subaction_idle;
+				}
+			}
+		}
+
+	}
+
+	if (!my_completed_units_of_type[unit_types::shield_battery].empty()) {
+
+		for (auto*bat : my_completed_units_of_type[unit_types::shield_battery]) {
+
+			if (bat->energy < 10.0) continue;
+
+			for (auto*c : live_combat_units) {
+				if (c->u->stats->shields == 0.0) continue;
+				double d = diag_distance(c->u->pos - bat->pos);
+				if (d > 32 * 14) continue;
+				bool recharge = false;
+				if (c->u->shields <= c->u->stats->shields * 0.125) recharge = true;
+				//if (d <= 32 * 4 && c->u->weapon_cooldown >= latency_frames && c->u->shields <= c->u->stats->shields * 0.5) recharge = true;
+				if (c->is_recharging && c->u->shields >= c->u->stats->shields * 0.875) c->is_recharging = false;
+				if (recharge || c->is_recharging) {
+					c->is_recharging = true;
+					if (units_distance(bat, c->u) <= 32 * 4) {
+						c->subaction = combat_unit::subaction_recharge;
+						//c->u->game_unit->rightClick(bat->game_unit);
+						//c->u->controller->noorder_until = current_frame + 20;
+					} else {
+
+						a_vector<unit*> nearby_enemies;
+						for (unit*e : enemy_units) {
+							if (diag_distance(e->pos - c->u->pos) <= 32 * 15) nearby_enemies.push_back(e);
+						}
+
+						a_deque<xy> path = find_path(c->u->type, c->u->pos, [&](xy pos, xy npos) {
+							return diag_distance(npos - c->u->pos) <= 32 * 20;
+						}, [&](xy pos, xy npos) {
+							double cost = 0.0;
+							for (unit*e : nearby_enemies) {
+								weapon_stats*w = c->u->is_flying ? e->stats->air_weapon : e->stats->ground_weapon;
+								if (e->type == unit_types::bunker) w = units::get_unit_stats(unit_types::marine, e->owner)->ground_weapon;
+								if (!w) continue;
+								double d = diag_distance(pos - e->pos);
+								if (d <= w->max_range*1.5) {
+									cost += w->max_range*1.5 - d;
+								}
+							}
+							return cost;
+						}, [&](xy pos) {
+							size_t index = grid::build_square_index(pos);
+							return units_distance(bat->pos, bat->type, pos, c->u->type) <= 32 * 3 && (c->u->is_flying || !run_spot_taken.test(index));
+						});
+
+						if (!path.empty()) {
+
+							xy goal_pos = path.back();
+
+							run_spot_taken.set(grid::build_square_index(goal_pos));
+
+							c->subaction = combat_unit::subaction_move;
+							c->target_pos = goal_pos;
+// 							c->u->game_unit->move(BWAPI::Position(goal_pos.x, goal_pos.y));
+// 							c->u->controller->noorder_until = current_frame + 20;
+						} else c->subaction = combat_unit::subaction_recharge;
+					}
+				}
+			}
+
+		}
+
 	}
 
 	for (auto&v : pickup_list) {
@@ -3049,6 +3198,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 		//if (d > w->max_range) return std::make_tuple(std::numeric_limits<double>::infinity(), std::ceil(hits), d);
 		if (!ew && !e->building) hits += 10;
 		if (e->lockdown_timer) hits += 10;
+		if (e->maelstrom_timer) hits += 10;
 		if (e->type->requires_pylon && !e->is_powered) hits += 10;
 		//if (d > w->max_range) return std::make_tuple(std::numeric_limits<double>::infinity(), hits + (d - w->max_range) / a->u->stats->max_speed / 90, 0.0);
 		//if (d > w_max_range) hits += (d - w_max_range) / a->u->stats->max_speed / 4;
@@ -3252,6 +3402,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 			if (e->building) return std::make_tuple(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
 			if (e->type->is_worker) return std::make_tuple(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
 			if (e->lockdown_timer) return std::make_tuple(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
+			if (e->maelstrom_timer) return std::make_tuple(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
 			if (e->is_flying) return std::make_tuple(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
 
 			double r = units_distance(u, a->u) - 32 * 9;
@@ -3271,6 +3422,7 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 			if (e->building) return std::make_tuple(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
 			if (e->type->is_worker) return std::make_tuple(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
 			if (e->lockdown_timer) return std::make_tuple(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
+			if (e->maelstrom_timer) return std::make_tuple(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
 
 			if (!e->stats->ground_weapon) return std::make_tuple(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
 
@@ -4067,7 +4219,14 @@ void do_attack(combat_unit*a, const a_vector<unit*>&allies, const a_vector<unit*
 		}
 	}
 
-	if (target && (a->u->type == unit_types::defiler || a->u->type == unit_types::queen || (a->u->type == unit_types::high_templar && (a->u->energy < 75 || a->u->shields < a->u->stats->shields)) || a->u->type == unit_types::arbiter) || a->u->type == unit_types::dark_archon) {
+	bool dodge_enemies = false;
+	if (a->u->type == unit_types::defiler) dodge_enemies = true;
+	if (a->u->type == unit_types::queen) dodge_enemies = true;
+	if (a->u->type == unit_types::high_templar && (a->u->energy < 75 || a->u->shields < a->u->stats->shields)) dodge_enemies = true;
+	if (a->u->type == unit_types::arbiter) dodge_enemies = true;
+	if (a->u->type == unit_types::dark_archon) dodge_enemies = true;
+	if (a->u->type == unit_types::corsair && target && !target->is_flying) dodge_enemies = true;
+	if (target && dodge_enemies) {
 		unit*net = get_best_score(enemies, [&](unit*e) {
 			if (e->type == unit_types::bunker) {
 				return units_distance(e, a->u) - 32 * 6;
@@ -4329,7 +4488,6 @@ bool worker_is_safe(combat_unit*a, const a_vector<unit*>&enemies) {
 	return true;
 }
 
-tsc::dynamic_bitset run_spot_taken;
 void prepare_run() {
 	run_spot_taken.resize(grid::build_grid_width*grid::build_grid_height);
 	run_spot_taken.reset();
@@ -4383,7 +4541,7 @@ void do_run(combat_unit*a, const a_vector<unit*>&enemies) {
 
 	//log("%s : run!\n", a->u->type->name);
 	
-	if (a->u->type != unit_types::lurker) {
+	if (a->u->type != unit_types::lurker && a->u->type != unit_types::corsair) {
 		unit*ne = get_best_score(enemies, [&](unit*e) {
 			weapon_stats*w = e->is_flying ? a->u->stats->air_weapon : a->u->stats->ground_weapon;
 			if (!w) return std::numeric_limits<double>::infinity();
@@ -5090,6 +5248,7 @@ void fight() {
 				if (current_frame >= cu->retreat_until) nearby_allies.push_back(cu->u);
 			}
 		}
+		double my_shield_battery_energy = 0.0;
 		bool have_static_defence = false;
 		bool static_defence_in_range = false;
 		for (unit*u : my_buildings) {
@@ -5126,6 +5285,15 @@ void fight() {
 				}
 			}
 		}
+		for (unit*u : my_completed_units_of_type[unit_types::shield_battery]) {
+			double dist = get_best_score_value(nearby_allies, [&](unit*n) {
+				return diag_distance(n->pos - u->pos);
+			});
+			if (dist <= 32 * 9) {
+				my_shield_battery_energy += u->energy;
+			}
+		}
+		//log(log_level_info, "my_shield_battery_energy is %g\n", my_shield_battery_energy);
 		if (!nearby_enemies.empty() && !nearby_allies.empty()) {
 
 			bool is_base_defence = false;
@@ -5135,7 +5303,7 @@ void fight() {
 				if (!is_base_defence) is_base_defence = my_base.test(grid::build_square_index(e->pos));
 			}
 
-			bool is_mostly_lings = n_enemy_lings > (int)nearby_enemies.size() - (int)nearby_enemies.size() / 3;
+			bool is_mostly_lings = n_enemy_lings >= (int)nearby_enemies.size() - (int)nearby_enemies.size() / 3;
 
 			bool has_siege_mode = players::my_player->upgrades.count(upgrade_types::siege_mode) != 0;
 			auto add = [&](combat_eval::eval&eval, unit*u, int team) -> combat_eval::combatant& {
@@ -5170,6 +5338,7 @@ void fight() {
 			//int eval_frames = 15 * 40;
 			int eval_frames = 15 * 90;
 			combat_eval::eval eval;
+			eval.teams[0].shield_battery_energy = my_shield_battery_energy;
 			eval.teams[1].wait_until_attacked = true;
 			eval.max_frames = eval_frames;
 			int worker_count = 0;
@@ -5200,6 +5369,7 @@ void fight() {
 					return a->u->shields + a->u->hp;
 				}, std::numeric_limits<double>::infinity());
 				if (lowest_hp) {
+					skip_lowest_eval.teams[0].shield_battery_energy = my_shield_battery_energy;
 					skip_lowest_eval.teams[1].wait_until_attacked = true;
 					skip_lowest_eval.max_frames = eval_frames;
 					for (unit*a : nearby_allies) {
@@ -5230,6 +5400,7 @@ void fight() {
 			bool run_with_workers = true;
 			if ((eval.teams[0].score < eval.teams[1].score || eval.teams[0].units.empty()) && worker_count) {
 				combat_eval::eval use_workers_eval;
+				eval.teams[0].shield_battery_energy = my_shield_battery_energy;
 				eval.teams[1].wait_until_attacked = true;
 				use_workers_eval.max_frames = eval_frames;
 				for (unit*a : nearby_allies) {
@@ -5244,7 +5415,7 @@ void fight() {
 				}
 				use_workers_eval.run();
 				//if (use_workers_eval.teams[0].score > eval.teams[0].score && zealots < 2) {
-				if (use_workers_eval.teams[0].score > eval.teams[0].score) {
+				if (use_workers_eval.teams[0].score > eval.teams[0].score && (players::my_player->race != race_protoss || eval.teams[0].start_supply < 4.0)) {
 					log("use workers! (%g vs %g > %g vs %g)\n", use_workers_eval.teams[0].score, use_workers_eval.teams[1].score, eval.teams[0].score, eval.teams[1].score);
 					eval = use_workers_eval;
 					run_with_workers = false;
@@ -5325,6 +5496,7 @@ void fight() {
 			bool fight = eval.teams[0].score >= eval.teams[1].score * mult;
 			//if (is_base_defence && worker_count) fight |= eval.teams[0].end_supply >= eval.teams[1].end_supply;
 			if (is_base_defence) fight |= eval.teams[0].end_supply >= eval.teams[1].end_supply;
+			if (eval.teams[0].start_supply >= 16.0 && eval.teams[1].end_supply <= std::max(eval.teams[1].start_supply - 16.0, 0.0)) fight = true;
 			//bool fight = eval.teams[0].end_hp > eval.teams[1].end_hp;
 			//bool fight = eval.teams[0].end_hp > 0.0;
 			//bool fight = eval.teams[0].score >= eval.teams[1].score;
@@ -5702,6 +5874,9 @@ void execute() {
 			cu->u->controller->action = unit_controller::action_repair;
 			cu->u->controller->target = cu->target;
 		}
+		if (cu->subaction == combat_unit::subaction_recharge) {
+			cu->u->controller->action = unit_controller::action_recharge;
+		}
 
 		if (cu->subaction == combat_unit::subaction_idle) {
 			if (cu->u->controller->action == unit_controller::action_attack) {
@@ -5908,6 +6083,7 @@ void update_aoe_spellcasting() {
 
 		use_storm_please.clear();
 		use_stasis_please.clear();
+		use_maelstrom_please.clear();
 
 		existing_dark_swarm.reset();
 
@@ -6030,7 +6206,7 @@ void update_aoe_spellcasting() {
 
 			}
 		};
-		auto do_aoe = [&](unit_type*spellcaster_type, auto&target_taken, double energy, double radius, double cast_range, double acquire_range, double min_value, auto&use_please) {
+		auto do_aoe = [&](unit_type*spellcaster_type, auto&target_taken, double energy, double radius, double cast_range, double acquire_range, double min_value, auto&use_please, bool is_maelstrom) {
 			a_vector<combat_unit*> spellcasters;
 
 			a_vector<xy> existing_aoe;
@@ -6067,6 +6243,8 @@ void update_aoe_spellcasting() {
 					if (!e->visible) continue;
 					if (e->stasis_timer) continue;
 					if (e->plague_timer) continue;
+					if (e->maelstrom_timer) continue;
+					if (e->lockdown_timer) continue;
 
 					auto*spellcaster = get_spellcaster_in_range(e->pos);
 					if (!spellcaster) continue;
@@ -6076,7 +6254,10 @@ void update_aoe_spellcasting() {
 						if (!e->visible) continue;
 						if (e->stasis_timer) continue;
 						if (e->plague_timer) continue;
+						if (e->maelstrom_timer) continue;
+						if (e->lockdown_timer) continue;
 						if (e->building) continue;
+						if (is_maelstrom && (!e->type->is_biological || e->burrowed)) continue;
 						if (manhattan_distance(e->pos - e2->pos) > radius) continue;
 						if (existing_aoe_at(e2->pos)) continue;
 						double value = e->type->total_minerals_cost + e->type->total_gas_cost;
@@ -6119,19 +6300,25 @@ void update_aoe_spellcasting() {
 				multitasking::yield_point();
 			}
 			if (players::my_player->has_upgrade(upgrade_types::plague)) {
-				do_aoe(unit_types::defiler, plague_target_taken, 100.0, 32 * 1.5, 32 * 9, 32 * 9, 200.0, use_plague_please);
+				do_aoe(unit_types::defiler, plague_target_taken, 100.0, 32 * 1.5, 32 * 9, 32 * 9, 200.0, use_plague_please, false);
 				multitasking::yield_point();
 			}
 		}
 		if (!my_completed_units_of_type[unit_types::high_templar].empty()) {
 			if (players::my_player->has_upgrade(upgrade_types::psionic_storm)) {
-				do_aoe(unit_types::high_templar, storm_target_taken, 75.0, 32 * 1.5, 32 * 9, 32 * 9 + 32 * 0, 200.0, use_storm_please);
+				do_aoe(unit_types::high_templar, storm_target_taken, 75.0, 32 * 1.5, 32 * 9, 32 * 9 + 32 * 0, 200.0, use_storm_please, false);
 				multitasking::yield_point();
 			}
 		}
 		if (!my_completed_units_of_type[unit_types::arbiter].empty()) {
 			if (players::my_player->has_upgrade(upgrade_types::stasis_field)) {
-				do_aoe(unit_types::arbiter, stasis_target_taken, 100.0, 32 * 1.5, 32 * 9, 32 * 9 + 32 * 6, 250.0, use_stasis_please);
+				do_aoe(unit_types::arbiter, aoe_disable_target_taken, 100.0, 32 * 1.5, 32 * 9, 32 * 9 + 32 * 6, 250.0, use_stasis_please, false);
+				multitasking::yield_point();
+			}
+		}
+		if (!my_completed_units_of_type[unit_types::dark_archon].empty()) {
+			if (players::my_player->has_upgrade(upgrade_types::maelstrom)) {
+				do_aoe(unit_types::dark_archon, aoe_disable_target_taken, 100.0, 32 * 1.5, 32 * 10, 32 * 10 + 32 * 4, 250.0, use_maelstrom_please, true);
 				multitasking::yield_point();
 			}
 		}
@@ -6146,7 +6333,7 @@ void drops_task() {
 	while (true) {
 		dropships.clear();
 		for (auto*a : combat::live_combat_units) {
-			if (a->u->type == unit_types::dropship) {
+			if (a->u->type == unit_types::dropship || a->u->type == unit_types::shuttle) {
 				dropships.push_back(a);
 			}
 		}
@@ -6194,6 +6381,7 @@ void drops_task() {
 					if (nu->u->type == unit_types::ghost) {
 						r += -32 + ghost_count * 16;
 					}
+					if (nu->u->type == unit_types::reaver) r -= 1000.0;
 					double d = diag_distance(nu->u->pos - a->u->pos);
 					if (d < 32 * 6) d /= 10.0;
 					return r + d;
