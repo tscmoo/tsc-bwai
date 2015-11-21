@@ -24,6 +24,8 @@ struct strat_t_base {
 	int enemy_dt_count = 0;
 	int enemy_lurker_count = 0;
 	int enemy_arbiter_count = 0;
+	int enemy_lair_count = 0;
+	int enemy_spire_count = 0;
 
 	bool opponent_has_expanded = false;
 	bool being_rushed = false;
@@ -67,6 +69,8 @@ struct strat_t_base {
 	int vulture_count;
 	int goliath_count;
 	int battlecruiser_count;
+	int valkyrie_count;
+	int dropship_count;
 
 	int machine_shop_count;
 	int control_tower_count;
@@ -345,6 +349,8 @@ struct strat_t_base {
 			enemy_dt_count = 0;
 			enemy_lurker_count = 0;
 			enemy_arbiter_count = 0;
+			enemy_lair_count = 0;
+			enemy_spire_count = 0;
 
 			update_possible_start_locations();
 			for (unit*e : enemy_units) {
@@ -387,6 +393,8 @@ struct strat_t_base {
 				if (e->type == unit_types::dark_templar) ++enemy_dt_count;
 				if (e->type == unit_types::lurker) ++enemy_lurker_count;
 				if (e->type == unit_types::arbiter) ++enemy_arbiter_count;
+				if (e->type == unit_types::lair) ++enemy_lair_count;
+				if (e->type == unit_types::spire) ++enemy_spire_count;
 			}
 
 			opponent_has_expanded = false;
@@ -479,6 +487,8 @@ struct strat_t_base {
 				vulture_count = count_units_plus_production(st, unit_types::vulture);
 				goliath_count = count_units_plus_production(st, unit_types::goliath);
 				battlecruiser_count = count_units_plus_production(st, unit_types::battlecruiser);
+				valkyrie_count = count_units_plus_production(st, unit_types::valkyrie);
+				dropship_count = count_units_plus_production(st, unit_types::dropship);
 
 				machine_shop_count = count_production(st, unit_types::machine_shop);
 				for (auto&v : st.units[unit_types::factory]) {
