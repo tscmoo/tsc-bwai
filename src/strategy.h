@@ -197,6 +197,9 @@ bool should_transition() {
 #include "strat_t_air.h"
 #include "strat_t_1rax_fe.h"
 #include "strat_t_8rax_fe.h"
+#include "strat_t_ghosts.h"
+#include "strat_t_vz_fake_mech.h"
+#include "strat_t_wraith_vulture.h"
 
 #include "strat_z_base.h"
 #include "strat_z_5pool.h"
@@ -230,6 +233,9 @@ bool should_transition() {
 
 #include "strat_p_base.h"
 #include "strat_p_1gate_core.h"
+#include "strat_p_3gate_robo.h"
+#include "strat_p_corsair_zealot.h"
+#include "strat_p_1gate_reaver.h"
 
 a_map<a_string, std::function<void()>> strat_map = {
 	{ "proxy rax", wrap<proxy_rax>() },
@@ -258,6 +264,10 @@ a_map<a_string, std::function<void()>> strat_map = {
 	{ "t bio tank", wrap<strat_t_bio_tank>() },
 	{ "t mech", wrap<strat_t_mech>() },
 	{ "t air", wrap<strat_t_air>() },
+	{ "t ghosts", wrap<strat_t_ghosts>() },
+	{ "t wraith vulture", wrap<strat_t_wraith_vulture>() },
+
+	{ "t vz fake mech", wrap<strat_t_vz_fake_mech>() },
 
 	{ "z 5pool", wrap<strat_z_5pool>() },
 	{ "z 9pool", wrap<strat_z_9pool>() },
@@ -289,6 +299,9 @@ a_map<a_string, std::function<void()>> strat_map = {
 	{ "z ums", wrap<strat_z_ums>() },
 
 	{ "p 1gate core", wrap<strat_p_1gate_core>() },
+	{ "p 3gate robo", wrap<strat_p_3gate_robo>() },
+	{ "p corsair zealot", wrap<strat_p_corsair_zealot>() },
+	{ "p 1gate reaver", wrap<strat_p_1gate_reaver>() },
 
 };
 
@@ -467,6 +480,9 @@ void strategy_task() {
 			//run_strat("tvp opening");
 		} else if (players::opponent_player->race == race_terran) {
 
+			//run_strat("t ghosts");
+			run_strat("t wraith vulture");
+
 			a_string opening = adapt::choose("tvt opening", "t 14cc", "t 2fact vulture", "t siege expand", "t wraith rush", "t proxy tank", "t 1rax fe", "proxy rax", "t 8rax fe");
 			run_strat(opening);
 			if (opening == "tvt opening") run_strat("tvt");
@@ -475,6 +491,9 @@ void strategy_task() {
 
 		} else if (players::opponent_player->race == race_protoss) {
 
+			//run_strat("t ghosts");
+			run_strat("t wraith vulture");
+
 			a_string opening = adapt::choose("tvp opening", "t 14cc", "t 2fact vulture", "t siege expand", "t wraith rush", "t proxy tank", "t 1rax fe", "proxy rax", "t 8rax fe");
 			run_strat(opening);
 			if (opening == "tvp opening") run_strat("tvp");
@@ -482,6 +501,10 @@ void strategy_task() {
 			run_strat(midlategame);
 
 		} else if (players::opponent_player->race == race_zerg) {
+
+			//run_strat("t ghosts");
+			run_strat("t vz fake mech");
+			run_strat("t mech");
 
 			a_string opening = adapt::choose("tvz opening", "t 14cc", "t 2fact vulture", "t siege expand", "t wraith rush", "t proxy tank", "t 1rax fe", "proxy rax", "t 8rax fe");
 			run_strat(opening);
@@ -500,12 +523,26 @@ void strategy_task() {
 		}
 
 	} else if (players::my_player->race == race_protoss) {
+
+		if (game->getGameType() == BWAPI::GameTypes::Use_Map_Settings) {
+			units::dont_call_gg = true;
+			game->setLocalSpeed(-1);
+		}
 		
 		if (players::opponent_player->race == race_terran) {
+
+			run_strat("p 1gate reaver");
+			run_strat("p 1gate core");
 			
 		} else if (players::opponent_player->race == race_protoss) {
+
+			run_strat("p 3gate robo");
 			run_strat("p 1gate core");
+
 		} else if (players::opponent_player->race == race_zerg) {
+
+			run_strat("p corsair zealot");
+			run_strat("p 1gate core");
 			
 		}
 
@@ -969,7 +1006,6 @@ void init() {
 
 	multitasking::spawn(strategy_task, "strategy");
 	multitasking::spawn(strategy_count_dead_frames_task, "strategy count dead frames");
-
 	
 	initialize_weights();
 
