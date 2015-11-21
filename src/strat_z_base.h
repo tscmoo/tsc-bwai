@@ -32,6 +32,7 @@ struct strat_z_base {
 	double enemy_ground_small_army_supply = 0.0;
 	double enemy_weak_against_ultra_supply = 0.0;
 	double enemy_anti_air_army_supply = 0.0;
+	double enemy_biological_army_supply = 0.0;
 	int enemy_static_defence_count = 0;
 	int enemy_proxy_building_count = 0;
 	double enemy_attacking_army_supply = 0.0;
@@ -76,6 +77,7 @@ struct strat_z_base {
 	bool call_build = true;
 	bool call_place_static_defence = true;
 	bool place_static_defence_only_at_main = false;
+	bool call_place_expos = true;
 
 	void bo_gas_trick(unit_type*ut = unit_types::drone) {
 		if (!bo_all_done()) return;
@@ -603,6 +605,7 @@ struct strat_z_base {
 			enemy_ground_small_army_supply = 0.0;
 			enemy_weak_against_ultra_supply = 0.0;
 			enemy_anti_air_army_supply = 0.0;
+			enemy_biological_army_supply = 0.0;
 			enemy_static_defence_count = 0;
 			enemy_proxy_building_count = 0;
 			enemy_attacking_army_supply = 0.0;
@@ -659,6 +662,7 @@ struct strat_z_base {
 					}
 					enemy_army_supply += e->type->required_supply;
 					if (e->stats->air_weapon) enemy_anti_air_army_supply += e->type->required_supply;
+					if (e->type->is_biological) enemy_biological_army_supply += e->type->required_supply;
 				}
 				if (e->type == unit_types::missile_turret) ++enemy_static_defence_count;
 				if (e->type == unit_types::photon_cannon) ++enemy_static_defence_count;
@@ -1106,7 +1110,7 @@ struct strat_z_base {
 
 			if (call_build) execute_build(false, build);
 
-			place_expos();
+			if (call_place_expos) place_expos();
 			if (call_place_static_defence) place_static_defence();
 
 			multitasking::sleep(sleep_time);
