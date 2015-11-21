@@ -23,9 +23,9 @@ bool has_path_around(unit_type*ut, const at_T&at, bool use_large_diff = false) {
 
 	int allowed_diff_x = 32 * 10;
 	int allowed_diff_y = 32 * 10;
-	if (ut == unit_types::creep_colony) {
-		allowed_diff_x = 32 * 12;
-		allowed_diff_y = 32 * 12;
+	if (ut == unit_types::creep_colony || ut == unit_types::shield_battery) {
+		allowed_diff_x = 32 * 14;
+		allowed_diff_y = 32 * 14;
 	}
 	if (use_large_diff) {
 		allowed_diff_x *= 2;
@@ -178,16 +178,16 @@ xy find(starts_T&&starts, unit_type*ut, const pred_T&pred, bool only_walkable = 
 			r -= get_best_score_value(my_units_of_type[unit_types::missile_turret], [&](unit*w) {
 				return diag_distance(w->pos - pos);
 			});
-		} else if (ut == unit_types::creep_colony) {
+		} else if (ut == unit_types::creep_colony || ut == unit_types::shield_battery || ut == unit_types::photon_cannon) {
 			unit*e = get_best_score(enemy_units, [&](unit*u) {
-				if (u->type->is_non_usable || !u->stats->ground_weapon || u->type->is_worker) return std::numeric_limits<double>::infinity();
+				if (u->type->is_non_usable || (!u->stats->ground_weapon && !u->building) || u->type->is_worker) return std::numeric_limits<double>::infinity();
 				return diag_distance(u->pos - pos);
 			});
-			if (e) r += unit_pathing_distance(unit_types::drone, e->pos, pos);
+			if (e) r += unit_pathing_distance(unit_types::siege_tank_tank_mode, e->pos, pos);
 			else {
 				for (xy start_pos : start_locations) {
 					if (start_pos == my_start_location) continue;
-					r += unit_pathing_distance(unit_types::drone, start_pos, pos);
+					r += unit_pathing_distance(unit_types::siege_tank_tank_mode, start_pos, pos);
 				}
 			}
 		} else if (ut != unit_types::bunker) {
