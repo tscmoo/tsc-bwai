@@ -1,7 +1,7 @@
 
 struct unit_controller {
 	unit*u = nullptr;
-	enum { action_idle, action_move, action_gather, action_build, action_attack, action_kite, action_scout, action_move_directly, action_use_ability, action_repair, action_building_movement };
+	enum { action_idle, action_move, action_gather, action_build, action_attack, action_kite, action_scout, action_move_directly, action_use_ability, action_repair, action_building_movement, action_recharge };
 	int action = action_idle;
 	xy go_to;
 	unit*target = nullptr;
@@ -747,10 +747,11 @@ void process(const a_vector<unit_controller*>&controllers) {
 	for (size_t i = 0; i < controllers.size(); ++i) {
 		auto*c = controllers[i];
 
+// 		if (c->u->type == unit_types::dragoon && c->u->order_target) log(log_level_info, "distance %g\n", units_distance(c->u, c->u->order_target));
 // 		if (c->u->weapon_cooldown == 0) ++c->weapon_ready_frames;
 // 		else {
-// 			if (c->weapon_ready_frames) {
-// 				log("%s: weapon was ready for %d frames\n", c->u->type->name, c->weapon_ready_frames);
+// 			if (c->u->weapon_cooldown > c->u->prev_weapon_cooldown) {
+// 				log(log_level_info, "%s attacked %s at distance %g, weapon was ready for %d frames\n", c->u->type->name, c->u->order_target ? c->u->order_target->type->name : "null", c->u->order_target ? units_distance(c->u, c->u->order_target) : 0.0, c->weapon_ready_frames);
 // 				c->weapon_ready_frames = 0;
 // 			}
 // 		}
@@ -907,13 +908,14 @@ void process(const a_vector<unit_controller*>&controllers) {
 						return pos;
 					}
 					xy r = origin;
-					for (double distance = 0; distance < max_distance; distance += 32) {
+					for (double distance = std::min(32.0, max_distance);; distance = std::min(distance + 32.0, max_distance)) {
 						xy pos = origin;
 						pos.x += (int)(std::cos(a)*distance);
 						pos.y += (int)(std::sin(a)*distance);
 						pos = square_pathing::get_pos_in_square(pos, u->type);
 						if (pos == xy()) break;
 						r = pos;
+						if (distance >= max_distance) break;
 					}
 					return r;
 				};
@@ -933,12 +935,13 @@ void process(const a_vector<unit_controller*>&controllers) {
 					else {
 						xy rel = u->pos - c->target->pos;
 						double a = std::atan2(rel.y, rel.x);
-						dst = movedst(u->pos, a, 32 * 5);
+						dst = movedst(u->pos, a, w->max_range - d);
 					}
 
 					xy movepos = (bwapi_pos)u->game_unit->getTargetPosition();
 					if (u->game_unit->getOrder() != BWAPI::Orders::Move || diag_distance(dst - movepos) >= 32) {
 						if (current_frame - c->last_move_to >= 6) {
+							//log(log_level_info, "move in\n");
 							u->game_unit->move(BWAPI::Position(dst.x, dst.y));
 							c->last_move_to = current_frame;
 						}
@@ -953,6 +956,7 @@ void process(const a_vector<unit_controller*>&controllers) {
 					xy movepos = (bwapi_pos)u->game_unit->getTargetPosition();
 					if (u->game_unit->getOrder() != BWAPI::Orders::Move || diag_distance(dst - movepos) >= 32) {
 						if (current_frame - c->last_move_to >= 6) {
+							//log(log_level_info, "move out\n");
 							u->game_unit->move(BWAPI::Position(dst.x, dst.y));
 							c->last_move_to = current_frame;
 						}
@@ -1017,7 +1021,7 @@ void process(const a_vector<unit_controller*>&controllers) {
 				if (u->type == unit_types::ghost) wait_frames = 6;
 				if (u->type == unit_types::firebat) wait_frames = 8;
 				if (u->type == unit_types::vulture) wait_frames = 2;
-				if (u->type == unit_types::goliath) wait_frames = 2;
+				if (u->type == unit_types::goliath) wait_frames = 6;
 				//if (u->type == unit_types::siege_tank_tank_mode) wait_frames = 2;
 				if (u->type == unit_types::wraith) wait_frames = 2;
 				if (u->type == unit_types::battlecruiser) wait_frames = 2;
@@ -1027,16 +1031,17 @@ void process(const a_vector<unit_controller*>&controllers) {
 				//if (u->type == unit_types::guardian) wait_frames = 2;
 				if (u->type == unit_types::devourer) wait_frames = 18;
 
-				if (u->type == unit_types::dragoon) wait_frames = 15;
+				//if (u->type == unit_types::dragoon) wait_frames = 15;
+				if (u->type == unit_types::dragoon) wait_frames = 7;
 
 				bool do_state_machine = c->can_move && wait_frames;
 
 				bool do_close_up = false;
-				if (u->type == unit_types::marine || u->type == unit_types::ghost || u->type == unit_types::firebat || u->type == unit_types::hydralisk || u->type == unit_types::dragoon) {
+				if (u->type == unit_types::marine || u->type == unit_types::ghost || u->type == unit_types::firebat || u->type == unit_types::hydralisk) {
 					do_state_machine = false;
 				}
 				if (c->action != unit_controller::action_kite) {
-					if (u->type == unit_types::marine || u->type == unit_types::ghost || u->type == unit_types::firebat || u->type == unit_types::hydralisk || u->type == unit_types::dragoon) {
+					if (u->type == unit_types::marine || u->type == unit_types::ghost || u->type == unit_types::firebat || u->type == unit_types::hydralisk) {
 						if (!ew || w->max_range <= ew->max_range || d > ew->max_range + 64) do_state_machine = false;
 					}
 
@@ -1063,9 +1068,15 @@ void process(const a_vector<unit_controller*>&controllers) {
 					do_close_up = false;
 				}
 
-				if (u->type == unit_types::dragoon) do_close_up = false;
+				bool do_wait_method = false;
 
-				//log("%s: do_state_machine: %d do_close_up: %d\n", u->type->name, do_state_machine, do_close_up);
+				if (u->type == unit_types::dragoon) {
+					do_wait_method = true;
+					do_state_machine = false;
+					do_close_up = false;
+				}
+
+				//log(log_level_info, "%s: do_state_machine: %d do_close_up: %d\n", u->type->name, do_state_machine, do_close_up);
 				if (!do_state_machine && !do_close_up) {
 					if (re_evaluate_target(c, true)) continue;
 				}
@@ -1083,7 +1094,55 @@ void process(const a_vector<unit_controller*>&controllers) {
 
 				unit*attack_target = c->action == unit_controller::action_kite ? c->kite_attack_target : c->target;
 
-				if (do_close_up) {
+				if (do_wait_method) {
+
+					//log(log_level_info, "u->is_attacking %d, u->is_attacking_frame %d, c->attack_state %d\n", u->is_attacking, u->is_attacking_frame, c->attack_state);
+
+					if (c->attack_state == 0) {
+// 						u->game_unit->attack(attack_target->game_unit);
+// 						c->last_command_frame = current_command_frame;
+// 						c->attack_state = 1;
+// 						c->attack_timer = current_frame;
+
+						double nd = units_distance(u->pos, u, tpos, c->target) - w->max_range;
+						bool next = turn_frames + std::max(frames_to_reach(u, nd), u->weapon_cooldown) <= latency_frames;
+						if (next) {
+
+							u->game_unit->attack(attack_target->game_unit);
+							//log(log_level_info, "attack() for %d\n", current_command_frame);
+							c->attack_state = 1;
+							c->attack_timer = current_frame;
+
+							c->last_command_frame = current_command_frame;
+
+						} else {
+							move_to_attack_range();
+						}
+
+					} else if (c->attack_state == 1) {
+						if (u->is_attacking) {
+							if (current_frame - u->is_attacking_frame >= wait_frames - latency_frames) {
+								move_away_or_intercept();
+								c->attack_state = 2;
+							}
+						} else {
+							if ((current_frame - c->attack_timer >= latency_frames + 15 && u->speed == 0.0) || current_frame - c->attack_timer >= 60) {
+								c->attack_state = 0;
+							}
+						}
+					} else if (c->attack_state == 2) {
+						int frames = turn_frames + frames_to_reach(u->stats, 0.0, d - w->max_range);
+						if (frames >= u->weapon_cooldown - latency_frames) {
+							move_to_attack_range();
+							c->attack_state = 0;
+						} else {
+							move_away_or_intercept();
+						}
+					} else c->attack_state = 0;
+
+					continue;
+
+				} else if (do_close_up) {
 
 // 					log("close up, c->attack_state is %d  c->attack_timer is %d\n", c->attack_state, c->attack_timer);
 // 					log("turn_frames is %d\n", turn_frames);
@@ -1116,10 +1175,12 @@ void process(const a_vector<unit_controller*>&controllers) {
 						if (current_frame >= c->attack_timer) c->attack_state = 0;
 					} else c->attack_state = 0;
 
+					continue;
+
 				} else if (do_state_machine && wait_frames) {
 
-// 					log("c->attack_state is %d\n", c->attack_state);
-// 					log("turn_frames is %d\n", turn_frames);
+					//log(log_level_info, "c->attack_state is %d\n", c->attack_state);
+					//log(log_level_info, "turn_frames is %d\n", turn_frames);
 
 					auto get_target_is_facing_me = [&]() {
 						double target_heading = std::atan2(c->target->vspeed, c->target->hspeed);
@@ -1135,25 +1196,43 @@ void process(const a_vector<unit_controller*>&controllers) {
 					if (!u->is_flying) {
 
 						if (c->attack_state == 0) {
-							bool next = d <= w->max_range && u->weapon_cooldown <= latency_frames + turn_frames;
+							//bool next = d <= w->max_range && u->weapon_cooldown <= latency_frames + turn_frames + latency_frames + 1;
+							//double cur_d = units_distance(u->pos, u, c->target->pos, c->target) - w->max_range;
+							//bool next = std::max(frames_to_reach(u, cur_d), u->weapon_cooldown) <= latency_frames + turn_frames;
+							double nd = units_distance(u->pos, u, tpos, c->target) - w->max_range;
+							bool next = turn_frames + std::max(frames_to_reach(u, nd), u->weapon_cooldown) <= latency_frames;
 							if (next) {
-								u->game_unit->stop();
+// 								u->game_unit->stop();
+// 								log(log_level_info, "stop()\n");
+// 
+// 								c->attack_state = 1;
+// 								c->attack_timer = latency_frames + 1 + current_command_frame + turn_frames + wait_frames;
 
-								c->attack_state = 1;
-								c->attack_timer = current_frame + turn_frames + wait_frames;
+								u->game_unit->attack(attack_target->game_unit);
+								//log(log_level_info, "attack() for %d\n", current_command_frame);
+								c->attack_state = 2;
+								c->attack_timer = current_command_frame + turn_frames + wait_frames;
+
+								c->last_command_frame = current_command_frame;
+
 							} else {
 								move_to_attack_range();
 							}
 						} else if (c->attack_state == 1) {
-							u->game_unit->attack(attack_target->game_unit);
+							u->game_unit->attack(attack_target->game_unit, true);
+							//log(log_level_info, "attack()\n");
 							c->last_command_frame = current_command_frame;
 							c->attack_state = 2;
 						} else if (c->attack_state == 2) {
-							if (current_frame >= c->attack_timer) {
-								move_away_or_intercept();
+							if (current_command_frame >= c->attack_timer) {
 								int frames = turn_frames + frames_to_reach(u->stats, 0.0, d - w->max_range);
 								if (current_frame >= c->attack_timer + latency_frames && frames >= u->weapon_cooldown - latency_frames) {
+								//bool next = turn_frames + frames_to_reach(u->stats, 0.0, d - w->max_range) >= u->weapon_cooldown;
+								//if (current_frame >= c->attack_timer + latency_frames && next) {
+									move_to_attack_range();
 									c->attack_state = 0;
+								} else {
+									move_away_or_intercept();
 								}
 							}
 						} else c->attack_state = 0;
@@ -1488,6 +1567,8 @@ void process(const a_vector<unit_controller*>&controllers) {
 			}
 
 			c->noorder_until = current_frame + 4;
+
+			if (u->type == unit_types::dragoon) c->noorder_until = current_command_frame + 7;
 		}
 
 		if (c->action == unit_controller::action_scout && c->can_move && current_frame - c->last_move >= move_resolution) {
@@ -1522,6 +1603,18 @@ void process(const a_vector<unit_controller*>&controllers) {
 						c->noorder_until = current_frame + 15;
 					}
 				} else c->action = unit_controller::action_idle;
+			}
+		}
+
+		if (c->action == unit_controller::action_recharge) {
+			unit*bat = get_best_score(my_completed_units_of_type[unit_types::shield_battery], [&](unit*bat) {
+				double d = units_distance(bat, u);
+				if (d <= 32 * 3) return 1.0 - bat->energy / bat->stats->energy;
+				return d;
+			});
+			if (bat) {
+				u->game_unit->rightClick(bat->game_unit);
+				c->noorder_until = current_frame + 8;
 			}
 		}
 
