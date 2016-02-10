@@ -239,6 +239,9 @@ struct json_value {
 			};
 			if (str==e) return done();
 			test('-');
+			if (e >= str + 3 && str[0] == 'i'&& str[1] == 'n' && str[2] == 'f') {
+				put(); put(); put();
+			}
 			if (*str>='1'&&*str<='9') while (digit()) ; 
 			else if (!test('0')) return done();
 			if (test('.')) while (digit()) ;
@@ -258,7 +261,7 @@ struct json_value {
 		case 't': return e>=str+4&&str[1]=='r'&&str[2]=='u'&&str[3]=='e' ? (type=t_boolean, b=true, str+4) : fail();
 		case 'f': return e>=str+5&&str[1]=='a'&&str[2]=='l'&&str[3]=='s'&&str[4]=='e' ? (type=t_boolean, b=false, str+5) : fail();
 		case 'n': return e>=str+4&&str[1]=='u'&&str[2]=='l'&&str[3]=='l' ? (type=t_null, str+4) : fail();
-		case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9': case '-':
+		case '0': case '1': case '2': case '3': case '4': case '5': case '6': case '7': case '8': case '9': case '-': case 'i':
 			return parse_as_number();
 		}
 

@@ -2,6 +2,9 @@
 #ifndef TSC_RNG_H
 #define TSC_RNG_H
 
+#include <random>
+#include <thread>
+#include <array>
 #include "high_resolution_timer.h"
 
 namespace tsc {

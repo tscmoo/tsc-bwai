@@ -1,4 +1,8 @@
+#ifndef TSC_STRF_H
+#define TSC_STRF_H
 
+#include <exception>
+#include <string>
 
 namespace tsc {
 ;
@@ -18,7 +22,7 @@ namespace strf {
 #ifdef _MSC_VER
 		__declspec(noreturn)
 #endif
-		void bad(const char*str) {
+		static void bad(const char*str) {
 #ifndef TSC_NO_EXCEPTIONS
 			throw strf_exception(str);
 #else
@@ -427,3 +431,5 @@ namespace strf {
 }
 
 }
+
+#endif

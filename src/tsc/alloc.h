@@ -2,6 +2,7 @@
 #define TSC_ALLOC_H
 
 #include "bit.h"
+#include <array>
 
 namespace tsc {
 ;

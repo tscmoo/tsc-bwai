@@ -1,4 +1,14 @@
+#ifndef TSC_ALLOC_CONTAINERS_H
+#define TSC_ALLOC_CONTAINERS_H
 
+#include <vector>
+#include <deque>
+#include <list>
+#include <set>
+#include <map>
+#include <unordered_set>
+#include <unordered_map>
+#include <string>
 
 namespace tsc {
 ;
@@ -36,3 +46,4 @@ using a_string = std::basic_string<char, std::char_traits<char>, alloc<char>>;
 
 }
 
+#endif
