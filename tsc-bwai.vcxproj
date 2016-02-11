@@ -62,6 +62,7 @@
       <FloatingPointModel>Fast</FloatingPointModel>
       <AdditionalIncludeDirectories>src/include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
     <Link>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
@@ -71,18 +72,26 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="src/main.cpp" />
+    <ClCompile Include="src\bot.cpp" />
+    <ClCompile Include="src\bwapi_inc.cpp" />
     <ClCompile Include="src\common.cpp" />
-    <ClCompile Include="src\global.cpp" />
+    <ClCompile Include="src\grid.cpp" />
     <ClCompile Include="src\log.cpp" />
     <ClCompile Include="src\multitasking.cpp" />
+    <ClCompile Include="src\units.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="src\bot.h" />
+    <ClInclude Include="src\include\bwapi_inc.h" />
     <ClInclude Include="src\include\common.h" />
     <ClInclude Include="src\include\containers.h" />
-    <ClInclude Include="src\include\global.h" />
+    <ClInclude Include="src\include\grid.h" />
     <ClInclude Include="src\include\log.h" />
     <ClInclude Include="src\include\multitasking.h" />
     <ClInclude Include="src\include\multitasking_sync.h" />
+    <ClInclude Include="src\include\players.h" />
+    <ClInclude Include="src\include\units.h" />
+    <ClInclude Include="src\include\upgrades.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
