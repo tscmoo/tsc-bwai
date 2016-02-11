@@ -1,3 +1,9 @@
+//
+// This file implements facilities for defining global data, taking
+// care to associate it with the current instance of the bot, such that
+// the bot can be instantiated in the same program multiple times
+// independently.
+//
 
 #include "global.h"
 #include <memory>
