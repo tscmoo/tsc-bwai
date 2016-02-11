@@ -81,7 +81,7 @@
     <ClCompile Include="src\units.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="src\bot.h" />
+    <ClInclude Include="src\include\bot.h" />
     <ClInclude Include="src\include\bwapi_inc.h" />
     <ClInclude Include="src\include\common.h" />
     <ClInclude Include="src\include\containers.h" />
