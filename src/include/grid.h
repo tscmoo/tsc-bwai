@@ -72,10 +72,10 @@ namespace tsc_bwai {
 		int blocked_until;
 	};
 
-	struct grid_t {
+	struct grid_module {
 
 		bot_t& bot;
-		grid_t(bot_t& bot) : bot(bot) {}
+		grid_module(bot_t& bot) : bot(bot) {}
 
 		// Map dimensions, in pixels.
 		int map_width, map_height;
@@ -158,6 +158,18 @@ namespace tsc_bwai {
 		void reserve_build_squares(xy pos, unit_type* ut, bool reserve = true);
 		// Calls reserve_build_squares with reserve = false, as to unreserve.
 		void unreserve_build_squares(xy pos, unit_type*ut);
+
+		// Updates visibility and creep for all build squares.
+		// This is called from units instead of having its own task, since
+		// it's important that visibility information is updated in sync with
+		// unit information.
+		void update_build_grid();
+
+		// This task updates the various fields in build_square dealing with
+		// them being blocked for building.
+		void update_blocked_build_squares_task();
+
+		void init();
 
 	};
 

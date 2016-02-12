@@ -58,10 +58,10 @@ namespace tsc_bwai {
 
 		struct sleep_queue {
 		private:
-			multitasking_t& mt;
+			multitasking_module& mt;
 			detail::task_id_queue queue;
 		public:
-			sleep_queue(multitasking_t& mt) : mt(mt) {}
+			sleep_queue(multitasking_module& mt) : mt(mt) {}
 			void wait() {
 				queue.push_back(mt.current_task_id());
 				mt.wait();
@@ -81,7 +81,7 @@ namespace tsc_bwai {
 			sleep_queue queue;
 			int lock_count = 0;
 		public:
-			mutex(multitasking_t& mt) : queue(mt) {}
+			mutex(multitasking_module& mt) : queue(mt) {}
 			mutex(const mutex&) = delete;
 			void lock() {
 				if (lock_count++) queue.wait();

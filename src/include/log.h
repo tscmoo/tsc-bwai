@@ -53,11 +53,11 @@ namespace tsc_bwai {
 		log_level_info
 	};
 
-	class log_t {
+	class log_module {
 		bot_t& bot;
 		simple_logger logger;
 	public:
-		log_t(bot_t& bot) : bot(bot) {}
+		log_module(bot_t& bot) : bot(bot) {}
 		int current_log_level;
 
 		void set_output_file(const char* filename) {

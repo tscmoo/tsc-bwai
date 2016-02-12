@@ -1,9 +1,5 @@
 //
 // This file defines the bot_t class, which is the main instance of the bot.
-// It contains some commonly used methods and variables, and all the modules
-// that make up the bot.
-// Multiple instances of this class can exist, potentially in multiple threads,
-// playing games simultaneously.
 //
 
 #ifndef TSC_BWAI_BOT_H
@@ -12,20 +8,28 @@
 #include "multitasking.h"
 #include "common.h"
 #include "log.h"
+#include "players.h"
+#include "grid.h"
+#include "stats.h"
 #include "units.h"
+
+#include "unit_controls.h"
 
 namespace BWAPI {
 	class Game;
 }
 
 namespace tsc_bwai {
-
+	
+	// bot_t - the main instance of the bot.
+	// Contains some commonly used methods and variables, and all the modules
+	// that make up the bot.
 	class bot_t {
 		a_deque<a_string> send_text_queue;
 	public:
 
-		// BWAPI interface
-		BWAPI::Game* game;
+		// BWAPI interface, this needs to be set before init is called.
+		BWAPI::Game* game = nullptr;
 
 		// Setting test_mode will enable *a ton* of debugging output, both in the
 		// console, on-screen drawing and output to log.txt.
@@ -72,25 +76,46 @@ namespace tsc_bwai {
 		// Our current predicted gas income, as calculated by resource_gathering.
 		double predicted_gas_per_frame = 0;
 
-		// Sends text in the chat.
-		void send_text(a_string str);
+		// All possible start locations.
+		a_vector<xy> start_locations;
+		// Our start location.
+		xy my_start_location;
 
-		multitasking::multitasking_t multitasking;
-		common_t common;
-		log_t log;
-		units_t units;
+		// By default we call gg and quit the game if we evaluate that we have lost
+		// the game. This behavior can be disabled by setting this to true (should
+		// be done for UMS maps, for instance).
+		bool dont_call_gg = false;
+
+		// Sends text in the chat.
+		void send_text(const a_string& str);
+
+		multitasking::multitasking_module multitasking;
+		common_module common;
+		log_module log;
+		players_module players;
+		grid_module grid;
+		stats_module stats;
+		units_module units;
+
+		unit_controls_module unit_controls;
 
 		bot_t() :
 			multitasking(*this),
 			log(*this),
-			units(*this)
+			players(*this),
+			grid(*this),
+			stats(*this),
+			units(*this),
+
+			unit_controls(*this)
 		{}
 
+		// This should be called once per frame, preferably from the onFrame handler.
 		void on_frame();
 
-		void init() {
-
-		}
+		// This should be once when the game starts, preferably from the onStart
+		// handler.
+		void init();
 
 	};
 }

@@ -78,7 +78,11 @@
     <ClCompile Include="src\grid.cpp" />
     <ClCompile Include="src\log.cpp" />
     <ClCompile Include="src\multitasking.cpp" />
+    <ClCompile Include="src\players.cpp" />
+    <ClCompile Include="src\stats.cpp" />
     <ClCompile Include="src\units.cpp" />
+    <ClCompile Include="src\unit_controls.cpp" />
+    <ClCompile Include="src\upgrades.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\include\bot.h" />
@@ -90,7 +94,9 @@
     <ClInclude Include="src\include\multitasking.h" />
     <ClInclude Include="src\include\multitasking_sync.h" />
     <ClInclude Include="src\include\players.h" />
+    <ClInclude Include="src\include\stats.h" />
     <ClInclude Include="src\include\units.h" />
+    <ClInclude Include="src\include\unit_controls.h" />
     <ClInclude Include="src\include\upgrades.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

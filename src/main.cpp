@@ -80,8 +80,6 @@ int main() {
 
 		bwapi_init();
 
-		unit_types::init_global_data(m.bot);
-
 		m.bot.log(log_level_info, "connecting\n");
 		m.bot.game = bwapi_connect();
 

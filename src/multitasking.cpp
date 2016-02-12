@@ -12,12 +12,17 @@ using namespace tsc_bwai;
 
 namespace tsc_bwai {
 	namespace multitasking {
-		struct multitasking_t::impl_t {
+		struct multitasking_module::impl_t {
 
 			bot_t& bot;
-			impl_t(bot_t& bot) : bot(bot) {}
+			impl_t(bot_t& bot) : bot(bot) {
+				tasks.resize(0x100);
+				for (auto&v : tasks) free_tasks.push_back(&v);
+				running_tasks.resize(tasks.size());
+			}
+			impl_t(impl_t&) = delete;
 
-			double last_frame_time;
+			double last_frame_time = 0.0;
 
 			tsc::ut_impl::ut_t main_ut;
 			a_list<std::function<void()>> thread_funcs;
@@ -51,14 +56,15 @@ namespace tsc_bwai {
 			a_vector<scheduled_task> tasks;
 			a_deque<scheduled_task*> free_tasks;
 			tsc::dynamic_bitset running_tasks;
-			scheduled_task*current_task;
-			bool dont_yield, dont_spawn;
+			scheduled_task* current_task = nullptr;
+			bool dont_yield = false;
+			bool dont_spawn = false;
 			tsc::high_resolution_timer reference_timer;
-			double reference_time;
-			double next_schedule_time, schedule_time_slice;
-			double next_frame_yield;
-			double frame_time_carry;
-			int resume_frame;
+			double reference_time = 0.0;
+			double next_schedule_time = 0.0;
+			double schedule_time_slice = 0.0;
+			double next_frame_yield = 0.0;
+			double frame_time_carry = 0.0;
 
 			task_id get_task_id(scheduled_task*t) {
 				return t - tasks.data();
@@ -86,9 +92,9 @@ namespace tsc_bwai {
 				double now = time();
 				scheduled_task*switch_to = 0;
 				double lowest = std::numeric_limits<double>::infinity();
-				//log("schedule(): \n");
+				//bot.log("schedule(): \n");
 				for (task_id id : running_tasks) {
-					//log("%d is running\n",id);
+					//bot.log("%d is running\n",id);
 					scheduled_task&t = tasks[id];
 					if (!t.raise_signal) {
 						if (t.wait_counter > 0) continue;
@@ -109,16 +115,16 @@ namespace tsc_bwai {
 					if (switch_to->sleep_until) switch_to->sleep_until = 0;
 					next_schedule_time = now + schedule_time_slice;
 					if (switch_to == current_task) {
-						//log("%g: schedule() best task was current task (%d), next_schedule_time is %g\n",now,get_task_id(switch_to),next_schedule_time);
+						//bot.log("%g: schedule() best task was current task (%d), next_schedule_time is %g\n",now,get_task_id(switch_to),next_schedule_time);
 						if (current_task->raise_signal) check_signals();
 						return true;
 					}
-					//log("%g: schedule() switching to task %d, next_schedule_time is %g\n",now,get_task_id(switch_to),next_schedule_time);
+					//bot.log("%g: schedule() switching to task %d, next_schedule_time is %g\n",now,get_task_id(switch_to),next_schedule_time);
 					resume_task(switch_to);
 					if (current_task && current_task->raise_signal) check_signals();
 					return true;
 				}
-				//log("schedule() found no task\n");
+				//bot.log("schedule() found no task\n");
 				if (current_task) {
 					current_task = nullptr;
 					tsc::ut_impl::switch_to(main_ut);
@@ -132,7 +138,7 @@ namespace tsc_bwai {
 				if (dont_yield) return;
 				double now = time();
 				if (now >= next_frame_yield) {
-					//log("frame yield!\n");
+					//bot.log("frame yield!\n");
 					tsc::ut_impl::switch_to(main_ut);
 					if (current_task && current_task->raise_signal) check_signals();
 					now = time();
@@ -149,9 +155,9 @@ namespace tsc_bwai {
 				schedule_time_slice = bot.multitasking.desired_frame_time / bot.multitasking.schedule_granularity_divisor;
 				next_frame_yield = reference_time + bot.multitasking.desired_frame_time + frame_time_carry;
 
-				//log("reference_time is %g, next_frame_yield is %g, schedule_time_slice is %g\n",reference_time,next_frame_yield,schedule_time_slice);
+				//bot.log("reference_time is %g, next_frame_yield is %g, schedule_time_slice is %g\n",reference_time,next_frame_yield,schedule_time_slice);
 
-				//if (current_task) log("current_task is %d\n",get_task_id(current_task));
+				//if (current_task) bot.log("current_task is %d\n",get_task_id(current_task));
 				if (next_frame_yield > reference_time) {
 					if (current_task) resume_task(current_task);
 					else schedule();
@@ -171,7 +177,7 @@ namespace tsc_bwai {
 				free_tasks.pop_front();
 
 				task_id id = get_task_id(t);
-				//log("spawning new task with id %d\n",id);
+				//bot.log("spawning new task with id %d\n",id);
 				running_tasks.set(id);
 				t->priority = prio;
 				t->name = name;
@@ -215,7 +221,7 @@ namespace tsc_bwai {
 						j.erase(std::find(j.begin(), j.end(), get_task_id(current_task)));
 						current_task->join_task = invalid_task_id;
 					}
-					//log("task %d has exited!\n",get_task_id(current_task));
+					//bot.log("task %d has exited!\n",get_task_id(current_task));
 					running_tasks.reset(get_task_id(current_task));
 					free_tasks.push_back(current_task);
 					current_task = 0;
@@ -266,52 +272,46 @@ namespace tsc_bwai {
 					tasks[id].raise_signal = scheduled_task::sig_term;
 				}
 			}
-
-			void init() {
-				tasks.resize(0x100);
-				for (auto&v : tasks) free_tasks.push_back(&v);
-				running_tasks.resize(tasks.size());
-			}
 		};
 
-		task_id multitasking_t::spawn(double prio, std::function<void()> f, const char*name) {
+		task_id multitasking_module::spawn(double prio, std::function<void()> f, const char*name) {
 			return impl->spawn(prio, std::move(f), name);
 		}
 
-		task_id multitasking_t::current_task_id() {
+		task_id multitasking_module::current_task_id() {
 			return impl->get_task_id(impl->current_task);
 		}
 
-		void multitasking_t::yield_point() {
+		void multitasking_module::yield_point() {
 			impl->yield_point();
 		}
 
-		void multitasking_t::sleep(int frames) {
+		void multitasking_module::sleep(int frames) {
 			impl->sleep(frames);
 		}
 
-		void multitasking_t::join(task_id id) {
+		void multitasking_module::join(task_id id) {
 			impl->join(id);
 		}
 
-		void multitasking_t::wait() {
+		void multitasking_module::wait() {
 			impl->wait();
 		}
-		void multitasking_t::wake(task_id id) {
+		void multitasking_module::wake(task_id id) {
 			impl->wake(id);
 		}
 
-		double multitasking_t::get_cpu_time(task_id id) {
+		double multitasking_module::get_cpu_time(task_id id) {
 			return impl->get_cpu_time(id);
 		}
 
-		void multitasking_t::resume() {
+		void multitasking_module::resume() {
 			tsc::ut_impl::enter(impl->main_ut);
 			impl->resume();
 			tsc::ut_impl::leave(impl->main_ut);
 		}
 
-		void multitasking_t::stop() {
+		void multitasking_module::stop() {
 			impl->terminate_all();
 			impl->dont_yield = true;
 			impl->dont_spawn = true;
@@ -320,14 +320,10 @@ namespace tsc_bwai {
 			if (impl->running_tasks.any()) xcept("internal error: tasks still running after terminate");
 		}
 
-		void multitasking_t::init() {
-			impl->init();
-		}
-
-		multitasking_t::multitasking_t(bot_t& bot) {
+		multitasking_module::multitasking_module(bot_t& bot) {
 			impl = std::make_unique<impl_t>(bot);
 		}
-		multitasking_t::~multitasking_t() {
+		multitasking_module::~multitasking_module() {
 		}
 	}
 }

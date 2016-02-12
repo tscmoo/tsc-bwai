@@ -43,7 +43,8 @@ namespace tsc_bwai {
 		typedef size_t task_id;
 		static const task_id invalid_task_id = ~(task_id)0;
 
-		struct multitasking_t {
+		class multitasking_module {
+		public:
 
 			// This specifies in seconds the amount of time we have available per
 			// call to resume. Because of the fact that tasks only call yield_point
@@ -119,14 +120,10 @@ namespace tsc_bwai {
 			// Undefined behavior if called from a running task.
 			void stop();
 
-			// Call this only once during startup.
-			void init();
-
-
 			struct impl_t;
 			std::unique_ptr<impl_t> impl;
-			multitasking_t(bot_t& bot);
-			~multitasking_t();
+			multitasking_module(bot_t& bot);
+			~multitasking_module();
 		};
 	}
 }

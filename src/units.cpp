@@ -10,6 +10,7 @@
 namespace tsc_bwai {
 
 	namespace {
+		// Copy of a BWAPI event.
 		struct event_t {
 			enum { t_show, t_hide, t_create, t_morph, t_destroy, t_renegade, t_complete, t_refresh };
 			int t;
@@ -18,39 +19,113 @@ namespace tsc_bwai {
 		};
 	}
 
-	struct units_t::impl_t {
+	// The hidden implementation for the units module, which does all the work.
+	class units_impl {
+		bot_t& bot;
 
+		a_deque<unit> unit_container;
+		a_deque<unit_building> unit_building_container;
+
+		a_deque<weapon_stats> weapon_stats_container;
+		a_map<std::tuple<BWAPI::WeaponType, player_t*>, weapon_stats*> weapon_stats_map;
+
+		a_deque<unit_stats> unit_stats_container;
+		a_map<std::tuple<unit_type*, player_t*>, unit_stats*> unit_stats_map;
+
+		a_vector<unit_building*> registered_buildings;
+
+		unit* new_unit(BWAPI_Unit game_unit);
+		
+		weapon_stats* get_weapon_stats(BWAPI::WeaponType type, player_t*player);
+		unit_stats* get_unit_stats(unit_type* type, player_t* player);
+
+		void update_unit_container(unit* u, a_vector<unit*>& cont, bool contain);
+
+		void update_unit_owner(unit* u);
+		void update_unit_value(unit* u, unit_type* from, unit_type* to);
+		void update_unit_type(unit* u);
+		void update_weapon_stats(weapon_stats*st);
+		void update_stats(unit_stats* st);
+		void update_unit_stuff(unit* u);
+		void update_building_squares();
+		void update_all_stats();
+
+		a_vector<unit*> new_units_queue;
+		a_vector<std::tuple<unit*, unit_type*>> unit_type_changes_queue;
+
+		int last_eval_gg = 0;
+
+		// This task is responsible for updating all information about units, unit types,
+		// unit stats and weapon stats (and unit containers).
+		// It also handles events, since that ties into updating unit information.
+		void update_units_task();
+
+
+		void update_buildings_squares_task() {
+		}
+
+		void update_projectile_stuff_task() {
+
+		}
+
+	public:
+		// All (BWAPI) events that are queued up for processing.
 		a_deque<event_t> events;
+
+		unit* get_unit(BWAPI_Unit game_unit);
+
+		units_impl(bot_t& bot) : bot(bot) {}
+		void init() {
+			bot.multitasking.spawn(0.0, std::bind(&units_impl::update_units_task, this), "update units");
+			bot.multitasking.spawn(std::bind(&units_impl::update_buildings_squares_task, this), "update buildings squares");
+
+			bot.multitasking.spawn(std::bind(&units_impl::update_projectile_stuff_task, this), "update projectile stuff");
+
+			//bot.render.add(std::bind(&units_module::render, this));
+		}
 
 	};
 
-	units_t::units_t(bot_t& bot){
-		impl = std::make_unique<impl_t>();
+	class units_module::impl_t : public units_impl {
+	public:
+		impl_t(bot_t& bot) : units_impl(bot) {}
+	};
+
+	unit* units_module::get_unit(BWAPI_Unit game_unit) {
+		return impl->get_unit(game_unit);
 	}
 
-	units_t::~units_t() {
+	units_module::units_module(bot_t& bot){
+		impl = std::make_unique<impl_t>(bot);
 	}
 
-	void units_t::on_unit_show(BWAPI_Unit game_unit) {
+	units_module::~units_module() {
+	}
+
+	void units_module::on_unit_show(BWAPI_Unit game_unit) {
 		impl->events.emplace_back(event_t::t_show, game_unit);
 	}
-	void units_t::on_unit_hide(BWAPI_Unit game_unit) {
+	void units_module::on_unit_hide(BWAPI_Unit game_unit) {
 		impl->events.emplace_back(event_t::t_hide, game_unit);
 	}
-	void units_t::on_unit_create(BWAPI_Unit game_unit) {
+	void units_module::on_unit_create(BWAPI_Unit game_unit) {
 		impl->events.emplace_back(event_t::t_create, game_unit);
 	}
-	void units_t::on_unit_morph(BWAPI_Unit game_unit) {
+	void units_module::on_unit_morph(BWAPI_Unit game_unit) {
 		impl->events.emplace_back(event_t::t_morph, game_unit);
 	}
-	void units_t::on_unit_destroy(BWAPI_Unit game_unit) {
+	void units_module::on_unit_destroy(BWAPI_Unit game_unit) {
 		impl->events.emplace_back(event_t::t_destroy, game_unit);
 	}
-	void units_t::on_unit_renegade(BWAPI_Unit game_unit) {
+	void units_module::on_unit_renegade(BWAPI_Unit game_unit) {
 		impl->events.emplace_back(event_t::t_renegade, game_unit);
 	}
-	void units_t::on_unit_complete(BWAPI_Unit game_unit) {
+	void units_module::on_unit_complete(BWAPI_Unit game_unit) {
 		impl->events.emplace_back(event_t::t_complete, game_unit);
+	}
+
+	void units_module::init() {
+		impl->init();
 	}
 
 	namespace {
@@ -187,6 +262,13 @@ namespace tsc_bwai {
 	}
 
 	namespace unit_types {
+
+		unit_type* get_unit_type(BWAPI::UnitType game_unit_type) {
+			auto i = unit_type_map.find(game_unit_type.getID());
+			if (i == unit_type_map.end()) return nullptr;
+			return i->second;
+		}
+
 		void get(unit_type*& rv, BWAPI::UnitType game_unit_type) {
 			rv = get_unit_type_ptr(game_unit_type);
 			if (!rv) xcept("while initializing global unit types data: got null unit_type for '%s' (id %d)", game_unit_type.getName(), game_unit_type.getID());
@@ -345,3 +427,690 @@ namespace tsc_bwai {
 		}
 	}
 }
+
+namespace {
+	static const size_t npos = ~(size_t)0;
+}
+
+using namespace tsc_bwai;
+
+unit* units_impl::new_unit(BWAPI_Unit game_unit) {
+	unit_container.emplace_back();
+	unit* u = &unit_container.back();
+	game_unit->setClientInfo(u);
+
+	new_units_queue.push_back(u);
+
+	u->game_unit = game_unit;
+	u->owner = nullptr;
+	u->type = nullptr;
+	u->stats = nullptr;
+	u->building = nullptr;
+	u->controller = nullptr;
+	u->last_type_change_owner = nullptr;
+
+	u->visible = false;
+	u->dead = false;
+	u->creation_frame = bot.current_frame;
+	u->last_seen = bot.current_frame;
+	u->gone = false;
+	u->last_shown = bot.current_frame;
+
+	u->force_combat_unit = false;
+	//u->last_attacking = 0;
+	u->last_attacked = 0;
+	u->last_attack_target = nullptr;
+	u->prev_weapon_cooldown = 0;
+
+	u->is_attacking = false;
+	u->prev_is_attacking = false;
+	u->is_attacking_frame = 0;
+
+	u->container_indexes.fill(npos);
+
+	u->minerals_value = 0;
+	u->gas_value = 0;
+	u->high_priority_until = 0;
+	u->scan_me_until = 0;
+	u->strategy_high_priority_until = 0;
+	u->is_being_gathered = false;
+	u->is_being_gathered_begin_frame = 0;
+
+	update_unit_owner(u);
+	update_unit_type(u);
+
+	u->energy = u->stats->energy;
+	u->shields = u->stats->shields;
+	u->hp = u->stats->hp;
+	u->visible = game_unit->isVisible(bot.players.self);
+	update_unit_stuff(u);
+
+	return u;
+}
+
+unit* units_impl::get_unit(BWAPI_Unit game_unit) {
+	unit*u = (unit*)game_unit->getClientInfo();
+	if (!u) {
+		if (!game_unit->exists()) return nullptr;
+		u = new_unit(game_unit);
+	}
+	return u;
+}
+
+
+weapon_stats* units_impl::get_weapon_stats(BWAPI::WeaponType type, player_t*player) {
+	weapon_stats*& st = weapon_stats_map[std::make_tuple(type, player)];
+	if (st) return st;
+	weapon_stats_container.emplace_back();
+	st = &weapon_stats_container.back();
+	st->game_weapon_type = type;
+	st->player = player;
+	update_weapon_stats(st);
+	return st;
+};
+
+unit_stats* units_impl::get_unit_stats(unit_type*type, player_t*player) {
+	unit_stats*& st = unit_stats_map[std::make_tuple(type, player)];
+	if (st) return st;
+	unit_stats_container.emplace_back();
+	st = &unit_stats_container.back();
+	st->type = type;
+	st->player = player;
+	st->ground_weapon = nullptr;
+	st->air_weapon = nullptr;
+	auto gw = st->type->game_unit_type.groundWeapon();
+	if (gw != BWAPI::WeaponTypes::None) st->ground_weapon = get_weapon_stats(gw, player);
+	if (st->type->game_unit_type == BWAPI::UnitTypes::Protoss_Scarab) st->ground_weapon = nullptr;
+	if (st->type->game_unit_type == BWAPI::UnitTypes::Protoss_Reaver) {
+		st->ground_weapon = get_weapon_stats(BWAPI::WeaponTypes::Scarab, player);
+		st->ground_weapon->cooldown = 60;
+		st->ground_weapon->max_range = 32 * 8;
+	}
+	auto aw = st->type->game_unit_type.airWeapon();
+	if (aw != BWAPI::WeaponTypes::None) st->air_weapon = get_weapon_stats(aw, player);
+	update_stats(st);
+	return st;
+}
+
+
+void units_impl::update_unit_container(unit* u, a_vector<unit*>& cont, bool contain) {
+	size_t idx = &cont - &bot.units.unit_containers[0];
+	size_t&u_idx = u->container_indexes[idx];
+	if (contain && u_idx == npos) {
+		u_idx = cont.size();
+		cont.push_back(u);
+	}
+	if (!contain && u_idx != npos) {
+		if (u_idx != cont.size() - 1) {
+			cont[cont.size() - 1]->container_indexes[idx] = u_idx;
+			std::swap(cont[cont.size() - 1], cont[u_idx]);
+		}
+		cont.pop_back();
+		u_idx = npos;
+	}
+}
+
+void units_impl::update_unit_owner(unit* u) {
+	u->owner = bot.players.get_player(u->game_unit->getPlayer());
+	if (u->type) u->stats = get_unit_stats(u->type, u->owner);
+}
+
+void units_impl::update_unit_value(unit* u, unit_type* from, unit_type* to) {
+	if (from == to) return;
+	double min, gas;
+	std::tie(min, gas) = get_unit_value(bot, from, to);
+	double free_min = 0;
+	if (from == nullptr) {
+		if (to->is_resource_depot && ++u->owner->resource_depots_seen <= 1) {
+			if (to->race == race_zerg) free_min += 300;
+			else free_min += 400;
+		}
+		if (to->is_worker && ++u->owner->workers_seen <= 4) {
+			free_min += 50;
+		}
+	}
+	u->owner->minerals_spent += (min - free_min) - u->minerals_value;
+	u->owner->gas_spent += gas - u->gas_value;
+	u->minerals_value += (min - free_min);
+	u->gas_value += gas;
+}
+
+void units_impl::update_unit_type(unit* u) {
+	unit_type* ut = get_unit_type(u->game_unit->getType());
+	if (ut == u->type) return;
+	if (u->last_type_change_owner && u->owner != u->last_type_change_owner && u->type != unit_types::vespene_geyser) {
+		u->minerals_value = 0;
+		u->gas_value = 0;
+	} else {
+		if (ut == unit_types::vespene_geyser) {
+			u->minerals_value = 0;
+			u->gas_value = 0;
+		} else update_unit_value(u, u->type == unit_types::vespene_geyser ? nullptr : u->type, ut);
+	}
+	if (u->type) unit_type_changes_queue.emplace_back(u, u->type);
+	u->type = ut;
+	u->stats = get_unit_stats(u->type, u->owner);
+	if (ut->is_building) {
+		if (!u->building) {
+			unit_building_container.emplace_back();
+			u->building = &unit_building_container.back();
+			u->building->u = u;
+			u->building->building_addon_frame = 0;
+			u->building->is_liftable_wall = false;
+			u->building->nobuild_until = 0;
+		}
+	} else u->building = nullptr;
+
+	if (u->owner->random) {
+		if (u->type->race != race_unknown) {
+			u->owner->race = u->type->race;
+			u->owner->random = false;
+		}
+	}
+}
+void units_impl::update_weapon_stats(weapon_stats*st) {
+
+	auto& gw = st->game_weapon_type;
+	auto& gp = st->player->game_player;
+
+	st->damage = gw.damageAmount() + (gp->getUpgradeLevel(gw.upgradeType())*gw.damageBonus())*gw.damageFactor();
+	st->cooldown = gw.damageCooldown(); // FIXME: adrenal glands
+	st->min_range = gw.minRange();
+	st->max_range = gp->weaponMaxRange(gw);
+	st->targets_air = gw.targetsAir();
+	st->targets_ground = gw.targetsGround();
+	st->damage_type = weapon_stats::damage_type_none;
+	if (gw.damageType() == BWAPI::DamageTypes::Concussive) st->damage_type = weapon_stats::damage_type_concussive;
+	if (gw.damageType() == BWAPI::DamageTypes::Normal) st->damage_type = weapon_stats::damage_type_normal;
+	if (gw.damageType() == BWAPI::DamageTypes::Explosive) st->damage_type = weapon_stats::damage_type_explosive;
+	st->explosion_type = weapon_stats::explosion_type_none;
+	if (gw.explosionType() == BWAPI::ExplosionTypes::Radial_Splash) st->explosion_type = weapon_stats::explosion_type_radial_splash;
+	if (gw.explosionType() == BWAPI::ExplosionTypes::Enemy_Splash) st->explosion_type = weapon_stats::explosion_type_enemy_splash;
+	if (gw.explosionType() == BWAPI::ExplosionTypes::Air_Splash) st->explosion_type = weapon_stats::explosion_type_air_splash;
+	st->inner_splash_radius = gw.innerSplashRadius();
+	st->median_splash_radius = gw.medianSplashRadius();
+	st->outer_splash_radius = gw.outerSplashRadius();
+}
+void units_impl::update_stats(unit_stats* st) {
+
+	auto& gp = st->player->game_player;
+	auto& gu = st->type->game_unit_type;
+
+	st->max_speed = std::ceil(gp->topSpeed(gu) * 256) / 256.0;
+	st->max_speed += 20.0 / 256.0; // Verify this: some(all?) speeds in BWAPI seem to be too low by this amount.
+	int acc = gu.acceleration();
+	st->acceleration = (double)acc / 256.0;
+	if (st->acceleration == 0 || acc == 1) st->acceleration = st->max_speed;
+	st->stop_distance = (double)gu.haltDistance() / 256.0;
+	st->turn_rate = (double)gu.turnRadius() / 128.0 * PI;
+
+	st->energy = (double)gp->maxEnergy(gu);
+	st->shields = (double)gu.maxShields();
+	st->hp = (double)gu.maxHitPoints();
+	st->armor = (double)gp->armor(gu);
+
+	st->sight_range = (double)gp->sightRange(gu);
+
+	st->ground_weapon_hits = gu.maxGroundHits();
+	if (gu == BWAPI::UnitTypes::Protoss_Reaver) st->ground_weapon_hits = 1;
+	if (st->ground_weapon_hits == 0 && st->ground_weapon) {
+		bot.log("warning: %s.maxGroundHits() returned 0 (setting to 1)\n", st->type->name);
+		st->ground_weapon_hits = 1;
+	}
+	st->air_weapon_hits = gu.maxAirHits();
+	if (st->air_weapon_hits == 0 && st->air_weapon) {
+		bot.log("warning: %s.maxAirHits() returned 0 (setting to 1)\n", st->type->name);
+		st->air_weapon_hits = 1;
+	}
+	if (st->ground_weapon) update_weapon_stats(st->ground_weapon);
+	if (st->air_weapon) update_weapon_stats(st->air_weapon);
+}
+void units_impl::update_unit_stuff(unit* u) {
+	bwapi_pos position = u->game_unit->getPosition();
+	if (!u->game_unit->exists()) xcept("attempt to update inaccessible unit");
+	if (u->game_unit->getID() < 0) xcept("(update) %s->getId() is %d\n", u->type->name, u->game_unit->getID());
+	if (u->visible != u->game_unit->isVisible(bot.players.self)) xcept("visible mismatch in unit %s (%d vs %d)", u->type->name, u->visible, u->game_unit->isVisible(bot.players.self));
+	if ((size_t)position.x >= (size_t)bot.grid.map_width || (size_t)position.y >= (size_t)bot.grid.map_height) xcept("unit %s is outside map", u->type->name);
+	u->pos.x = position.x;
+	u->pos.y = position.y;
+	u->hspeed = u->game_unit->getVelocityX();
+	u->vspeed = u->game_unit->getVelocityY();
+	u->speed = xy_typed<double>(u->hspeed, u->vspeed).length();
+	u->heading = u->game_unit->getAngle();
+	u->resources = u->game_unit->getResources();
+	u->initial_resources = u->game_unit->getInitialResources();
+	u->game_order = u->game_unit->getOrder();
+	u->is_carrying_minerals_or_gas = u->game_unit->isCarryingMinerals() || u->game_unit->isCarryingGas();
+	u->is_being_constructed = u->game_unit->isBeingConstructed();
+	u->is_completed = u->game_unit->isCompleted();
+	u->is_morphing = u->game_unit->isMorphing();
+	u->remaining_build_time = u->game_unit->getRemainingBuildTime();
+	u->remaining_train_time = u->game_unit->getRemainingTrainTime();
+	u->remaining_research_time = u->game_unit->getRemainingResearchTime();
+	u->remaining_upgrade_time = u->game_unit->getRemainingUpgradeTime();
+	u->remaining_whatever_time = std::max(u->remaining_build_time, std::max(u->remaining_train_time, std::max(u->remaining_research_time, u->remaining_upgrade_time)));
+	u->build_unit = u->game_unit->getBuildUnit() ? (unit*)u->game_unit->getBuildUnit()->getClientInfo() : nullptr;
+	u->train_queue.clear();
+	for (auto&v : u->game_unit->getTrainingQueue()) {
+		u->train_queue.push_back(get_unit_type(v));
+	}
+	u->addon = u->game_unit->getAddon() ? get_unit(u->game_unit->getAddon()) : nullptr;
+
+	u->cloaked = u->game_unit->isCloaked() || u->game_unit->isBurrowed();
+	u->burrowed = u->game_unit->isBurrowed();
+	u->detected = u->game_unit->isDetected();
+	u->invincible = u->game_unit->isInvincible();
+
+	if (!u->cloaked || u->detected) {
+		u->energy = u->game_unit->getEnergy();
+		u->shields = u->game_unit->getShields();
+		u->hp = u->game_unit->getHitPoints();
+	}
+	u->prev_weapon_cooldown = u->weapon_cooldown;
+	u->weapon_cooldown = std::max(u->game_unit->getGroundWeaponCooldown(), u->game_unit->getAirWeaponCooldown());
+
+	auto targetunit = [&](BWAPI_Unit gu) -> unit* {
+		if (!gu) return nullptr;
+		if (!gu->isVisible(bot.players.self)) return nullptr;
+		if (gu->getID() < 0) xcept("(target) %s->getId() is %d\n", gu->getType().getName(), gu->getID());
+		return get_unit(gu);
+	};
+	u->target = targetunit(u->game_unit->getTarget());
+	u->order_target = targetunit(u->game_unit->getOrderTarget());
+
+	if (u->weapon_cooldown > u->prev_weapon_cooldown) u->last_attacked = bot.current_frame;
+	if (u->game_order == BWAPI::Orders::AttackUnit || u->last_attacked == bot.current_frame) u->last_attack_target = u->order_target;
+
+	u->prev_is_attacking = u->is_attacking;
+	u->is_attacking = u->game_unit->isAttacking();
+	if (u->is_attacking != u->prev_is_attacking) u->is_attacking_frame = u->is_attacking ? bot.current_frame : 0;
+
+	u->loaded_units.clear();
+	for (auto&gu : u->game_unit->getLoadedUnits()) {
+		u->loaded_units.push_back(get_unit(gu));
+	}
+	u->is_loaded = u->game_unit->isLoaded();
+	u->loaded_into = u->game_unit->getTransport() ? get_unit(u->game_unit->getTransport()) : nullptr;
+	if (u->loaded_into) u->pos = u->loaded_into->pos;
+	u->is_flying = u->type->is_flyer || u->game_unit->isLifted();
+	u->spider_mine_count = u->game_unit->getSpiderMineCount();
+	u->has_nuke = u->game_unit->hasNuke();
+
+	// These timer functions seem to return a value in multiple of 8 frames
+	// (the timer is decremented every 8 frames)
+	u->lockdown_timer = u->game_unit->getLockdownTimer() * 8;
+	u->maelstrom_timer = u->game_unit->getMaelstromTimer() * 8;
+	u->stasis_timer = u->game_unit->getStasisTimer() * 8;
+	u->defensive_matrix_timer = u->game_unit->getDefenseMatrixTimer() * 8;
+	u->defensive_matrix_hp = u->game_unit->getDefenseMatrixPoints();
+	u->irradiate_timer = u->game_unit->getIrradiateTimer() * 8;
+	u->stim_timer = u->game_unit->getStimTimer() * 8;
+	u->plague_timer = u->game_unit->getPlagueTimer() * 8;
+	u->is_blind = u->game_unit->isBlind();
+
+	u->is_powered = bwapi_is_powered(u->game_unit);
+
+	bool is_being_gathered = u->game_unit->isBeingGathered();
+	if (is_being_gathered && !u->is_being_gathered) u->is_being_gathered_begin_frame = bot.current_frame;
+	u->is_being_gathered = is_being_gathered;
+
+	unit_building*b = u->building;
+	if (b) {
+		b->is_lifted = u->game_unit->isLifted();
+		bwapi_pos tile_pos = u->game_unit->getTilePosition();
+		if ((size_t)tile_pos.x >= (size_t)bot.grid.build_grid_width || (size_t)tile_pos.y >= (size_t)bot.grid.build_grid_height) {
+			bot.log(log_level_info, "error: unit %s has tile pos outside map (at %d %d)", u->type->name, tile_pos.x, tile_pos.y);
+			tile_pos.x = 0;
+			tile_pos.y = 0;
+		}
+		if ((size_t)tile_pos.x + u->type->tile_width > (size_t)bot.grid.build_grid_width || (size_t)tile_pos.y + u->type->tile_height > (size_t)bot.grid.build_grid_height) {
+			bot.log(log_level_info, "error: unit %s has tile pos outside map (at %d %d)", u->type->name, tile_pos.x, tile_pos.y);
+			tile_pos.x = 0;
+			tile_pos.y = 0;
+		}
+		b->build_pos.x = tile_pos.x * 32;
+		b->build_pos.y = tile_pos.y * 32;
+		if (b->last_registered_pos == xy()) b->last_registered_pos = b->build_pos;
+	}
+}
+void units_impl::update_building_squares() {
+	// This function is carefully written to recognize whenever a building
+	// is created, moved or destroyed in order to update build squares
+	// and pathing information.
+
+	// Check if any registered buildings have been moved or destroyed
+	for (size_t i = 0; i < registered_buildings.size(); ++i) {
+		unit_building* b = registered_buildings[i];
+		unit* u = b->u;
+		// b->u->building can change if a building morphs to a non-building, then back
+		// to a building before this code has a chance to run.
+		if (b->u->building != b || b->is_lifted || u->pos != b->walk_squares_occupied_pos || u->gone || u->dead) {
+			bot.log("unregistered %s, because %s, %d squares\n", u->type->name, b->u->building != b ? "unit changed" : b->is_lifted ? "lifted" : u->pos != b->walk_squares_occupied_pos ? "moved" : u->gone ? "gone" : u->dead ? "dead" : "?", b->walk_squares_occupied.size());
+			// walk squares contains a list of all buildings, so just erase this building.
+			for (auto* ws_p : b->walk_squares_occupied) {
+				find_and_erase(ws_p->buildings, u);
+			}
+			b->walk_squares_occupied.clear();
+			// build squares only contain one pointer, so only reset it if it's this building.
+			for (auto* bs_p : b->build_squares_occupied) {
+				if (bs_p->building == u) bs_p->building = nullptr;
+			}
+			b->build_squares_occupied.clear();
+			xy upper_left = u->pos - xy(u->type->dimension_left(), u->type->dimension_up());
+			xy bottom_right = u->pos + xy(u->type->dimension_right(), u->type->dimension_down());
+			// square_pathing needs to be told that something has changed in this area,
+			// so it can recalculate pathing information.
+			xcept("FIXME: bot.square_pathing.invalidate_area(upper_left, bottom_right);");
+			//bot.square_pathing.invalidate_area(upper_left, bottom_right);
+			// Remove the building from registered_buildings.
+			if (i != registered_buildings.size() - 1) std::swap(registered_buildings[registered_buildings.size() - 1], registered_buildings[i]);
+			registered_buildings.pop_back();
+			--i;
+		} else {
+			// Even if nothing has changed, the pointer in build_square can be set
+			// by other buildings, so change it back! :D
+			for (auto* bs_p : b->build_squares_occupied) {
+				if (bs_p->building != u) bs_p->building = u;
+			}
+		}
+	}
+
+	// Check if any buildings should be registered.
+	for (unit* u : bot.units.visible_buildings) {
+		unit_building* b = u->building;
+		if (!b) continue;
+		if (b->is_lifted) continue;
+
+		if (b->walk_squares_occupied.empty()) {
+			xy upper_left = u->pos - xy(u->type->dimension_left(), u->type->dimension_up());
+			xy bottom_right = u->pos + xy(u->type->dimension_right(), u->type->dimension_down());
+			for (int y = upper_left.y&-8; y <= bottom_right.y; y += 8) {
+				if ((size_t)y >= (size_t)bot.grid.map_height) continue;
+				for (int x = upper_left.x&-8; x <= bottom_right.x; x += 8) {
+					if ((size_t)x >= (size_t)bot.grid.map_width) continue;
+					auto& ws = bot.grid.get_walk_square(xy(x, y));
+					b->walk_squares_occupied.push_back(&ws);
+					ws.buildings.push_back(u);
+				}
+			}
+			for (int y = 0; y < u->type->tile_height; ++y) {
+				for (int x = 0; x < u->type->tile_width; ++x) {
+					auto&bs = bot.grid.get_build_square(u->building->build_pos + xy(x * 32, y * 32));
+					b->build_squares_occupied.push_back(&bs);
+					bs.building = u;
+				}
+			}
+			xcept("FIXME: bot.square_pathing.invalidate_area(upper_left, bottom_right);");
+			//bot.square_pathing.invalidate_area(upper_left, bottom_right);
+			registered_buildings.push_back(b);
+			b->walk_squares_occupied_pos = u->pos;
+			b->last_registered_pos = b->build_pos;
+			bot.log("registered %s, %d squares\n", u->type->name, b->walk_squares_occupied.size());
+		}
+	}
+}
+void units_impl::update_all_stats() {
+	for (auto&v : unit_stats_container) update_stats(&v);
+}
+
+
+void units_impl::update_units_task() {
+	// This is a high priority task, and the order things are done is important to
+	// maintain consistency in the various unit fields.
+
+	int last_update_stats = 0;
+	int last_refresh = 0;
+
+	a_vector<unit*> created_units, morphed_units, destroyed_units;
+
+	auto update_groups = [this](unit*u) {
+		update_unit_container(u, bot.units.all_units_ever, true);
+		update_unit_container(u, bot.units.live_units, !u->dead);
+		update_unit_container(u, bot.units.visible_units, u->visible);
+		update_unit_container(u, bot.units.invisible_units, !u->dead && !u->visible);
+		update_unit_container(u, bot.units.visible_buildings, u->visible && u->building);
+		update_unit_container(u, bot.units.resource_units, !u->dead && !u->gone && (u->type->is_minerals || u->type->is_gas));
+
+		bool is_unpowered = u->type->requires_pylon && !u->is_powered;
+		update_unit_container(u, bot.units.my_units, u->visible && u->owner == bot.players.my_player && !is_unpowered);
+		update_unit_container(u, bot.units.my_workers, u->visible && u->owner == bot.players.my_player && u->type->is_worker && u->is_completed && !u->is_morphing && !is_unpowered);
+		update_unit_container(u, bot.units.my_buildings, u->visible && u->owner == bot.players.my_player && u->building && !is_unpowered);
+		update_unit_container(u, bot.units.my_resource_depots, u->visible && u->owner == bot.players.my_player && u->type->is_resource_depot && !is_unpowered);
+		update_unit_container(u, bot.units.my_detector_units, u->visible && u->owner == bot.players.my_player && u->type->is_detector && !is_unpowered);
+
+		// What was this used for? Might've been analyzing replays..
+		//bool has_ever_been_shown = u->last_shown != 0; // Fails when the unit is *actually* shown on frame 0 though.
+		bool has_ever_been_shown = true;
+
+		update_unit_container(u, bot.units.enemy_units, !u->dead && u->owner->is_enemy && has_ever_been_shown);
+		update_unit_container(u, bot.units.visible_enemy_units, u->visible && u->owner->is_enemy && has_ever_been_shown);
+		update_unit_container(u, bot.units.enemy_buildings, !u->dead && !u->gone && u->building && u->owner->is_enemy && has_ever_been_shown);
+		update_unit_container(u, bot.units.enemy_detector_units, !u->dead && u->owner->is_enemy && u->type->is_detector && has_ever_been_shown);
+
+		update_unit_container(u, bot.units.rescuable_units, !u->dead && u->owner->rescuable);
+
+		bot.units.my_units_of_type.clear();
+		for (unit* u : bot.units.my_units) {
+			bot.units.my_units_of_type[u->type].push_back(u);
+		}
+		bot.units.my_completed_units_of_type.clear();
+		for (unit* u : bot.units.my_units) {
+			if (!u->is_completed) continue;
+			bot.units.my_completed_units_of_type[u->type].push_back(u);
+		}
+
+		// Calling get_unit_controller will set the u->controller field, which is
+		// required for all of our units.
+		if (u->owner == bot.players.my_player && !u->controller) bot.unit_controls.get_unit_controller(u);
+	};
+
+	while (true) {
+
+		// This loop must execute atomically with respect to other tasks
+		// (no yields).
+
+		// Because we need up-to-date visibility information, the build grid is
+		// updated from here.
+		bot.grid.update_build_grid();
+
+		// In replays, we generate the show and hide events manually.
+		if (bot.game->isReplay()) {
+			for (auto& game_unit : bot.game->getAllUnits()) {
+				unit* u = bot.units.get_unit(game_unit);
+				if (!u) continue;
+				if (!u->visible) {
+					if (game_unit->isVisible(bot.players.self)) events.emplace_back(event_t::t_show, game_unit);
+				} else {
+					if (!game_unit->isVisible(bot.players.self)) events.emplace_back(event_t::t_hide, game_unit);
+				}
+			}
+		}
+
+		while (!events.empty()) {
+			auto e = events.front();
+			events.pop_front();
+			unit* u = bot.units.get_unit(e.game_unit);
+			if (!u) {
+				bot.log("missed new unit %s\n", e.game_unit->getType().getName());
+				continue;
+			}
+			// These events are delayed, so e.g. a unit is not necessarily visible even though we are processing a show event.
+			u->visible = u->game_unit->isVisible(bot.players.self);
+			u->visible &= u->game_unit->exists(); // BWAPI bug: destroyed units are visible
+			auto* b = u->building;
+			switch (e.t) {
+			case event_t::t_show:
+				bot.log("show %s\n", u->type->name);
+				if (u->visible) update_unit_owner(u);
+				if (u->visible) update_unit_type(u);
+				u->last_shown = bot.current_frame;
+				update_stats(u->stats);
+				break;
+			case event_t::t_hide:
+				bot.log("hide %s\n", u->type->name);
+				// the unit is still visible, but will be invisible the next frame
+				if (u->visible) update_unit_stuff(u);
+				u->visible = false;
+				break;
+			case event_t::t_create:
+				created_units.push_back(u);
+				break;
+			case event_t::t_morph:
+				bot.log("morph %s -> %s\n", u->type->name, u->game_unit->getType().getName());
+				if (u->visible) update_unit_owner(u);
+				if (u->visible) update_unit_type(u);
+				morphed_units.push_back(u);
+				if (u->type == unit_types::extractor) u->owner->minerals_lost -= 50;
+				break;
+			case event_t::t_destroy:
+				bot.log("destroy %s\n", u->type->name);
+				if (u->visible) update_unit_stuff(u);
+				u->visible = false;
+				u->dead = true;
+				u->owner->minerals_lost += u->minerals_value;
+				u->owner->gas_lost += u->gas_value;
+				destroyed_units.push_back(u);
+				break;
+			case event_t::t_renegade:
+				if (u->visible) update_unit_owner(u);
+				break;
+				// 			case event_t::t_complete:
+				// 				log("%s completed\n",u->type->name);
+				// 				u->is_completed = true;
+				// 				break;
+			case event_t::t_refresh:
+				if (u->visible) update_unit_owner(u);
+				if (u->visible) update_unit_type(u);
+				if (u->visible) update_unit_stuff(u);
+				break;
+			}
+			//log("event %d - %s visible ? %d\n", e.t, u->type->name, u->visible);
+			if (b && u->building != b) update_building_squares();
+
+			update_groups(u);
+		}
+
+		if (bot.current_frame - last_refresh >= 90) {
+			last_refresh = bot.current_frame;
+			for (unit* u : bot.units.live_units) {
+				events.emplace_back(event_t::t_refresh, u->game_unit);
+			}
+		}
+
+		for (unit* u : bot.units.visible_units) {
+			if (!u->game_unit->exists()) {
+				// If BWAPI sends the hide and destroy events properly, then this should never trigger.
+				events.emplace_back(event_t::t_refresh, u->game_unit);
+				continue;
+			}
+			u->last_seen = bot.current_frame;
+			bool prev_is_completed = u->is_completed;
+			update_unit_stuff(u);
+
+			if (u->is_completed != prev_is_completed) update_groups(u);
+
+			if (u->gone) {
+				bot.log("%s is no longer gone\n", u->type->name);
+				u->gone = false;
+				//events.emplace_back(event_t::t_refresh, u->game_unit);
+				update_groups(u);
+
+				// 				if (u->type == unit_types::marine) {
+				// 					for (unit*e : enemy_buildings) {
+				// 						if (!e->is_completed || e->type != unit_types::bunker || e->owner != u->owner) continue;
+				// 						if (diag_distance(e->pos - u->pos) >= 32 * 4) continue;
+				// 						if (e->marines_loaded) --e->marines_loaded;
+				// 					}
+				// 				}
+			}
+		}
+
+		for (unit* u : bot.units.all_units_ever) {
+			//update_unit_container(u,my_workers,u->visible && u->owner==players::my_player && u->type->is_worker && u->is_completed && !u->is_morphing);
+
+			if (u->game_unit->getID() < 0) {
+				xcept("unit %p has invalid id %d\n", u->game_unit->getID());
+			}
+		}
+
+		auto is_visible_around = [&](xy pos) {
+			if (!bot.grid.is_visible(pos)) return false;
+			if (!bot.grid.is_visible(pos + xy(32, 0))) return false;
+			if (!bot.grid.is_visible(pos + xy(0, 32))) return false;
+			if (!bot.grid.is_visible(pos + xy(-32, 0))) return false;
+			if (!bot.grid.is_visible(pos + xy(0, -32))) return false;
+			return true;
+		};
+		auto has_detection_at = [&](xy pos) {
+			for (unit* u : bot.units.my_detector_units) {
+				if ((pos - u->pos).length() <= u->stats->sight_range) return true;
+			}
+			return false;
+		};
+
+		if (!bot.game->isReplay()) {
+			for (unit* u : bot.units.invisible_units) {
+				if (!u->gone) {
+					if (is_visible_around(u->pos) && (!u->burrowed || has_detection_at(u->pos))) {
+						bot.log("%s is gone\n", u->type->name);
+						u->gone = true;
+						events.emplace_back(event_t::t_refresh, u->game_unit);
+					}
+				}
+			}
+		}
+
+		if (bot.current_frame - last_update_stats >= 15 * 5) {
+			update_all_stats();
+		}
+
+		for (unit* u : created_units) {
+			for (auto& f : bot.units.on_create_callbacks) f(u);
+		}
+		created_units.clear();
+		for (unit* u : new_units_queue) {
+			for (auto& f : bot.units.on_new_unit_callbacks) f(u);
+		}
+		new_units_queue.clear();
+		for (unit* u : morphed_units) {
+			for (auto& f : bot.units.on_morph_callbacks) f(u);
+		}
+		morphed_units.clear();
+		for (auto& v : unit_type_changes_queue) {
+			for (auto& f : bot.units.on_type_change_callbacks) f(std::get<0>(v), std::get<1>(v));
+		}
+		unit_type_changes_queue.clear();
+		for (unit* u : destroyed_units) {
+			for (auto& f : bot.units.on_destroy_callbacks) f(u);
+		}
+		destroyed_units.clear();
+
+		// This code does not belong here.
+		// TODO: find a better spot to put this.
+		if (bot.current_frame - last_eval_gg >= 15 * 10 && !bot.dont_call_gg) {
+			last_eval_gg = bot.current_frame;
+			double enemy_army_supply = 0;
+			for (unit* u : bot.units.enemy_units) {
+				if (u->gone || u->type->is_worker) continue;
+				enemy_army_supply += u->type->required_supply;
+			}
+			static int gg_frame = 0;
+			bool call_gg = false;
+			if (bot.current_used_total_supply <= 5 && enemy_army_supply >= 20 && bot.current_minerals < 500) call_gg = true;
+			if (bot.current_used_total_supply <= 1 && enemy_army_supply >= 5 && bot.current_minerals < 50) call_gg = true;
+			if (!gg_frame && call_gg) {
+				gg_frame = bot.current_frame;
+				bot.game->sendText("gg");
+				bot.log("gg, i lost :(\n");
+			}
+			if (gg_frame && bot.current_frame >= gg_frame + 15 * 10) {
+				bot.game->leaveGame();
+			}
+		}
+
+		bot.multitasking.sleep(1);
+	}
+
+}
+
+

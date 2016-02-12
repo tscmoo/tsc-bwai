@@ -9,6 +9,10 @@
     <ClCompile Include="src\grid.cpp" />
     <ClCompile Include="src\bot.cpp" />
     <ClCompile Include="src\units.cpp" />
+    <ClCompile Include="src\upgrades.cpp" />
+    <ClCompile Include="src\players.cpp" />
+    <ClCompile Include="src\stats.cpp" />
+    <ClCompile Include="src\unit_controls.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="include">
@@ -47,6 +51,12 @@
       <Filter>include</Filter>
     </ClInclude>
     <ClInclude Include="src\include\bot.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="src\include\unit_controls.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="src\include\stats.h">
       <Filter>include</Filter>
     </ClInclude>
   </ItemGroup>
