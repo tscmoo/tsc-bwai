@@ -800,8 +800,7 @@ void units_impl::update_building_squares() {
 			xy bottom_right = u->pos + xy(u->type->dimension_right(), u->type->dimension_down());
 			// square_pathing needs to be told that something has changed in this area,
 			// so it can recalculate pathing information.
-			xcept("FIXME: bot.square_pathing.invalidate_area(upper_left, bottom_right);");
-			//bot.square_pathing.invalidate_area(upper_left, bottom_right);
+			bot.square_pathing.invalidate_area(upper_left, bottom_right);
 			// Remove the building from registered_buildings.
 			if (i != registered_buildings.size() - 1) std::swap(registered_buildings[registered_buildings.size() - 1], registered_buildings[i]);
 			registered_buildings.pop_back();
@@ -840,8 +839,7 @@ void units_impl::update_building_squares() {
 					bs.building = u;
 				}
 			}
-			xcept("FIXME: bot.square_pathing.invalidate_area(upper_left, bottom_right);");
-			//bot.square_pathing.invalidate_area(upper_left, bottom_right);
+			bot.square_pathing.invalidate_area(upper_left, bottom_right);
 			registered_buildings.push_back(b);
 			b->walk_squares_occupied_pos = u->pos;
 			b->last_registered_pos = b->build_pos;

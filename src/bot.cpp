@@ -33,9 +33,9 @@ namespace {
 		if (!global_data_initialized) {
 			std::lock_guard<std::mutex> l(init_global_data_mut);
 			if (!global_data_initialized) {
-				global_data_initialized = true;
 				unit_types::init_global_data(bot);
 				upgrade_types::init_global_data(bot);
+				global_data_initialized = true;
 			}
 		}
 	}
@@ -44,6 +44,9 @@ namespace {
 void tsc_bwai::bot_t::init() {
 
 	init_global_data_if_necessary(*this);
+
+	// The order of initialization here is important, since some modules requires
+	// others to be initialized.
 
 	players.init();
 

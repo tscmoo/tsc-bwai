@@ -75,6 +75,7 @@
     <ClCompile Include="src\bot.cpp" />
     <ClCompile Include="src\bwapi_inc.cpp" />
     <ClCompile Include="src\common.cpp" />
+    <ClCompile Include="src\flyer_pathing.cpp" />
     <ClCompile Include="src\grid.cpp" />
     <ClCompile Include="src\log.cpp" />
     <ClCompile Include="src\multitasking.cpp" />
@@ -89,11 +90,17 @@
     <ClInclude Include="src\include\bwapi_inc.h" />
     <ClInclude Include="src\include\common.h" />
     <ClInclude Include="src\include\containers.h" />
+    <ClInclude Include="src\include\dynamic_bitset.h" />
+    <ClInclude Include="src\include\flyer_pathing.h" />
     <ClInclude Include="src\include\grid.h" />
+    <ClInclude Include="src\include\intrusive_list.h" />
     <ClInclude Include="src\include\log.h" />
     <ClInclude Include="src\include\multitasking.h" />
     <ClInclude Include="src\include\multitasking_sync.h" />
     <ClInclude Include="src\include\players.h" />
+    <ClInclude Include="src\include\ranges.h" />
+    <ClInclude Include="src\include\resource_spots.h" />
+    <ClInclude Include="src\include\square_pathing.h" />
     <ClInclude Include="src\include\stats.h" />
     <ClInclude Include="src\include\units.h" />
     <ClInclude Include="src\include\unit_controls.h" />

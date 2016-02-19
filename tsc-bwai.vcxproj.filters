@@ -13,6 +13,7 @@
     <ClCompile Include="src\players.cpp" />
     <ClCompile Include="src\stats.cpp" />
     <ClCompile Include="src\unit_controls.cpp" />
+    <ClCompile Include="src\flyer_pathing.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="include">
@@ -57,6 +58,24 @@
       <Filter>include</Filter>
     </ClInclude>
     <ClInclude Include="src\include\stats.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="src\include\square_pathing.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="src\include\flyer_pathing.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="src\include\dynamic_bitset.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="src\include\intrusive_list.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="src\include\resource_spots.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="src\include\ranges.h">
       <Filter>include</Filter>
     </ClInclude>
   </ItemGroup>

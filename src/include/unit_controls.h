@@ -157,12 +157,12 @@ namespace tsc_bwai {
 		int last_gather_issued_frame = 0;
 		// The most recent frame a burrow order was issued.
 		int last_burrow = 0;
-		// Deprecated.
-// 		int last_pickup = 0;
-// 		int last_unload = 0;
-// 		double incoming_damage;
-// 		unit* pickup_to = nullptr;
-// 		int no_unload_until = 0;
+		// These fields are used by shuttle_micro.
+ 		int last_pickup = 0;
+		int last_unload = 0;
+		double incoming_damage;
+		unit* pickup_to = nullptr;
+		int no_unload_until = 0;
 	};
 
 	class unit_controls_module {
@@ -170,6 +170,13 @@ namespace tsc_bwai {
 
 		a_deque<unit_controller> unit_controller_container;
 
+		void move(unit_controller* c);
+		void move_away(unit_controller* c);
+		bool move_stuff_away_from_build_pos(xy build_pos, const unit_type* ut, unit_controller* builder);
+		void shuttle_micro(unit_controller* c);
+		void issue_gather_order(unit_controller* c);
+		void worker_micro(const a_vector<unit_controller*>& controllers);
+		void process(const a_vector<unit_controller*>& controllers);
 		void control_units_task();
 
 	public:
@@ -181,5 +188,4 @@ namespace tsc_bwai {
 	};
 
 }
-
 #endif

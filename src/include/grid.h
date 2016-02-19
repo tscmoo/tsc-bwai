@@ -138,6 +138,10 @@ namespace tsc_bwai {
 		// If the position is off the map, then the nearest valid build_square is
 		// returned.
 		build_square& get_build_square(xy pos);
+
+		// Returns a pointer to the build_square at the specified position.
+		// If the position is off the map, then nullptr is returned.
+		build_square* find_build_square(xy pos);
 		
 		// Returns whether the specified position is currently visible (not in fog
 		// of war).

@@ -9,6 +9,12 @@
 #include <BWApi.h>
 #include <BWAPI/Client.h>
 
+// Unfortunately, BWAPI headers includes windows.h
+#undef min
+#undef max
+#undef near
+#undef far
+
 #ifndef _DEBUG
 #pragma comment(lib,"BWAPI.lib")
 #pragma comment(lib,"BWAPIClient.lib")

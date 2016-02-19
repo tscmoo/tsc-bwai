@@ -12,8 +12,10 @@
 #include "grid.h"
 #include "stats.h"
 #include "units.h"
-
+#include "square_pathing.h"
+#include "flyer_pathing.h"
 #include "unit_controls.h"
+#include "resource_spots.h"
 
 namespace BWAPI {
 	class Game;
@@ -96,8 +98,10 @@ namespace tsc_bwai {
 		grid_module grid;
 		stats_module stats;
 		units_module units;
-
+		square_pathing_module square_pathing;
+		flyer_pathing_module flyer_pathing;
 		unit_controls_module unit_controls;
+		resource_spots_module resource_spots;
 
 		bot_t() :
 			multitasking(*this),
@@ -106,9 +110,34 @@ namespace tsc_bwai {
 			grid(*this),
 			stats(*this),
 			units(*this),
-
-			unit_controls(*this)
+			square_pathing(*this),
+			flyer_pathing(*this),
+			unit_controls(*this),
+			//resource_gathering(*this),
+			resource_spots(*this)
 		{}
+
+// 		grid::init();
+// 		stats::init();
+// 		units::init();
+// 		upgrades::init();
+// 		square_pathing::init();
+// 		unit_controls::init();
+// 		resource_gathering::init();
+// 		resource_spots::init();
+// 		creep::init();
+// 		pylons::init();
+// 		build_spot_finder::init();
+// 		build::init();
+// 		buildpred::init();
+// 		combat::init();
+// 		scouting::init();
+// 		get_upgrades::init();
+// 		wall_in::init();
+// 		strategy::init();
+// 		//patrec::init();
+// 		//test_stratm::init();
+// 		buildopt::init();
 
 		// This should be called once per frame, preferably from the onFrame handler.
 		void on_frame();

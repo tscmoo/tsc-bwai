@@ -35,10 +35,10 @@ namespace tsc_bwai {
 
 		return f;
 	}
-	int frames_to_reach(unit_stats* stats, double initial_speed, double distance) {
+	int frames_to_reach(const unit_stats* stats, double initial_speed, double distance) {
 		return frames_to_reach(initial_speed, stats->acceleration, stats->max_speed, stats->stop_distance, distance);
 	}
-	int frames_to_reach(unit*u, double distance) {
+	int frames_to_reach(const unit* u, double distance) {
 		return frames_to_reach(u->stats, u->speed, distance);
 	}
 
@@ -70,14 +70,14 @@ namespace tsc_bwai {
 		return xy(x, y);
 	}
 
-	double units_distance(unit*a, unit*b) {
+	double units_distance(const unit* a, const unit* b) {
 		return units_difference(a->pos, a->type->dimensions, b->pos, b->type->dimensions).length();
 	}
 
-	double units_distance(xy a_pos, unit*a, xy b_pos, unit*b) {
+	double units_distance(xy a_pos, const unit* a, xy b_pos, const unit* b) {
 		return units_difference(a_pos, a->type->dimensions, b_pos, b->type->dimensions).length();
 	}
-	double units_distance(xy a_pos, unit_type*at, xy b_pos, unit_type*bt) {
+	double units_distance(xy a_pos, const unit_type* at, xy b_pos, const unit_type* bt) {
 		return units_difference(a_pos, at->dimensions, b_pos, bt->dimensions).length();
 	}
 
@@ -89,35 +89,18 @@ namespace tsc_bwai {
 		return pos;
 	}
 
+	a_string short_type_name(const unit_type* type) {
+		if (type->game_unit_type == BWAPI::UnitTypes::Terran_Command_Center) return "CC";
+		if (type->game_unit_type == BWAPI::UnitTypes::Terran_Siege_Tank_Tank_Mode) return "Tank";
+		const a_string& s = type->name;
+		if (s.find("Terran ") == 0) return s.substr(7);
+		if (s.find("Protoss ") == 0) return s.substr(8);
+		if (s.find("Zerg ") == 0) return s.substr(5);
+		if (s.find("Terran_") == 0) return s.substr(7);
+		if (s.find("Protoss_") == 0) return s.substr(8);
+		if (s.find("Zerg_") == 0) return s.substr(5);
+		return s;
+	}
 
-// 	double units_pathing_distance(unit*a, unit*b, bool include_enemy_buildings = true) {
-// 		if (a->type->is_flyer) return units_difference(a->pos, a->type->dimensions, b->pos, b->type->dimensions).length();
-// 		double ud = units_difference(a->pos, a->type->dimensions, b->pos, b->type->dimensions).length();
-// 		if (ud <= 32) return ud;
-// 		auto&map = square_pathing::get_pathing_map(a->type, include_enemy_buildings ? square_pathing::pathing_map_index::no_enemy_buildings : square_pathing::pathing_map_index::default);
-// 		double d = square_pathing::get_distance(map, a->pos, b->pos);
-// 		if (d > 32 * 4) return d;
-// 		return ud;
-// 	}
-// 
-// 	double units_pathing_distance(unit_type*ut, unit*a, unit*b) {
-// 		if (ut->is_flyer) return units_difference(a->pos, a->type->dimensions, b->pos, b->type->dimensions).length();
-// 		double ud = units_difference(a->pos, a->type->dimensions, b->pos, b->type->dimensions).length();
-// 		if (ud <= 32) return ud;
-// 		auto&map = square_pathing::get_pathing_map(ut);
-// 		double d = square_pathing::get_distance(map, a->pos, b->pos);
-// 		if (d > 32 * 4) return d;
-// 		return ud;
-// 	}
-// 
-// 	double unit_pathing_distance(unit_type*ut, xy from, xy to) {
-// 		if (ut->is_flyer) return (to - from).length();
-// 		auto&map = square_pathing::get_pathing_map(ut);
-// 		return square_pathing::get_distance(map, from, to);
-// 		//return (from-to).length();
-// 	}
-// 	double unit_pathing_distance(unit*u, xy to) {
-// 		return unit_pathing_distance(u->type, u->pos, to);
-// 	}
 
 }

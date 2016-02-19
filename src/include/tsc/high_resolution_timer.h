@@ -1,8 +1,18 @@
 #ifndef TSC_HIGH_RESOLUTION_TIMER_H
 #define TSC_HIGH_RESOLUTION_TIMER_H
 
+#ifndef _WIN32
+#include <chrono>
+#endif
+
 namespace tsc {
 ;
+
+namespace win_detail {
+	using LARGE_INTEGER = int64_t;
+	extern "C" int __stdcall QueryPerformanceCounter(LARGE_INTEGER * lpPerformanceCount);
+	extern "C" int __stdcall QueryPerformanceFrequency(LARGE_INTEGER * lpFrequency);
+};
 
 #ifdef _WIN32
 struct high_resolution_timer {
@@ -11,23 +21,23 @@ struct high_resolution_timer {
 		reset();
 	}
 	void reset() {
-		QueryPerformanceFrequency(&(LARGE_INTEGER&)freq);
-		QueryPerformanceCounter(&(LARGE_INTEGER&)last_count);
+		win_detail::QueryPerformanceFrequency(&(win_detail::LARGE_INTEGER&)freq);
+		win_detail::QueryPerformanceCounter(&(win_detail::LARGE_INTEGER&)last_count);
 	}
 	int64_t count() {
 		int64_t count;
-		QueryPerformanceCounter(&(LARGE_INTEGER&)count);
+		win_detail::QueryPerformanceCounter(&(win_detail::LARGE_INTEGER&)count);
 		return count;
 	}
 	double elapsed() {
 		int64_t count;
-		QueryPerformanceCounter(&(LARGE_INTEGER&)count);
+		win_detail::QueryPerformanceCounter(&(win_detail::LARGE_INTEGER&)count);
 		return (double)(count-last_count) / freq;
 	}
 	double elapsed_and_reset() {
 		int64_t count;
-		QueryPerformanceCounter(&(LARGE_INTEGER&)count);
-		QueryPerformanceFrequency(&(LARGE_INTEGER&)freq);
+		win_detail::QueryPerformanceCounter(&(win_detail::LARGE_INTEGER&)count);
+		win_detail::QueryPerformanceFrequency(&(win_detail::LARGE_INTEGER&)freq);
 		double r = (double)(count-last_count) / freq;
 		last_count = count;
 		return r;

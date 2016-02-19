@@ -9,17 +9,9 @@
 #ifndef TSC_BWAI_COMMON_H
 #define TSC_BWAI_COMMON_H
 
-#ifdef _WIN32
-#include <windows.h>
-
-#undef min
-#undef max
-#undef near
-#undef far
-#endif
-
 #include "containers.h"
 #include "log.h"
+#include "ranges.h"
 #include "tsc/strf.h"
 #include "tsc/high_resolution_timer.h"
 #include <memory>
@@ -172,14 +164,35 @@ namespace tsc_bwai {
 			std::uniform_real_distribution<T> dis(0, v);
 			return dis(rng_engine);
 		}
+
+		// Returns an estimation of the distance the specified unit would have to move
+		// to reach the specified position, accounting for buildings and terrain if
+		// necessary, but not other units.
+		// If no path exists, std::numeric_limits<double>::infinity() is returned.
+		// If it is a flying unit, then a path will always exist.
+		// If the target position is on unwalkable terrain or is not valid for the
+		// unit, then it will be adjusted to a nearby valid position instead.
+		double unit_pathing_distance(const unit* u, xy to);
+		// Returns an estimation of the distance a unit of type ut would have to
+		// move to reach 'to' from 'from'.
+		// If either position is not valid for the unit type, then they will be
+		// adjusted to a nearby valid position.
+		double unit_pathing_distance(const unit_type* ut, xy from, xy to);
+		// Returns an estimation of the distance unit 'a' would have to move to reach
+		// unit 'b'.
+		double units_pathing_distance(const unit* a, const unit* b);
+		// Returns an estimation of the distance a unit of type 'ut' would have to
+		// move to reach unit 'b' from the position of unit 'a'.
+		double units_pathing_distance(const unit_type* ut, const unit* a, const unit* b);
+
 	};
 
 
 	// Estimates how long a unit with the specified stats would take to move
 	// distance (including stopping).
 	int frames_to_reach(double initial_speed, double acceleration, double max_speed, double stop_distance, double distance);
-	int frames_to_reach(unit_stats* stats, double initial_speed, double distance);
-	int frames_to_reach(unit*u, double distance);
+	int frames_to_reach(const unit_stats* stats, double initial_speed, double distance);
+	int frames_to_reach(const unit* u, double distance);
 
 	// Returns the distance from the origin, "moving" only along straight or
 	// diagonal lines. Used as a fast approximation to euclidean distance.
@@ -195,14 +208,16 @@ namespace tsc_bwai {
 
 	// Returns the distance between two units, as used for instance by weapon range
 	// calculations.
-	double units_distance(unit* a, unit* b);
-	double units_distance(xy a_pos, unit* a, xy b_pos, unit* b);
-	double units_distance(xy a_pos, unit_type* at, xy b_pos, unit_type* bt);
+	double units_distance(const unit* a, const unit* b);
+	double units_distance(xy a_pos, const unit* a, xy b_pos, const unit* b);
+	double units_distance(xy a_pos, unit_type* at, xy b_pos, const unit_type* bt);
 
 	// Returns the position in the rectangle [top_left, bottom_right] that is
 	// nearest to pos.
 	xy nearest_spot_in_square(xy pos, xy top_left, xy bottom_right);
 
+	// Returns some "short" name for the specified unit type.
+	a_string short_type_name(const unit_type* type);
 
 	template<typename T>
 	struct refcounter {
@@ -265,21 +280,6 @@ namespace tsc_bwai {
 			return *this;
 		}
 	};
-
-	template<int = 0>
-	a_string short_type_name(unit_type*type) {
-		if (type->game_unit_type == BWAPI::UnitTypes::Terran_Command_Center) return "CC";
-		if (type->game_unit_type == BWAPI::UnitTypes::Terran_Siege_Tank_Tank_Mode) return "Tank";
-		a_string&s = type->name;
-		if (s.find("Terran ") == 0) return s.substr(7);
-		if (s.find("Protoss ") == 0) return s.substr(8);
-		if (s.find("Zerg ") == 0) return s.substr(5);
-		if (s.find("Terran_") == 0) return s.substr(7);
-		if (s.find("Protoss_") == 0) return s.substr(8);
-		if (s.find("Zerg_") == 0) return s.substr(5);
-
-		return s;
-	}
 
 	struct no_value_t {};
 	static const no_value_t no_value;
@@ -365,7 +365,6 @@ namespace tsc_bwai {
 		}
 		return false;
 	}
-
 }
 
 #endif
