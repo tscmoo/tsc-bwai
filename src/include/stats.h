@@ -5,6 +5,8 @@
 #ifndef TSC_BWAI_STATS_H
 #define TSC_BWAI_STATS_H
 
+#include <cstdio>
+
 namespace tsc_bwai {
 
 	class bot_t;

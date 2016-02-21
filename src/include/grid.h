@@ -72,9 +72,9 @@ namespace tsc_bwai {
 		int blocked_until;
 	};
 
-	struct grid_module {
-
+	class grid_module {
 		bot_t& bot;
+	public:
 		grid_module(bot_t& bot) : bot(bot) {}
 
 		// Map dimensions, in pixels.
@@ -120,14 +120,6 @@ namespace tsc_bwai {
 		// Convenience variables which hold the highest possible build_grid x and y
 		// coordinates.
 		size_t build_grid_last_x, build_grid_last_y;
-
-		// A function object that returns the build grid index for a specified
-		// coordinate.
-// 		struct build_grid_indexer {
-// 			size_t operator()(xy pos) const {
-// 				return (unsigned)pos.x / 32 + (unsigned)pos.y / 32 * build_grid_width;
-// 			}
-// 		};
 
 		// Returns the index into build_grid of the specified build_square.
 		size_t build_square_index(const build_square&bs);

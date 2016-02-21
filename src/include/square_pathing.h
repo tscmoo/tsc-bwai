@@ -3,6 +3,9 @@
 // distances and paths between places.
 //
 
+#ifndef TSC_BWAI_SQUARE_PATHING_H
+#define TSC_BWAI_SQUARE_PATHING_H
+
 #include "common.h"
 #include "dynamic_bitset.h"
 
@@ -14,7 +17,7 @@ namespace tsc_bwai {
 
 		struct path_node {
 			xy pos;
-			a_vector<path_node*> neighbors;
+			a_vector<const path_node*> neighbors;
 			size_t root_index;
 		};
 
@@ -23,13 +26,13 @@ namespace tsc_bwai {
 		struct pathing_map;
 
 		struct closed_t {
-			closed_t*prev;
-			path_node*node;
+			closed_t* prev;
+			const path_node* node;
 			double distance;
 		};
 		struct open_t {
-			closed_t*prev;
-			path_node*node;
+			closed_t* prev;
+			const path_node* node;
 			double distance;
 			double est_distance;
 			bool operator<(const open_t& n) const {
@@ -37,40 +40,6 @@ namespace tsc_bwai {
 				return distance > n.distance;
 			}
 		};
-
-		namespace detail {
-			struct pathing_map {
-				bool initialized = false;
-				std::array<int, 4> dimensions;
-				unit_type* ut;
-				pathing_map_index index;
-				bool include_enemy_buildings = true;
-				bool include_liftable_wall = false;
-
-				dynamic_bitset walkable;
-
-				a_vector<path_node> path_nodes;
-				a_vector<path_node*> nearest_path_node;
-				bool path_nodes_requires_update = false;
-				bool update_path_nodes = false;
-				int update_path_nodes_frame = 0;
-				int last_update_path_nodes_frame = 0;
-
-				a_multimap<std::pair<size_t, size_t>, unit*> nydus_canals;
-
-				struct cached_distance_hash {
-					size_t operator()(const std::tuple<path_node*, path_node*>&v) const {
-						return std::hash<path_node*>()(std::get<0>(v)) ^ std::hash<path_node*>()(std::get<1>(v));
-					}
-				};
-
-				a_unordered_map<std::tuple<path_node*, path_node*>, std::tuple<path_node*, path_node*, double>, cached_distance_hash> cached_distance;
-
-				size_t path_node_index(path_node&n) {
-					return &n - path_nodes.data();
-				}
-			};
-		}
 
 	};
 	using namespace square_pathing;
@@ -96,9 +65,10 @@ namespace tsc_bwai {
 		void invalidate_area(xy from, xy to);
 
 		pathing_map& get_pathing_map(const unit_type* ut, pathing_map_index index = pathing_map_index::default);
+		size_t nearest_path_node_index(xy pos);
 		xy get_pos_in_square(xy pos, const unit_type* ut);
-		path_node* get_nearest_path_node(const pathing_map& map, xy pos);
-		std::pair<path_node*, path_node*> get_nearest_path_nodes(const pathing_map& map, xy a, xy b);
+		const path_node* get_nearest_path_node(const pathing_map& map, xy pos);
+		std::pair<const path_node*, const path_node*> get_nearest_path_nodes(const pathing_map& map, xy a, xy b);
 		xy get_nearest_node_pos(const unit_type* ut, xy pos);
 		xy get_nearest_node_pos(const unit* u);
 		bool unit_can_reach(const unit_type* ut, xy from, xy to, pathing_map_index index = pathing_map_index::default);
@@ -106,19 +76,25 @@ namespace tsc_bwai {
 
 		double get_distance(const pathing_map& map, xy from_pos, xy to_pos);
 
-		a_deque<path_node*> find_path(const pathing_map& map, const path_node* from, const path_node* to);
-		a_deque<path_node*> find_path(const pathing_map& map, xy from, xy to);
+		a_deque<const path_node*> find_path(const pathing_map& map, const path_node* from, const path_node* to);
+		a_deque<const path_node*> find_path(const pathing_map& map, xy from, xy to);
 
 		xy get_go_to_along_path(const unit* u, const a_deque<xy>& path, unit** wall_building = nullptr, xy preferred_go_to = xy());
 
 		xy get_go_to_along_path_and_lift_wall(const unit* u, const a_deque<xy>& path, xy preferred_go_to = xy());
 
-		xy get_move_to(unit* u, xy goal, int priority, xy last_move_to_pos);
+		xy get_move_to(const unit* u, xy goal, int priority, xy last_move_to_pos);
 
-		unit* get_nydus_canal_from_to(pathing_map& map, xy from, xy to);
+		unit* get_nydus_canal_from_to(const pathing_map& map, xy from, xy to);
 
-		class impl_t;
-		std::unique_ptr<impl_t> impl;
+		bool pathing_map_walkable(const pathing_map& map, size_t index);
+
+		bool has_any_path_nodes(const pathing_map& map);
+
+		void init();
+
+		//class impl_t;
+		//std::unique_ptr<impl_t> impl;
 		square_pathing_module(bot_t& bot);
 		~square_pathing_module();
 
@@ -128,7 +104,36 @@ namespace tsc_bwai {
 
 		size_t walkmap_width;
 		size_t walkmap_height;
+
+		size_t nearest_path_node_width;
+		size_t nearest_path_node_height;
+
+		dynamic_bitset test_walkable;
+
+		a_list<pathing_map> all_pathing_maps;
+
+		std::array<a_unordered_map<const unit_type*, pathing_map*>, 3> pathing_map_for_unit_type;
+
+		a_vector<std::tuple<xy, xy>> invalidation_queue;
+
+		size_t force_field_size = 32;
+		size_t force_field_grid_width;
+		size_t force_field_grid_height;
+		a_vector<std::tuple<int, int, double, const unit*>> force_field;
+
+		a_deque<xy> render_node_path;
+		a_deque<xy> render_path;
+
 		size_t walk_pos_index(xy pos);
+		size_t force_field_index(xy pos);
+			
+		void update_nydus_canals(pathing_map& map);
+
+		void update_maps_task();
+		void update_nydus_canals_task();
+
+		void update_map(pathing_map& map, xy from, xy to);
+		void generate_path_nodes(pathing_map& map);
 
 		template<typename node_data_t, typename goal_T>
 		bool call_goal(goal_T&&goal, xy pos, const node_data_t&n) {
@@ -210,7 +215,7 @@ namespace tsc_bwai {
 				open.pop();
 
 				closed.push_back({ cur.prev, cur.pos, cur.nd });
-				closed_t&closed_node = closed.back();
+				closed_t& closed_node = closed.back();
 
 				if (set_as_best_distance_node) best_distance_node = &closed_node;
 
@@ -224,7 +229,7 @@ namespace tsc_bwai {
 					size_t index = walk_pos_index(npos);
 					if (visited.test(index)) return false;
 					visited.set(index);
-					if (!((detail::pathing_map&)map).walkable.test(index)) return false;
+					if (!pathing_map_walkable(map, index)) return false;
 					node_data_t nd = closed_node.nd;
 					if (!call_pred(pred, cur.pos, npos, nd)) return false;
 
@@ -256,6 +261,51 @@ namespace tsc_bwai {
 			return r;
 		}
 
+		template<typename goal_F>
+		void find_path(const pathing_map& map, const path_node* from, const path_node* to, xy from_pos, xy to_pos, goal_F&& goal) {
+
+			a_list<closed_t> closed;
+			std::priority_queue<open_t, a_vector<open_t>> open;
+			dynamic_bitset visited(map.path_nodes.size());
+
+			open.push({ nullptr, from, 0.0, 0.0 });
+			visited.set(map.path_node_index(*from));
+
+			int iterations = 0;
+			while (!open.empty()) {
+				++iterations;
+
+				open_t cur = open.top();
+				if (cur.node == to) {
+					goal(cur);
+					break;
+				}
+				open.pop();
+
+				closed.push_back({ cur.prev, cur.node, cur.distance });
+				closed_t&closed_node = closed.back();
+
+				for (auto*n : cur.node->neighbors) {
+					size_t index = map.path_node_index(*n);
+					if (visited.test(index)) continue;
+					visited.set(index);
+
+					double d;
+					xy n_pos = n->pos;
+					if (n == to) n_pos = to_pos;
+					if (cur.node == from) d = diag_distance(n_pos - from_pos);
+					else d = diag_distance(n_pos - cur.node->pos);
+
+					double distance = cur.distance + d;
+					double est_distance = distance + diag_distance(n->pos - to->pos);
+					open.push({ &closed_node, n, distance, est_distance });
+				}
+
+			}
+
+		}
 	};
 
 };
+
+#endif

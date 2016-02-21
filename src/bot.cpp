@@ -14,6 +14,8 @@ void tsc_bwai::bot_t::on_frame() {
 
 	multitasking.resume();
 
+	render.render();
+
 	if (current_frame >= 30 && !send_text_queue.empty()) {
 		game->sendText("%s", send_text_queue.front().c_str());
 		send_text_queue.pop_front();
@@ -48,6 +50,7 @@ void tsc_bwai::bot_t::init() {
 	// The order of initialization here is important, since some modules requires
 	// others to be initialized.
 
+	render.init();
 	players.init();
 
 	for (auto& v : game->getStartLocations()) {
@@ -58,10 +61,10 @@ void tsc_bwai::bot_t::init() {
 	grid.init();
 	stats.init();
 	units.init();
-	//square_pathing.init();
+	square_pathing.init();
 	unit_controls.init();
 	//resource_gathering.init();
-	//resource_spots.init();
+	resource_spots.init();
 	//creep.init();
 	//pylons.init();
 	//build_spot_finder.init();

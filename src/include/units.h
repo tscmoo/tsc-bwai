@@ -8,6 +8,7 @@
 
 #include "common.h"
 #include "bwapi_inc.h"
+#include <functional>
 
 namespace tsc_bwai {
 
@@ -271,7 +272,8 @@ namespace tsc_bwai {
 		// Get the unit associated with the specified BWAPI unit.
 		unit* get_unit(BWAPI_Unit game_unit);
 
-
+		// Get the unit stats associated with the specified unit and player.
+		unit_stats* get_unit_stats(unit_type* type, player_t* player);
 
 		// This should be called from the BWAPI onUnitShow handler.
 		void on_unit_show(BWAPI_Unit game_unit);

@@ -41,7 +41,7 @@ namespace tsc_bwai {
 		return get_walk_square(pos).walkable;
 	}
 
-	size_t grid_module::build_square_index(const build_square&bs) {
+	size_t grid_module::build_square_index(const build_square& bs) {
 		return &bs - build_grid.data();
 	}
 
@@ -57,6 +57,12 @@ namespace tsc_bwai {
 		if (x > build_grid_last_x) x = build_grid_last_x;
 		if (y > build_grid_last_y) y = build_grid_last_y;
 		return build_grid[x + y*build_grid_width];
+	}
+
+	build_square* grid_module::find_build_square(xy pos) {
+		if ((size_t)pos.x >= (size_t)map_width) return nullptr;
+		if ((size_t)pos.y >= (size_t)map_height) return nullptr;
+		return &build_grid[(size_t)pos.x / 32 + (size_t)pos.y / 32 * build_grid_width];
 	}
 
 	bool grid_module::is_visible(xy pos) {

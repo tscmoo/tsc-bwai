@@ -2,6 +2,12 @@
 // This file implements intrusive_list
 //
 
+#ifndef TSC_BWAI_INTRUSIVE_LIST
+#define TSC_BWAI_INTRUSIVE_LIST
+
+#include <utility>
+#include <iterator>
+
 namespace tsc_bwai {
 
 	template<typename T, std::pair<T*, T*> T::* link_ptr>
@@ -258,3 +264,5 @@ namespace tsc_bwai {
 	};
 
 }
+
+#endif

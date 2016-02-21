@@ -50,7 +50,6 @@ namespace tsc_bwai {
 				task_id join_task = invalid_task_id;
 				a_vector<task_id> joiners;
 				const char* name = nullptr;
-				bot_t* bot;
 			};
 
 			a_vector<scheduled_task> tasks;
@@ -82,7 +81,7 @@ namespace tsc_bwai {
 				}
 			}
 
-			void resume_task(scheduled_task*t) {
+			void resume_task(scheduled_task* t) {
 				current_task = t;
 				tsc::ut_impl::switch_to(t->thread);
 			}
@@ -115,11 +114,11 @@ namespace tsc_bwai {
 					if (switch_to->sleep_until) switch_to->sleep_until = 0;
 					next_schedule_time = now + schedule_time_slice;
 					if (switch_to == current_task) {
-						//bot.log("%g: schedule() best task was current task (%d), next_schedule_time is %g\n",now,get_task_id(switch_to),next_schedule_time);
+						//bot.log("%g: schedule() best task was current task (%d), next_schedule_time is %g\n", now, get_task_id(switch_to), next_schedule_time);
 						if (current_task->raise_signal) check_signals();
 						return true;
 					}
-					//bot.log("%g: schedule() switching to task %d, next_schedule_time is %g\n",now,get_task_id(switch_to),next_schedule_time);
+					//bot.log("%g: schedule() switching to task %d, next_schedule_time is %g\n", now, get_task_id(switch_to), next_schedule_time);
 					resume_task(switch_to);
 					if (current_task && current_task->raise_signal) check_signals();
 					return true;
@@ -272,6 +271,19 @@ namespace tsc_bwai {
 					tasks[id].raise_signal = scheduled_task::sig_term;
 				}
 			}
+
+			a_map<task_id, double> get_all_cpu_times() {
+				a_map<task_id, double> r;
+				for (task_id id : running_tasks) {
+					scheduled_task& t = tasks[id];
+					r[id] = t.cpu_time;
+				}
+				return r;
+			}
+
+			a_string get_name(task_id id) {
+				return tasks[id].name;
+			}
 		};
 
 		task_id multitasking_module::spawn(double prio, std::function<void()> f, const char*name) {
@@ -315,9 +327,28 @@ namespace tsc_bwai {
 			impl->terminate_all();
 			impl->dont_yield = true;
 			impl->dont_spawn = true;
+			tsc::ut_impl::enter(impl->main_ut);
 			while (impl->running_tasks.any()) impl->resume();
+			tsc::ut_impl::leave(impl->main_ut);
 			impl->resume();
 			if (impl->running_tasks.any()) xcept("internal error: tasks still running after terminate");
+		}
+
+		double multitasking_module::time() {
+			if (impl->current_task) return impl->time();
+			else return impl->reference_time;
+		}
+
+		double multitasking_module::get_last_frame_time() {
+			return impl->last_frame_time;
+		}
+
+		a_map<task_id, double> multitasking_module::get_all_cpu_times() {
+			return impl->get_all_cpu_times();
+		}
+
+		a_string multitasking_module::get_name(task_id id) {
+			return impl->get_name(id);
 		}
 
 		multitasking_module::multitasking_module(bot_t& bot) {

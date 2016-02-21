@@ -6,18 +6,20 @@
 #ifndef TSC_BWAI_RESOURCE_SPOTS_H
 #define TSC_BWAI_RESOURCE_SPOTS_H
 
+#include "common.h"
 #include "intrusive_list.h"
 
 namespace tsc_bwai {
 
 	class bot_t;
+	struct unit;
 
 	namespace resource_spots {
 
 		struct spot;
 		struct resource_t {
 			std::pair<resource_t*, resource_t*> link, live_link;
-			unit* u;
+			const unit* u;
 			bool dead;
 			int live_frame;
 
@@ -46,11 +48,24 @@ namespace tsc_bwai {
 
 	class resource_spots_module {
 		bot_t& bot;
-	public:
 
+		a_list<resource_spots::resource_t> all_resources;
+		intrusive_list<resource_spots::resource_t, void, &resource_spots::resource_t::live_link> live_resources, dead_resources;
+		a_unordered_map<const unit*, resource_spots::resource_t*> unit_resource_map;
+
+		void update_spots_pos();
+		void update_incomes();
+		void update_spots();
+		void resource_spots_task();
+		void render();
+	public:
+		int last_update;
 		a_list<resource_spots::spot> spots;
 
 		resource_spots_module(bot_t& bot) : bot(bot) {}
+
+
+		void init();
 	};
 }
 

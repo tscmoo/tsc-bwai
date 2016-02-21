@@ -6,6 +6,7 @@
 #define TSC_BWAI_BOT_H
 
 #include "multitasking.h"
+#include "render.h"
 #include "common.h"
 #include "log.h"
 #include "players.h"
@@ -92,6 +93,7 @@ namespace tsc_bwai {
 		void send_text(const a_string& str);
 
 		multitasking::multitasking_module multitasking;
+		render_module render;
 		common_module common;
 		log_module log;
 		players_module players;
@@ -105,6 +107,8 @@ namespace tsc_bwai {
 
 		bot_t() :
 			multitasking(*this),
+			render(*this),
+			common(*this),
 			log(*this),
 			players(*this),
 			grid(*this),

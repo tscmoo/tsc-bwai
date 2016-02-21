@@ -23,6 +23,7 @@
 #ifndef TSC_BWAI_MULTITASKING_H
 #define TSC_BWAI_MULTITASKING_H
 
+#include "common.h"
 #include <exception>
 #include <functional>
 #include <memory>
@@ -119,6 +120,23 @@ namespace tsc_bwai {
 			// Terminates all tasks, and waits until no tasks are running.
 			// Undefined behavior if called from a running task.
 			void stop();
+
+			// Returns the current "time", which is a counter in seconds, 
+			// counting upwards as long as a task is actively running (i.e.
+			// paused outside of resume()).
+			double time();
+
+			// Returns (in seconds) the amount of time we used during the last
+			// call to resume. This value should on average not exceed
+			// desired_frame_time, though it depends on how often tasks yield.
+			double get_last_frame_time();
+
+			// Returns a map of task, cpu time for each task. Just a helper function
+			// for render.
+			a_map<task_id, double> get_all_cpu_times();
+
+			// Returns the name of the specified task.
+			a_string get_name(task_id id);
 
 			struct impl_t;
 			std::unique_ptr<impl_t> impl;

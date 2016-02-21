@@ -10,7 +10,6 @@
 #define TSC_BWAI_COMMON_H
 
 #include "containers.h"
-#include "log.h"
 #include "ranges.h"
 #include "tsc/strf.h"
 #include "tsc/high_resolution_timer.h"
@@ -23,6 +22,7 @@ namespace tsc_bwai {
 	struct unit;
 	struct unit_stats;
 	struct unit_type;
+	class bot_t;
 
 	struct xcept_t : std::exception {
 		a_string str;
@@ -149,7 +149,11 @@ namespace tsc_bwai {
 	typedef xy_typed<int> xy;
 
 
-	struct common_module {
+	class common_module {
+		bot_t& bot;
+	public:
+		common_module(bot_t& bot) : bot(bot) {}
+
 		std::default_random_engine rng_engine;
 
 		// Returns a random integer in the range [0, v)
@@ -210,7 +214,7 @@ namespace tsc_bwai {
 	// calculations.
 	double units_distance(const unit* a, const unit* b);
 	double units_distance(xy a_pos, const unit* a, xy b_pos, const unit* b);
-	double units_distance(xy a_pos, unit_type* at, xy b_pos, const unit_type* bt);
+	double units_distance(xy a_pos, const unit_type* at, xy b_pos, const unit_type* bt);
 
 	// Returns the position in the rectangle [top_left, bottom_right] that is
 	// nearest to pos.

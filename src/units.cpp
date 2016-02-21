@@ -35,9 +35,6 @@ namespace tsc_bwai {
 		a_vector<unit_building*> registered_buildings;
 
 		unit* new_unit(BWAPI_Unit game_unit);
-		
-		weapon_stats* get_weapon_stats(BWAPI::WeaponType type, player_t*player);
-		unit_stats* get_unit_stats(unit_type* type, player_t* player);
 
 		void update_unit_container(unit* u, a_vector<unit*>& cont, bool contain);
 
@@ -55,23 +52,28 @@ namespace tsc_bwai {
 
 		int last_eval_gg = 0;
 
+		a_unordered_map<BWAPI_Bullet, int> bullet_timestamps;
+
 		// This task is responsible for updating all information about units, unit types,
 		// unit stats and weapon stats (and unit containers).
 		// It also handles events, since that ties into updating unit information.
 		void update_units_task();
 
+		// This task updates information in build_squares to reflect landed buildings,
+		// used by pathfinding.
+		void update_buildings_squares_task();
 
-		void update_buildings_squares_task() {
-		}
-
-		void update_projectile_stuff_task() {
-
-		}
+		// This task handles projectile thingies, which currently is only recognizing
+		// bullets that come out of bunkers to identify how many marines are loaded
+		// in them.
+		void update_projectile_stuff_task();
 
 	public:
 		// All (BWAPI) events that are queued up for processing.
 		a_deque<event_t> events;
 
+		weapon_stats* get_weapon_stats(BWAPI::WeaponType type, player_t*player);
+		unit_stats* get_unit_stats(unit_type* type, player_t* player);
 		unit* get_unit(BWAPI_Unit game_unit);
 
 		units_impl(bot_t& bot) : bot(bot) {}
@@ -93,6 +95,10 @@ namespace tsc_bwai {
 
 	unit* units_module::get_unit(BWAPI_Unit game_unit) {
 		return impl->get_unit(game_unit);
+	}
+
+	unit_stats* units_module::get_unit_stats(unit_type* type, player_t* player) {
+		return impl->get_unit_stats(type, player);
 	}
 
 	units_module::units_module(bot_t& bot){
@@ -509,7 +515,7 @@ weapon_stats* units_impl::get_weapon_stats(BWAPI::WeaponType type, player_t*play
 	return st;
 };
 
-unit_stats* units_impl::get_unit_stats(unit_type*type, player_t*player) {
+unit_stats* units_impl::get_unit_stats(unit_type* type, player_t* player) {
 	unit_stats*& st = unit_stats_map[std::make_tuple(type, player)];
 	if (st) return st;
 	unit_stats_container.emplace_back();
@@ -851,6 +857,59 @@ void units_impl::update_all_stats() {
 	for (auto&v : unit_stats_container) update_stats(&v);
 }
 
+void units_impl::update_buildings_squares_task() {
+	while (true) {
+		update_building_squares();
+
+		bot.multitasking.sleep(4);
+	}
+}
+
+void units_impl::update_projectile_stuff_task() {
+	while (true) {
+		a_vector<unit*> bunkers;
+		for (unit* u : bot.units.enemy_buildings) {
+			if (!u->is_completed) continue;
+			if (u->type == unit_types::bunker) {
+				double d = get_best_score_value(bot.units.my_units, [&](unit*mu) {
+					return units_distance(mu, u);
+				}, std::numeric_limits<double>::infinity());
+				if (d <= 32 * 5) {
+					bunkers.push_back(u);
+					u->marines_loaded = 0;
+				}
+			}
+		}
+		for (BWAPI_Bullet b : bot.game->getBullets()) {
+			if (b->getType() == BWAPI::BulletTypes::Gauss_Rifle_Hit && b->getRemoveTimer() > 4) {
+				int&ts = bullet_timestamps[b];
+				if (!ts || bot.current_frame - ts > 15) ts = bot.current_frame;
+				if (b->getTarget() && b->getTarget()->getPlayer() == bot.players.my_player->game_player && bot.current_frame - ts < 15) {
+					unit* target = get_unit(b->getTarget());
+					if (target) {
+						unit* bunker = get_best_score(bunkers, [&](unit*u) {
+							if (u->marines_loaded >= 4) return std::numeric_limits<double>::infinity();
+							double d = units_distance(target, u);
+							if (d >= 32 * 5 + 32) return std::numeric_limits<double>::infinity();
+							return d;
+						}, std::numeric_limits<double>::infinity());
+						if (bunker) {
+							++bunker->marines_loaded;
+						}
+					}
+				}
+			}
+		}
+		for (unit* u : bot.units.enemy_buildings) {
+			if (!u->is_completed) continue;
+			if (u->type == unit_types::bunker) {
+				bot.log("bunker %p has %d marines\n", u, u->marines_loaded);
+			}
+		}
+
+		bot.multitasking.sleep(1);
+	}
+}
 
 void units_impl::update_units_task() {
 	// This is a high priority task, and the order things are done is important to
