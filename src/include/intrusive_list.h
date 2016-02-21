@@ -227,9 +227,6 @@ namespace tsc_bwai {
 			link_f()(next)->first = prev;
 			return iterator(*next);
 		}
-		void remove(reference v) {
-			erase(iterator(v));
-		}
 		void push_back(reference v) {
 			insert(end(), v);
 		}
