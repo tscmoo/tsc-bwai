@@ -52,14 +52,23 @@ namespace tsc_bwai {
 		a_list<resource_spots::resource_t> all_resources;
 		intrusive_list<resource_spots::resource_t, void, &resource_spots::resource_t::live_link> live_resources, dead_resources;
 		a_unordered_map<const unit*, resource_spots::resource_t*> unit_resource_map;
+		int last_update;
 
+		// This sets cc_build_pos, pos and flags
+		// build_square::reserved_for_resource_depot where necessary.
 		void update_spots_pos();
+		// Estimates the income rates for spots.
 		void update_incomes();
+		// The main function that creates resource spots and assigns resources
+		// to them. Called continuously throughout the game to keep information
+		// up-to-date.
 		void update_spots();
+		// This task finds and updates resources and spots.
 		void resource_spots_task();
+
+		// Main render function that gets called directly from bot_t::on_frame.
 		void render();
 	public:
-		int last_update;
 		a_list<resource_spots::spot> spots;
 
 		resource_spots_module(bot_t& bot) : bot(bot) {}

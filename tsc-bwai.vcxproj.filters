@@ -17,6 +17,7 @@
     <ClCompile Include="src\square_pathing.cpp" />
     <ClCompile Include="src\render.cpp" />
     <ClCompile Include="src\resource_spots.cpp" />
+    <ClCompile Include="src\resource_gathering.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="include">
@@ -82,6 +83,9 @@
       <Filter>include</Filter>
     </ClInclude>
     <ClInclude Include="src\include\render.h">
+      <Filter>include</Filter>
+    </ClInclude>
+    <ClInclude Include="src\include\resource_gathering.h">
       <Filter>include</Filter>
     </ClInclude>
   </ItemGroup>

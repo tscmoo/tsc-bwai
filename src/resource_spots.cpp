@@ -81,7 +81,7 @@ void resource_spots_module::update_spots_pos() {
 				size_t v_idx = (unsigned)pos.x / 32 + (unsigned)pos.y / 32 * bot.grid.build_grid_width;
 				if (visited.test(v_idx)) return;
 				visited.set(v_idx);
-				auto&bs = bot.grid.build_grid[v_idx];
+				auto& bs = bot.grid.build_grid[v_idx];
 				if (!bs.entirely_walkable) return;
 				open.push_back(&bs);
 			};
@@ -96,6 +96,10 @@ void resource_spots_module::update_spots_pos() {
 
 	}
 
+	// Flag cc_build_pos for each spot as reserved_for_resource_depot, but
+	// also flags one additional square in the two directions where there
+	// are the most resources (this prevents building next to a cc in the
+	// direction where workers are most likely gathering).
 	for (auto&s : spots) {
 		if (s.cc_build_pos != xy()) {
 			int fx = 0;

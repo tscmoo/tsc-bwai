@@ -63,7 +63,7 @@ void tsc_bwai::bot_t::init() {
 	units.init();
 	square_pathing.init();
 	unit_controls.init();
-	//resource_gathering.init();
+	resource_gathering.init();
 	resource_spots.init();
 	//creep.init();
 	//pylons.init();

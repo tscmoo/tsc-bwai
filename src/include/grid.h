@@ -59,7 +59,8 @@ namespace tsc_bwai {
 		// The frame at which this square was last visible.
 		int last_seen;
 		// Flag that indicates that this square is reserved for resource depots,
-		// and other buildings should not be built here.
+		// and other buildings should not be built here. This flag can only be set
+		// by resource_spots.
 		bool reserved_for_resource_depot;
 		// Flag that indicates that larva or egg is currently near this square,
 		// and since they can not be moved, we should build somewhere else.

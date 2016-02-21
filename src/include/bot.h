@@ -16,6 +16,7 @@
 #include "square_pathing.h"
 #include "flyer_pathing.h"
 #include "unit_controls.h"
+#include "resource_gathering.h"
 #include "resource_spots.h"
 
 namespace BWAPI {
@@ -103,6 +104,7 @@ namespace tsc_bwai {
 		square_pathing_module square_pathing;
 		flyer_pathing_module flyer_pathing;
 		unit_controls_module unit_controls;
+		resource_gathering_module resource_gathering;
 		resource_spots_module resource_spots;
 
 		bot_t() :
@@ -117,7 +119,7 @@ namespace tsc_bwai {
 			square_pathing(*this),
 			flyer_pathing(*this),
 			unit_controls(*this),
-			//resource_gathering(*this),
+			resource_gathering(*this),
 			resource_spots(*this)
 		{}
 
